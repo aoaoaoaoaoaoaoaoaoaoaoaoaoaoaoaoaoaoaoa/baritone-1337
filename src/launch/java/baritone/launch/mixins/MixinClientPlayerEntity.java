@@ -98,7 +98,7 @@ public class MixinClientPlayerEntity {
         )
     )
     @Group(name = "mayFly", min = 1, max = 1)
-    private boolean onMayFlyNeoforge(LocalPlayer instance) throws Throwable {
+    private boolean onMayFly(LocalPlayer instance) throws Throwable {
         IBaritone baritone = BaritoneAPI.getProvider().getBaritoneForPlayer((LocalPlayer) (Object) this);
         if (baritone == null) {
             return (boolean) MAY_FLY.invokeExact(instance);

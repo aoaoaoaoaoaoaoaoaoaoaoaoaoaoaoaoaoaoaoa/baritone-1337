@@ -20,35 +20,24 @@ allprojects {
     apply plugin: "xyz.wagyourtail.unimined"
     apply plugin: "maven-publish"
 
-    archivesBaseName = rootProject.archives_base_name
+    base {
+        archivesName.set(rootProject.archives_base_name)
+    }
 
-    def vers = ""
-    try {
-        vers = 'git describe --always --tags --first-parent --dirty'.execute().text.trim()
-    } catch (Exception e) {
-        println "Version detection failed: " + e
-    }
-    if (!vers.startsWith("v")) {
-        println "using version number: " + rootProject.mod_version
-        version = rootProject.mod_version
-    } else {
-        version = vers.substring(1)
-        println "Detected version " + version
-    }
+    version = rootProject.mod_version
+    println "Using version number: " + version
     group = rootProject.maven_group
 
-    sourceCompatibility = targetCompatibility = JavaVersion.toVersion(project.java_version)
-
     java {
+        sourceCompatibility = JavaVersion.toVersion(project.java_release)
+        targetCompatibility = JavaVersion.toVersion(project.java_release)
+
         toolchain {
-            languageVersion.set(JavaLanguageVersion.of(sourceCompatibility.majorVersion.toInteger()))
+            languageVersion.set(JavaLanguageVersion.of(project.java_toolchain_version.toInteger()))
         }
     }
 
     repositories {
-        maven {
-            url = "https://files.minecraftforge.net/maven/"
-        }
         maven {
             name = 'spongepowered-repo'
             url = 'https://repo.spongepowered.org/repository/maven-public/'
@@ -64,14 +53,6 @@ allprojects {
         maven {
             name = "ldtteam"
             url = "https://maven.parchmentmc.net/"
-        }
-        // for the newer version of launchwrapper
-        maven {
-            name = "multimc-maven"
-            url = "https://files.multimc.org/maven/"
-            metadataSources {
-                artifact()
-            }
         }
         mavenCentral()
         maven {
@@ -93,18 +74,14 @@ allprojects {
         version rootProject.minecraft_version
 
         mappings {
-            intermediary()
-            mojmap()
-            parchment("1.21.4", "2025.03.23")
-
-            devFallbackNamespace "official"
+            devNamespace "official"
         }
     }
 
     tasks.withType(JavaCompile).configureEach {
         it.options.encoding = "UTF-8"
 
-        def targetVersion = project.java_version.toInteger()
+        def targetVersion = project.java_release.toInteger()
         if (JavaVersion.current().isJava9Compatible()) {
             it.options.release = targetVersion
         }
@@ -116,7 +93,9 @@ unimined.minecraft {
     defaultRemapJar = false
 }
 
-archivesBaseName = archivesBaseName + "-common"
+base {
+    archivesName.set("${archives_base_name}-common")
+}
 
 sourceSets {
     api {

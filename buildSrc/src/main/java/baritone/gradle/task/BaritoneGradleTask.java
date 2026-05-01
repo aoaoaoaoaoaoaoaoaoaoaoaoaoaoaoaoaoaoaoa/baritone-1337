@@ -53,7 +53,7 @@ class BaritoneGradleTask extends DefaultTask {
     protected String artifactName, artifactVersion;
     protected Path
         artifactPath,
-        artifactUnoptimizedPath, artifactApiPath, artifactStandalonePath, // these are different for forge builds
+        artifactUnoptimizedPath, artifactApiPath, artifactStandalonePath,
         proguardOut;
 
 

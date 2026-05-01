@@ -27,7 +27,6 @@ import baritone.behavior.PathingBehavior;
 import baritone.pathing.path.PathExecutor;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
@@ -357,26 +356,37 @@ public final class PathRenderer implements IRenderer {
 
         stack.pushPose();
         stack.translate(0.5D, 0.0D, 0.5D);
-        if (!translucent) {
-            stack.pushPose();
-            stack.mulPose(Axis.YP.rotationDegrees(time * 2.25F - 45.0F));
-        }
-
         float v0 = -1.0F + scroll;
         float v1 = (float) (translucent ? height + v0 : height * (0.5F / radius) + v0);
         PoseStack.Pose pose = stack.last();
         if (translucent) {
             emitBeaconShell(bufferBuilder, pose, color, 0.0F, (float) height, -radius, -radius, radius, -radius, -radius, radius, radius, radius, v0, v1);
         } else {
-            emitBeaconShell(bufferBuilder, pose, color, 0.0F, (float) height, 0.0F, radius, radius, 0.0F, -radius, 0.0F, 0.0F, -radius, v0, v1);
-        }
-
-        if (!translucent) {
-            stack.popPose();
+            emitRotatingBeaconShell(bufferBuilder, pose, color, (float) height, radius, time, v0, v1);
         }
         stack.popPose();
 
         IRenderer.endBuffer(bufferBuilder, IRenderer.beaconBeam(BeaconRenderer.BEAM_LOCATION, translucent, settings.renderGoalIgnoreDepth.value));
+    }
+
+    private static void emitRotatingBeaconShell(BufferBuilder bufferBuilder, PoseStack.Pose pose, int color, float height, float radius, float time, float v0, float v1) {
+        float angle = (time * 2.25F - 45.0F) * Mth.DEG_TO_RAD;
+        float sin = Mth.sin(angle);
+        float cos = Mth.cos(angle);
+        emitBeaconShell(bufferBuilder, pose, color, 0.0F, height,
+                rotateX(0.0F, radius, sin, cos), rotateZ(0.0F, radius, sin, cos),
+                rotateX(radius, 0.0F, sin, cos), rotateZ(radius, 0.0F, sin, cos),
+                rotateX(-radius, 0.0F, sin, cos), rotateZ(-radius, 0.0F, sin, cos),
+                rotateX(0.0F, -radius, sin, cos), rotateZ(0.0F, -radius, sin, cos),
+                v0, v1);
+    }
+
+    private static float rotateX(float x, float z, float sin, float cos) {
+        return x * cos - z * sin;
+    }
+
+    private static float rotateZ(float x, float z, float sin, float cos) {
+        return x * sin + z * cos;
     }
 
     private static void emitBeaconShell(BufferBuilder bufferBuilder, PoseStack.Pose pose, int color, float minY, float maxY,

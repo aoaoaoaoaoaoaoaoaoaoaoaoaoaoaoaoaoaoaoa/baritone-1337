@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
  */
 public class Determinizer {
 
-    public static void determinize(String inputPath, String outputPath, List<File> toInclude, boolean doForgeReplacementOfMetaInf) throws IOException {
+    public static void determinize(String inputPath, String outputPath, List<File> toInclude) throws IOException {
         System.out.println("Running Determinizer");
         System.out.println(" Input path: " + inputPath);
         System.out.println(" Output path: " + outputPath);
@@ -67,15 +67,6 @@ public class Determinizer {
                 if (entry.getName().endsWith(".refmap.json")) {
                     JsonElement json = new JsonParser().parse(new InputStreamReader(jarFile.getInputStream(entry)));
                     jos.write(writeSorted(json).getBytes());
-                } else if (entry.getName().equals("META-INF/MANIFEST.MF") && doForgeReplacementOfMetaInf) { // only replace for forge jar
-                    ByteArrayOutputStream cancer = new ByteArrayOutputStream();
-                    copy(jarFile.getInputStream(entry), cancer);
-                    String manifest = new String(cancer.toByteArray());
-                    if (!manifest.contains("baritone.launch.tweaker.BaritoneTweaker")) {
-                        throw new IllegalStateException("unable to replace");
-                    }
-                    manifest = manifest.replace("baritone.launch.tweaker.BaritoneTweaker", "org.spongepowered.asm.launch.MixinTweaker");
-                    jos.write(manifest.getBytes());
                 } else {
                     copy(jarFile.getInputStream(entry), jos);
                 }

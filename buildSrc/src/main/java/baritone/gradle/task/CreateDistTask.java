@@ -21,11 +21,8 @@ import org.gradle.api.tasks.TaskAction;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -49,19 +46,18 @@ public class CreateDistTask extends BaritoneGradleTask {
         Path standalone = getRootRelativeFile("dist/" + getFileName(artifactStandalonePath));
         Path unoptimized = getRootRelativeFile("dist/" + getFileName(artifactUnoptimizedPath));
 
-        // NIO will not automatically create directories
         Path dir = getRootRelativeFile("dist/");
-        if (!Files.exists(dir)) {
-            Files.createDirectory(dir);
+        Files.createDirectories(dir);
+        try (var entries = Files.list(dir)) {
+            for (Path stale : entries.filter(e -> e.getFileName().toString().endsWith(".jar")).toList()) {
+                Files.delete(stale);
+            }
         }
 
-        // Copy build jars to dist/
-        // TODO: dont copy files that dont exist
         Files.copy(this.artifactApiPath, api, REPLACE_EXISTING);
         Files.copy(this.artifactStandalonePath, standalone, REPLACE_EXISTING);
         Files.copy(this.artifactUnoptimizedPath, unoptimized, REPLACE_EXISTING);
 
-        // Calculate all checksums and format them like "shasum"
         List<String> shasum = Files.list(getRootRelativeFile("dist/"))
                 .filter(e -> e.getFileName().toString().endsWith(".jar"))
                 .map(path -> sha1(path) + "  " + path.getFileName().toString())
@@ -69,7 +65,6 @@ public class CreateDistTask extends BaritoneGradleTask {
 
         shasum.forEach(System.out::println);
 
-        // Write the checksums to a file
         Files.write(getRootRelativeFile("dist/checksums.txt"), shasum);
     }
 

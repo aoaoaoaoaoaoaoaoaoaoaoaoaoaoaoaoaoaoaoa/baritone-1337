@@ -19,16 +19,28 @@ pluginManagement {
     repositories {
         mavenLocal()
         maven {
+            name = 'FirstDarkDev'
+            url = 'https://maven.firstdark.dev/releases/'
+            content {
+                includeGroup "xyz.wagyourtail.unimined"
+                includeGroup "xyz.wagyourtail.unimined.mapping"
+            }
+        }
+        maven {
             name = 'WagYourMaven'
             url = 'https://maven.wagyourtail.xyz/snapshots'
+        }
+        maven {
+            name = 'FabricMaven'
+            url = 'https://maven.fabricmc.net/'
         }
         maven {
             name = 'ForgeMaven'
             url = 'https://maven.minecraftforge.net/'
         }
         maven {
-            name = 'FabricMaven'
-            url = 'https://maven.fabricmc.net/'
+            name = 'NeoForgedMaven'
+            url = 'https://maven.neoforged.net/'
         }
         mavenCentral()
         gradlePluginPortal() {
@@ -41,7 +53,4 @@ pluginManagement {
 
 rootProject.name = 'baritone'
 
-include("tweaker")
-for (platform in available_loaders.split(",")) {
-       include(platform)
-}
+include("fabric")

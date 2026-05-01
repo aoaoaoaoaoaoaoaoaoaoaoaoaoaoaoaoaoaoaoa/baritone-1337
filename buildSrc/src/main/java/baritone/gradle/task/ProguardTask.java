@@ -18,20 +18,17 @@
 package baritone.gradle.task;
 
 import baritone.gradle.util.Determinizer;
-import org.gradle.api.plugins.JavaPluginConvention;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.api.tasks.TaskCollection;
-import org.gradle.api.tasks.compile.ForkOptions;
-import org.gradle.api.tasks.compile.JavaCompile;
-import org.gradle.internal.jvm.Jvm;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
+import org.gradle.process.ExecOperations;
 import xyz.wagyourtail.unimined.api.UniminedExtension;
 import xyz.wagyourtail.unimined.api.minecraft.MinecraftConfig;
 
+import javax.inject.Inject;
 import java.io.*;
 import java.net.URL;
 import java.nio.file.Files;
@@ -48,6 +45,13 @@ import java.util.zip.ZipFile;
  * @since 10/11/2018
  */
 public class ProguardTask extends BaritoneGradleTask {
+
+    private final ExecOperations execOperations;
+
+    @Inject
+    public ProguardTask(ExecOperations execOperations) {
+        this.execOperations = execOperations;
+    }
 
     @Input
     private String proguardVersion;
@@ -78,7 +82,7 @@ public class ProguardTask extends BaritoneGradleTask {
 
     private File getMcJar() {
         MinecraftConfig mcc = ext.getMinecrafts().get(sourceSets.getByName("main"));
-        return mcc.getMinecraft(mcc.getMcPatcher().getProdNamespace(), mcc.getMcPatcher().getProdNamespace()).toFile();
+        return mcc.getMinecraft(mcc.getMcPatcher().getProdNamespace()).toFile();
     }
 
     private boolean isMcJar(File f) {
@@ -91,7 +95,7 @@ public class ProguardTask extends BaritoneGradleTask {
             Files.delete(this.artifactUnoptimizedPath);
         }
 
-        Determinizer.determinize(this.artifactPath.toString(), this.artifactUnoptimizedPath.toString(), List.of(), false);
+        Determinizer.determinize(this.artifactPath.toString(), this.artifactUnoptimizedPath.toString(), List.of());
     }
 
     private void downloadProguard() throws Exception {
@@ -114,7 +118,7 @@ public class ProguardTask extends BaritoneGradleTask {
     private JavaLauncher getJavaLauncherForProguard() {
         var toolchains = getProject().getExtensions().getByType(JavaToolchainService.class);
         var toolchain = toolchains.launcherFor((spec) -> {
-            spec.getLanguageVersion().set(JavaLanguageVersion.of(getProject().findProperty("java_version").toString()));
+            spec.getLanguageVersion().set(JavaLanguageVersion.of(getProject().findProperty("java_toolchain_version").toString()));
         }).getOrNull();
 
         if (toolchain == null) {
@@ -175,19 +179,19 @@ public class ProguardTask extends BaritoneGradleTask {
     }
 
     private Stream<File> acquireDependencies() {
-        return getProject().getConvention().getPlugin(JavaPluginConvention.class).getSourceSets().findByName("main").getCompileClasspath().getFiles()
+        return sourceSets.getByName("main").getCompileClasspath().getFiles()
                 .stream()
                 .filter(File::isFile);
     }
 
     private void proguardApi() throws Exception {
         runProguard(getTemporaryFile(compType + PROGUARD_API_CONFIG));
-        Determinizer.determinize(this.proguardOut.toString(), this.artifactApiPath.toString(), List.of(), false);
+        Determinizer.determinize(this.proguardOut.toString(), this.artifactApiPath.toString(), List.of());
     }
 
     private void proguardStandalone() throws Exception {
         runProguard(getTemporaryFile(compType + PROGUARD_STANDALONE_CONFIG));
-        Determinizer.determinize(this.proguardOut.toString(), this.artifactStandalonePath.toString(), List.of(), false);
+        Determinizer.determinize(this.proguardOut.toString(), this.artifactStandalonePath.toString(), List.of());
     }
 
     private static final class Pair<A, B> {
@@ -227,7 +231,7 @@ public class ProguardTask extends BaritoneGradleTask {
 
         Path workingDirectory = getTemporaryFile("");
 
-        getProject().javaexec(spec -> {
+        execOperations.javaexec(spec -> {
             spec.workingDir(workingDirectory.toFile());
             spec.args("@" + workingDirectory.relativize(config));
             spec.classpath(getTemporaryFile(String.format(PROGUARD_JAR, proguardVersion)));

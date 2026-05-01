@@ -17,8 +17,6 @@
 -dontwarn org.lwjgl.**
 # also lwjgl lol
 -dontwarn module-info
-# we dont have forge
--dontwarn baritone.launch.BaritoneForgeModXD
 # progard doesn't like signature polymorphism
 -dontwarn java.lang.invoke.MethodHandle
 
