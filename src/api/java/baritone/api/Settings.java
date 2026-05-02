@@ -1,5 +1,6 @@
 package baritone.api;
 
+import baritone.api.utils.GeofenceBox;
 import baritone.api.utils.Helper;
 import baritone.api.utils.NotificationHelper;
 import baritone.api.utils.SettingsUtil;
@@ -67,6 +68,13 @@ public final class Settings {
    * Allow Baritone to place blocks in flowing fluid
    */
   public final Setting<Boolean> allowPlaceInFluidsFlow = new Setting<>(true);
+
+  /**
+   * Axis-aligned boxes where Baritone must not break or place blocks.
+   * <p>
+   * Serialized as {@code dimension@x/y/z..x/y/z}, comma-separated for multiple boxes.
+   */
+  public final Setting<List<GeofenceBox>> modificationGeofences = new Setting<>(new ArrayList<>());
 
   /**
    * Allow Baritone to move items in your inventory to your hotbar

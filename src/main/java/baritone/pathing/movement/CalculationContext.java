@@ -44,6 +44,7 @@ public class CalculationContext {
   public FallPolicy fall;
   public CostPolicy costs;
   public final BetterWorldBorder worldBorder;
+  public final ModificationGeofence modificationGeofence;
 
   public final BlockAffordanceCache affordances;
   public final PathingProfiler pathingProfiler;
@@ -86,45 +87,23 @@ public class CalculationContext {
       }
     }
     double waterWalkSpeed = ActionCosts.WALK_ONE_IN_WATER_COST * (1 - waterSpeedMultiplier) + ActionCosts.WALK_ONE_BLOCK_COST * waterSpeedMultiplier;
-    this.placement = new PlacementPolicy(
-        Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(),
-        Baritone.settings().blockPlacementPenalty.value,
-        Baritone.settings().allowPlaceInFluidsSource.value,
-        Baritone.settings().allowPlaceInFluidsFlow.value
-    );
+    this.placement = new PlacementPolicy(Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(), Baritone.settings().blockPlacementPenalty.value,
+        Baritone.settings().allowPlaceInFluidsSource.value, Baritone.settings().allowPlaceInFluidsFlow.value);
     this.breaking = new BreakPolicy(Baritone.settings().allowBreak.value, Baritone.settings().allowBreakAnyway.value);
-    this.movement = new MovementPolicy(
-        Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6,
-        Baritone.settings().allowParkour.value,
-        Baritone.settings().allowParkourPlace.value,
-        Baritone.settings().allowJumpAtBuildLimit.value,
-        Baritone.settings().allowParkourAscend.value,
-        Baritone.settings().assumeWalkOnWater.value,
-        frostWalkerLevel,
-        Baritone.settings().allowDiagonalDescend.value,
-        Baritone.settings().allowDiagonalAscend.value,
-        Baritone.settings().allowObliqueWalk.value,
-        Baritone.settings().allowDownward.value,
-        Baritone.settings().allowWalkOnMagmaBlocks.value
-    );
-    this.fall = new FallPolicy(
-        Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
-        false,
-        3,
-        Baritone.settings().maxFallHeightNoWater.value,
-        Baritone.settings().maxFallHeightBucket.value
-    );
-    this.costs = new CostPolicy(
-        Baritone.settings().blockBreakAdditionalPenalty.value,
-        Baritone.settings().backtrackCostFavoringCoefficient.value,
-        Baritone.settings().jumpPenalty.value,
-        Baritone.settings().walkOnWaterOnePenalty.value,
-        waterWalkSpeed
-    );
+    this.movement = new MovementPolicy(Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6, Baritone.settings().allowParkour.value,
+        Baritone.settings().allowParkourPlace.value, Baritone.settings().allowJumpAtBuildLimit.value, Baritone.settings().allowParkourAscend.value, Baritone.settings().assumeWalkOnWater.value,
+        frostWalkerLevel, Baritone.settings().allowDiagonalDescend.value, Baritone.settings().allowDiagonalAscend.value, Baritone.settings().allowObliqueWalk.value,
+        Baritone.settings().allowDownward.value, Baritone.settings().allowWalkOnMagmaBlocks.value);
+    this.fall =
+        new FallPolicy(Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
+            false, 3, Baritone.settings().maxFallHeightNoWater.value, Baritone.settings().maxFallHeightBucket.value);
+    this.costs = new CostPolicy(Baritone.settings().blockBreakAdditionalPenalty.value, Baritone.settings().backtrackCostFavoringCoefficient.value, Baritone.settings().jumpPenalty.value,
+        Baritone.settings().walkOnWaterOnePenalty.value, waterWalkSpeed);
     // why cache these things here, why not let the movements just get directly from settings?
     // because if some movements are calculated one way and others are calculated another way,
     // then you get a wildly inconsistent path that isn't optimal for either scenario.
     this.worldBorder = new BetterWorldBorder(world.getWorldBorder());
+    this.modificationGeofence = ModificationGeofence.snapshot(world.dimension().identifier().toString(), Baritone.settings().modificationGeofences.value);
     this.affordances = new BlockAffordanceCache(this);
     this.pathingProfiler = ((Baritone) baritone).getPathingProfiler();
     this.movementCatalog = MovementCatalog.legacyWalking(this);
@@ -183,12 +162,11 @@ public class CalculationContext {
     return 1;
   }
 
-  public double placeBucketCost() {
-    return placement.blockCost(); // shrug
+  public double placeBucketCostAt(int x, int y, int z) {
+    return isPossiblyProtected(x, y, z) ? COST_INF : placement.blockCost(); // shrug
   }
 
   public boolean isPossiblyProtected(int x, int y, int z) {
-    // TODO more protection logic here; see #220
-    return false;
+    return modificationGeofence.forbids(x, y, z);
   }
 }

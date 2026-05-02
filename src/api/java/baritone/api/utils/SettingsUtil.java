@@ -213,6 +213,7 @@ public class SettingsUtil {
     FLOAT(Float.class, Float::parseFloat),
     LONG(Long.class, Long::parseLong),
     STRING(String.class, String::new),
+    GEOFENCE_BOX(GeofenceBox.class, GeofenceBox::parse, GeofenceBox::serialized),
     MIRROR(Mirror.class, Mirror::valueOf, Mirror::name),
     ROTATION(Rotation.class, Rotation::valueOf, Rotation::name),
     COLOR(Color.class, str -> {
@@ -228,8 +229,14 @@ public class SettingsUtil {
     LIST() {
       @Override
       public Object parse(Type type, String raw) {
+        if (raw.isBlank()) {
+          return new ArrayList<>();
+        }
         Type elementType = ((ParameterizedType) type).getActualTypeArguments()[0];
         Parser parser = Parser.getParser(elementType);
+        if (parser == null) {
+          throw new IllegalStateException("Missing list element parser for " + elementType);
+        }
         return Stream.of(raw.split(",")).map(s -> parser.parse(elementType, s)).collect(Collectors.toList());
       }
 
@@ -237,6 +244,9 @@ public class SettingsUtil {
       public String toString(Type type, Object value) {
         Type elementType = ((ParameterizedType) type).getActualTypeArguments()[0];
         Parser parser = Parser.getParser(elementType);
+        if (parser == null) {
+          throw new IllegalStateException("Missing list element serializer for " + elementType);
+        }
 
         return ((List<?>) value).stream().map(o -> parser.toString(elementType, o)).collect(Collectors.joining(","));
       }
@@ -253,6 +263,9 @@ public class SettingsUtil {
         Type valueType = ((ParameterizedType) type).getActualTypeArguments()[1];
         Parser keyParser = Parser.getParser(keyType);
         Parser valueParser = Parser.getParser(valueType);
+        if (keyParser == null || valueParser == null) {
+          throw new IllegalStateException("Missing map parser for " + type);
+        }
 
         return Stream.of(raw.split(",(?=[^,]*->)")).map(s -> s.split("->")).collect(Collectors.toMap(s -> keyParser.parse(keyType, s[0]), s -> valueParser.parse(valueType, s[1])));
       }
@@ -263,6 +276,9 @@ public class SettingsUtil {
         Type valueType = ((ParameterizedType) type).getActualTypeArguments()[1];
         Parser keyParser = Parser.getParser(keyType);
         Parser valueParser = Parser.getParser(valueType);
+        if (keyParser == null || valueParser == null) {
+          throw new IllegalStateException("Missing map serializer for " + type);
+        }
 
         return ((Map<?, ?>) value).entrySet().stream()
             .map(o -> keyParser.toString(keyType, o.getKey()) + "->" + valueParser.toString(valueType, o.getValue()))

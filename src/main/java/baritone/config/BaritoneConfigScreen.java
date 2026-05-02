@@ -39,6 +39,7 @@ public final class BaritoneConfigScreen extends Screen {
     page = Math.max(0, Math.min(page, pages - 1));
 
     addRenderableWidget(new StringWidget(width, 20, title, font));
+    addRenderableWidget(Button.builder(Component.literal("Geofences"), b -> minecraft.setScreen(new GeofenceConfigScreen(this))).bounds(width - 110, 18, 100, 20).build());
 
     int top = 42;
     int center = width / 2;

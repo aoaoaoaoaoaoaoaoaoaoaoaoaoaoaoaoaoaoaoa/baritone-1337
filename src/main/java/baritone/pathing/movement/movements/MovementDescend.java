@@ -190,7 +190,11 @@ public class MovementDescend extends Movement {
         return false;
       }
       if (reachedMinimum && context.fall.hasWaterBucket() && unprotectedFallHeight <= context.fall.maxBucket() + 1) {
-        res.reachable(destX, newY + 1, destZ, tentativeCost + context.placeBucketCost(), 0); // this is the block we're falling onto, so dest is +1
+        double bucketCost = context.placeBucketCostAt(destX, newY + 1, destZ);
+        if (bucketCost >= COST_INF) {
+          return false;
+        }
+        res.reachable(destX, newY + 1, destZ, tentativeCost + bucketCost, 0); // this is the block we're falling onto, so dest is +1
         return true;
       } else {
         return false;
