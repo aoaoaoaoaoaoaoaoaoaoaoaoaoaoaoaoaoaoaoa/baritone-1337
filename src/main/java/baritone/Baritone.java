@@ -20,8 +20,6 @@ import baritone.utils.GuiClick;
 import baritone.utils.InputOverrideHandler;
 import baritone.utils.PathingControlManager;
 import baritone.utils.player.BaritonePlayerContext;
-import net.minecraft.client.Minecraft;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,223 +30,223 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import net.minecraft.client.Minecraft;
 
 /**
  * @author Brady
  * @since 7/31/2018
  */
 public class Baritone implements IBaritone {
+  private static final ThreadPoolExecutor threadPool;
 
-    private static final ThreadPoolExecutor threadPool;
+  static {
+    threadPool = new ThreadPoolExecutor(4, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<>());
+  }
 
-    static {
-        threadPool = new ThreadPoolExecutor(4, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<>());
+  private final Minecraft mc;
+  private final Path directory;
+
+  private final GameEventHandler gameEventHandler;
+
+  private final PathingBehavior pathingBehavior;
+  private final LookBehavior lookBehavior;
+  private final InventoryBehavior inventoryBehavior;
+  private final InputOverrideHandler inputOverrideHandler;
+
+  private final FollowProcess followProcess;
+  private final MineProcess mineProcess;
+  private final GetToBlockProcess getToBlockProcess;
+  private final CustomGoalProcess customGoalProcess;
+  private final BuilderProcess builderProcess;
+  private final ExploreProcess exploreProcess;
+  private final FarmProcess farmProcess;
+  private final InventoryPauserProcess inventoryPauserProcess;
+  private final IElytraProcess elytraProcess;
+
+  private final PathingControlManager pathingControlManager;
+  private final SelectionManager selectionManager;
+  private final CommandManager commandManager;
+  private final PathingProfiler pathingProfiler;
+
+  private final IPlayerContext playerContext;
+  private final WorldProvider worldProvider;
+
+  public BlockStateInterface bsi;
+
+  Baritone(Minecraft mc) {
+    this.mc = mc;
+    this.gameEventHandler = new GameEventHandler(this);
+
+    this.directory = mc.gameDirectory.toPath().resolve("baritone");
+    if (!Files.exists(this.directory)) {
+      try {
+        Files.createDirectories(this.directory);
+      } catch (IOException ignored) {}
+    }
+    this.pathingProfiler = new PathingProfiler(this.directory.resolve("profiles"));
+
+    // Define this before behaviors try and get it, or else it will be null and the builds will fail!
+    this.playerContext = new BaritonePlayerContext(this, mc);
+
+    {
+      this.lookBehavior = this.registerBehavior(LookBehavior::new);
+      this.pathingBehavior = this.registerBehavior(PathingBehavior::new);
+      this.inventoryBehavior = this.registerBehavior(InventoryBehavior::new);
+      this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
+      this.registerBehavior(WaypointBehavior::new);
     }
 
-    private final Minecraft mc;
-    private final Path directory;
-
-    private final GameEventHandler gameEventHandler;
-
-    private final PathingBehavior pathingBehavior;
-    private final LookBehavior lookBehavior;
-    private final InventoryBehavior inventoryBehavior;
-    private final InputOverrideHandler inputOverrideHandler;
-
-    private final FollowProcess followProcess;
-    private final MineProcess mineProcess;
-    private final GetToBlockProcess getToBlockProcess;
-    private final CustomGoalProcess customGoalProcess;
-    private final BuilderProcess builderProcess;
-    private final ExploreProcess exploreProcess;
-    private final FarmProcess farmProcess;
-    private final InventoryPauserProcess inventoryPauserProcess;
-    private final IElytraProcess elytraProcess;
-
-    private final PathingControlManager pathingControlManager;
-    private final SelectionManager selectionManager;
-    private final CommandManager commandManager;
-    private final PathingProfiler pathingProfiler;
-
-    private final IPlayerContext playerContext;
-    private final WorldProvider worldProvider;
-
-    public BlockStateInterface bsi;
-
-    Baritone(Minecraft mc) {
-        this.mc = mc;
-        this.gameEventHandler = new GameEventHandler(this);
-
-        this.directory = mc.gameDirectory.toPath().resolve("baritone");
-        if (!Files.exists(this.directory)) {
-            try {
-                Files.createDirectories(this.directory);
-            } catch (IOException ignored) {}
-        }
-        this.pathingProfiler = new PathingProfiler(this.directory.resolve("profiles"));
-
-        // Define this before behaviors try and get it, or else it will be null and the builds will fail!
-        this.playerContext = new BaritonePlayerContext(this, mc);
-
-        {
-            this.lookBehavior         = this.registerBehavior(LookBehavior::new);
-            this.pathingBehavior      = this.registerBehavior(PathingBehavior::new);
-            this.inventoryBehavior    = this.registerBehavior(InventoryBehavior::new);
-            this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
-            this.registerBehavior(WaypointBehavior::new);
-        }
-
-        this.pathingControlManager = new PathingControlManager(this);
-        {
-            this.followProcess           = this.registerProcess(FollowProcess::new);
-            this.mineProcess             = this.registerProcess(MineProcess::new);
-            this.customGoalProcess       = this.registerProcess(CustomGoalProcess::new); // very high iq
-            this.getToBlockProcess       = this.registerProcess(GetToBlockProcess::new);
-            this.builderProcess          = this.registerProcess(BuilderProcess::new);
-            this.exploreProcess          = this.registerProcess(ExploreProcess::new);
-            this.farmProcess             = this.registerProcess(FarmProcess::new);
-            this.inventoryPauserProcess  = this.registerProcess(InventoryPauserProcess::new);
-            this.elytraProcess           = this.registerProcess(ElytraProcess::create);
-            this.registerProcess(BackfillProcess::new);
-        }
-
-        this.worldProvider = new WorldProvider(this);
-        this.selectionManager = new SelectionManager(this);
-        this.commandManager = new CommandManager(this);
+    this.pathingControlManager = new PathingControlManager(this);
+    {
+      this.followProcess = this.registerProcess(FollowProcess::new);
+      this.mineProcess = this.registerProcess(MineProcess::new);
+      this.customGoalProcess = this.registerProcess(CustomGoalProcess::new); // very high iq
+      this.getToBlockProcess = this.registerProcess(GetToBlockProcess::new);
+      this.builderProcess = this.registerProcess(BuilderProcess::new);
+      this.exploreProcess = this.registerProcess(ExploreProcess::new);
+      this.farmProcess = this.registerProcess(FarmProcess::new);
+      this.inventoryPauserProcess = this.registerProcess(InventoryPauserProcess::new);
+      this.elytraProcess = this.registerProcess(ElytraProcess::create);
+      this.registerProcess(BackfillProcess::new);
     }
 
-    public void registerBehavior(IBehavior behavior) {
-        this.gameEventHandler.registerEventListener(behavior);
-    }
+    this.worldProvider = new WorldProvider(this);
+    this.selectionManager = new SelectionManager(this);
+    this.commandManager = new CommandManager(this);
+  }
 
-    public <T extends IBehavior> T registerBehavior(Function<Baritone, T> constructor) {
-        final T behavior = constructor.apply(this);
-        this.registerBehavior(behavior);
-        return behavior;
-    }
+  public void registerBehavior(IBehavior behavior) {
+    this.gameEventHandler.registerEventListener(behavior);
+  }
 
-    public <T extends IBaritoneProcess> T registerProcess(Function<Baritone, T> constructor) {
-        final T behavior = constructor.apply(this);
-        this.pathingControlManager.registerProcess(behavior);
-        return behavior;
-    }
+  public <T extends IBehavior> T registerBehavior(Function<Baritone, T> constructor) {
+    final T behavior = constructor.apply(this);
+    this.registerBehavior(behavior);
+    return behavior;
+  }
 
-    @Override
-    public PathingControlManager getPathingControlManager() {
-        return this.pathingControlManager;
-    }
+  public <T extends IBaritoneProcess> T registerProcess(Function<Baritone, T> constructor) {
+    final T behavior = constructor.apply(this);
+    this.pathingControlManager.registerProcess(behavior);
+    return behavior;
+  }
 
-    @Override
-    public InputOverrideHandler getInputOverrideHandler() {
-        return this.inputOverrideHandler;
-    }
+  @Override
+  public PathingControlManager getPathingControlManager() {
+    return this.pathingControlManager;
+  }
 
-    @Override
-    public CustomGoalProcess getCustomGoalProcess() {
-        return this.customGoalProcess;
-    }
+  @Override
+  public InputOverrideHandler getInputOverrideHandler() {
+    return this.inputOverrideHandler;
+  }
 
-    @Override
-    public GetToBlockProcess getGetToBlockProcess() {
-        return this.getToBlockProcess;
-    }
+  @Override
+  public CustomGoalProcess getCustomGoalProcess() {
+    return this.customGoalProcess;
+  }
 
-    @Override
-    public IPlayerContext getPlayerContext() {
-        return this.playerContext;
-    }
+  @Override
+  public GetToBlockProcess getGetToBlockProcess() {
+    return this.getToBlockProcess;
+  }
 
-    @Override
-    public FollowProcess getFollowProcess() {
-        return this.followProcess;
-    }
+  @Override
+  public IPlayerContext getPlayerContext() {
+    return this.playerContext;
+  }
 
-    @Override
-    public BuilderProcess getBuilderProcess() {
-        return this.builderProcess;
-    }
+  @Override
+  public FollowProcess getFollowProcess() {
+    return this.followProcess;
+  }
 
-    public InventoryBehavior getInventoryBehavior() {
-        return this.inventoryBehavior;
-    }
+  @Override
+  public BuilderProcess getBuilderProcess() {
+    return this.builderProcess;
+  }
 
-    @Override
-    public LookBehavior getLookBehavior() {
-        return this.lookBehavior;
-    }
+  public InventoryBehavior getInventoryBehavior() {
+    return this.inventoryBehavior;
+  }
 
-    @Override
-    public ExploreProcess getExploreProcess() {
-        return this.exploreProcess;
-    }
+  @Override
+  public LookBehavior getLookBehavior() {
+    return this.lookBehavior;
+  }
 
-    @Override
-    public MineProcess getMineProcess() {
-        return this.mineProcess;
-    }
+  @Override
+  public ExploreProcess getExploreProcess() {
+    return this.exploreProcess;
+  }
 
-    @Override
-    public FarmProcess getFarmProcess() {
-        return this.farmProcess;
-    }
+  @Override
+  public MineProcess getMineProcess() {
+    return this.mineProcess;
+  }
 
-    public InventoryPauserProcess getInventoryPauserProcess() {
-        return this.inventoryPauserProcess;
-    }
+  @Override
+  public FarmProcess getFarmProcess() {
+    return this.farmProcess;
+  }
 
-    @Override
-    public PathingBehavior getPathingBehavior() {
-        return this.pathingBehavior;
-    }
+  public InventoryPauserProcess getInventoryPauserProcess() {
+    return this.inventoryPauserProcess;
+  }
 
-    @Override
-    public SelectionManager getSelectionManager() {
-        return selectionManager;
-    }
+  @Override
+  public PathingBehavior getPathingBehavior() {
+    return this.pathingBehavior;
+  }
 
-    @Override
-    public WorldProvider getWorldProvider() {
-        return this.worldProvider;
-    }
+  @Override
+  public SelectionManager getSelectionManager() {
+    return selectionManager;
+  }
 
-    @Override
-    public IEventBus getGameEventHandler() {
-        return this.gameEventHandler;
-    }
+  @Override
+  public WorldProvider getWorldProvider() {
+    return this.worldProvider;
+  }
 
-    @Override
-    public CommandManager getCommandManager() {
-        return this.commandManager;
-    }
+  @Override
+  public IEventBus getGameEventHandler() {
+    return this.gameEventHandler;
+  }
 
-    @Override
-    public IElytraProcess getElytraProcess() {
-        return this.elytraProcess;
-    }
+  @Override
+  public CommandManager getCommandManager() {
+    return this.commandManager;
+  }
 
-    @Override
-    public void openClick() {
-        new Thread(() -> {
-            try {
-                Thread.sleep(100);
-                mc.execute(() -> mc.setScreen(new GuiClick()));
-            } catch (Exception ignored) {}
-        }).start();
-    }
+  @Override
+  public IElytraProcess getElytraProcess() {
+    return this.elytraProcess;
+  }
 
-    public Path getDirectory() {
-        return this.directory;
-    }
+  @Override
+  public void openClick() {
+    new Thread(() -> {
+      try {
+        Thread.sleep(100);
+        mc.execute(() -> mc.setScreen(new GuiClick()));
+      } catch (Exception ignored) {}
+    }).start();
+  }
 
-    public PathingProfiler getPathingProfiler() {
-        return this.pathingProfiler;
-    }
+  public Path getDirectory() {
+    return this.directory;
+  }
 
-    public static Settings settings() {
-        return BaritoneAPI.getSettings();
-    }
+  public PathingProfiler getPathingProfiler() {
+    return this.pathingProfiler;
+  }
 
-    public static Executor getExecutor() {
-        return threadPool;
-    }
+  public static Settings settings() {
+    return BaritoneAPI.getSettings();
+  }
+
+  public static Executor getExecutor() {
+    return threadPool;
+  }
 }

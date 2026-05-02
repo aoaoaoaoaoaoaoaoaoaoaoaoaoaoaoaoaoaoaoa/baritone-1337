@@ -1,0 +1,10 @@
+BasedOnStyle: Google
+Language: Java
+IndentWidth: 2
+ContinuationIndentWidth: 4
+ColumnLimit: 200
+AllowShortBlocksOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+BreakStringLiterals: false
