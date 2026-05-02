@@ -7,9 +7,6 @@ import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.BlockOptionalMetaLookup;
-import baritone.api.utils.Rotation;
-import baritone.api.utils.RotationUtils;
-import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.utils.BaritoneProcessHelper;
@@ -194,15 +191,16 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
 
     private boolean rightClick() {
         for (BlockPos pos : knownLocations) {
-            Optional<Rotation> reachable = RotationUtils.reachable(ctx, pos, ctx.playerController().getBlockReachDistance());
-            if (reachable.isPresent()) {
-                baritone.getLookBehavior().updateTarget(reachable.get(), true);
+            Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, ctx.playerController().getBlockReachDistance(), InteractionPlan.Click.RIGHT);
+            if (plan.isPresent()) {
                 if (knownLocations.contains(ctx.getSelectedBlock().orElse(null))) {
-                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true); // TODO find some way to right click even if we're in an ESC menu
+                    plan.get().pause(baritone, () -> {}, () -> true); // TODO find some way to right click even if we're in an ESC menu
                     System.out.println(ctx.player().containerMenu);
                     if (!(ctx.player().containerMenu instanceof InventoryMenu)) {
                         return true;
                     }
+                } else {
+                    plan.get().pause(baritone, () -> {}, () -> false);
                 }
                 if (arrivalTickCount++ > 20) {
                     logDirect("Right click timed out");

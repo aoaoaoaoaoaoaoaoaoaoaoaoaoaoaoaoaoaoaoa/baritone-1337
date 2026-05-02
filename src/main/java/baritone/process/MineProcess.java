@@ -7,7 +7,6 @@ import baritone.api.process.IMineProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.*;
-import baritone.api.utils.input.Input;
 import baritone.cache.CachedChunk;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
@@ -107,14 +106,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             BlockPos pos = shaft.get();
             BlockState state = baritone.bsi.get0(pos);
             if (!MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), state)) {
-                Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
-                if (rot.isPresent() && isSafeToCancel) {
-                    baritone.getLookBehavior().updateTarget(rot.get(), true);
-                    MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos));
-                    if (ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
-                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
-                    }
-                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, InteractionPlan.Click.LEFT);
+                if (plan.isPresent() && isSafeToCancel) {
+                    return plan.get().pause(
+                            baritone,
+                            () -> MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos)),
+                            () -> ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(plan.get().rotation())
+                    );
                 }
             }
         }

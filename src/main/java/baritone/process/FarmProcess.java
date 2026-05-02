@@ -11,9 +11,6 @@ import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.RayTraceUtils;
-import baritone.api.utils.Rotation;
-import baritone.api.utils.RotationUtils;
-import baritone.api.utils.input.Input;
 import baritone.pathing.movement.MovementHelper;
 import baritone.utils.BaritoneProcessHelper;
 import net.minecraft.core.BlockPos;
@@ -252,14 +249,9 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             if (playerPos.distSqr(pos) > blockReachDistance * blockReachDistance) {
                 continue;
             }
-            Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
-            if (rot.isPresent() && isSafeToCancel) {
-                baritone.getLookBehavior().updateTarget(rot.get(), true);
-                MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos));
-                if (ctx.isLookingAt(pos)) {
-                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
-                }
-                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, InteractionPlan.Click.LEFT);
+            if (plan.isPresent() && isSafeToCancel) {
+                return plan.get().pause(baritone, () -> MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos)), () -> ctx.isLookingAt(pos));
             }
         }
         ArrayList<BlockPos> both = new ArrayList<>(openFarmland);
@@ -269,15 +261,12 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
                 continue;
             }
             boolean soulsand = openSoulsand.contains(pos);
-            Optional<Rotation> rot = RotationUtils.reachableOffset(ctx, pos, new Vec3(pos.getX() + 0.5, pos.getY() + 1, pos.getZ() + 0.5), blockReachDistance, false);
-            if (rot.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, soulsand ? this::isNetherWart : this::isPlantable)) {
-                HitResult result = RayTraceUtils.rayTraceTowards(ctx.player(), rot.get(), blockReachDistance);
+            Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachableOffset(
+                    ctx, pos, new Vec3(pos.getX() + 0.5, pos.getY() + 1, pos.getZ() + 0.5), blockReachDistance, false, InteractionPlan.Click.RIGHT);
+            if (plan.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, soulsand ? this::isNetherWart : this::isPlantable)) {
+                HitResult result = RayTraceUtils.rayTraceTowards(ctx.player(), plan.get().rotation(), blockReachDistance);
                 if (result instanceof BlockHitResult && ((BlockHitResult) result).getDirection() == Direction.UP) {
-                    baritone.getLookBehavior().updateTarget(rot.get(), true);
-                    if (ctx.isLookingAt(pos)) {
-                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
-                    }
-                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                    return plan.get().pause(baritone, () -> {}, () -> ctx.isLookingAt(pos));
                 }
             }
         }
@@ -290,15 +279,11 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
                     continue;
                 }
                 Vec3 faceCenter = Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(dir.getUnitVec3i()).scale(0.5));
-                Optional<Rotation> rot = RotationUtils.reachableOffset(ctx, pos, faceCenter, blockReachDistance, false);
-                if (rot.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, this::isCocoa)) {
-                    HitResult result = RayTraceUtils.rayTraceTowards(ctx.player(), rot.get(), blockReachDistance);
+                Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachableOffset(ctx, pos, faceCenter, blockReachDistance, false, InteractionPlan.Click.RIGHT);
+                if (plan.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, this::isCocoa)) {
+                    HitResult result = RayTraceUtils.rayTraceTowards(ctx.player(), plan.get().rotation(), blockReachDistance);
                     if (result instanceof BlockHitResult && ((BlockHitResult) result).getDirection() == dir) {
-                        baritone.getLookBehavior().updateTarget(rot.get(), true);
-                        if (ctx.isLookingAt(pos)) {
-                            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
-                        }
-                        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                        return plan.get().pause(baritone, () -> {}, () -> ctx.isLookingAt(pos));
                     }
                 }
             }
@@ -307,13 +292,9 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             if (playerPos.distSqr(pos) > blockReachDistance * blockReachDistance) {
                 continue;
             }
-            Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
-            if (rot.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, this::isBoneMeal)) {
-                baritone.getLookBehavior().updateTarget(rot.get(), true);
-                if (ctx.isLookingAt(pos)) {
-                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
-                }
-                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, InteractionPlan.Click.RIGHT);
+            if (plan.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, this::isBoneMeal)) {
+                return plan.get().pause(baritone, () -> {}, () -> ctx.isLookingAt(pos));
             }
         }
 
