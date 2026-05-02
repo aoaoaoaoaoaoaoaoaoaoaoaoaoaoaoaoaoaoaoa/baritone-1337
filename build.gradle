@@ -25,7 +25,6 @@ allprojects {
     }
 
     version = rootProject.mod_version
-    println "Using version number: " + version
     group = rootProject.maven_group
 
     java {
@@ -113,14 +112,6 @@ sourceSets {
     launch {
         compileClasspath += main.compileClasspath + main.runtimeClasspath + main.output
         runtimeClasspath += main.compileClasspath + main.runtimeClasspath + main.output
-    }
-    schematica_api {
-        compileClasspath += main.compileClasspath
-        runtimeClasspath += main.runtimeClasspath
-    }
-    main {
-        compileClasspath += schematica_api.output
-        runtimeClasspath += schematica_api.output
     }
 }
 
