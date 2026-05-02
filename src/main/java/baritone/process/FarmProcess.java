@@ -47,13 +47,8 @@ import java.util.function.Predicate;
 
 public final class FarmProcess extends BaritoneProcessHelper implements IFarmProcess {
 
-    private boolean active;
-
-    private List<BlockPos> locations;
+    private volatile State state = new State.Idle();
     private int tickCount;
-
-    private int range;
-    private BlockPos center;
 
     private static final List<Item> FARMLAND_PLANTABLE = Arrays.asList(
             Items.BEETROOT_SEEDS,
@@ -89,19 +84,14 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
 
     @Override
     public boolean isActive() {
-        return active;
+        return state instanceof State.Active;
     }
 
     @Override
     public void farm(int range, BlockPos pos) {
-        if (pos == null) {
-            center = baritone.getPlayerContext().playerFeet();
-        } else {
-            center = pos;
-        }
-        this.range = range;
-        active = true;
-        locations = null;
+        BlockPos center = pos == null ? baritone.getPlayerContext().playerFeet() : pos;
+        tickCount = 0;
+        state = new State.Active(range, center, null);
     }
 
     private enum Harvest {
@@ -185,6 +175,7 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
 
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+        State.Active active = active();
         if (Baritone.settings().mineGoalUpdateInterval.value != 0 && tickCount++ % Baritone.settings().mineGoalUpdateInterval.value == 0) {
             ArrayList<Block> scan = new ArrayList<>();
             for (Harvest harvest : Harvest.values()) {
@@ -198,9 +189,14 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
                 }
             }
 
-            Baritone.getExecutor().execute(() -> locations = BaritoneAPI.getProvider().getWorldScanner().scanChunkRadius(ctx, scan, Baritone.settings().farmMaxScanSize.value, 10, 10));
+            Baritone.getExecutor().execute(() -> {
+                List<BlockPos> scanned = BaritoneAPI.getProvider().getWorldScanner().scanChunkRadius(ctx, scan, Baritone.settings().farmMaxScanSize.value, 10, 10);
+                if (state == active) {
+                    state = active.withLocations(scanned);
+                }
+            });
         }
-        if (locations == null) {
+        if (active.locations() == null) {
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
         List<BlockPos> toBreak = new ArrayList<>();
@@ -208,9 +204,9 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
         List<BlockPos> bonemealable = new ArrayList<>();
         List<BlockPos> openSoulsand = new ArrayList<>();
         List<BlockPos> openLog = new ArrayList<>();
-        for (BlockPos pos : locations) {
+        for (BlockPos pos : active.locations()) {
             //check if the target block is out of range.
-            if (range != 0 && pos.distSqr(center) > range * range) {
+            if (active.range() != 0 && pos.distSqr(active.center()) > active.range() * active.range()) {
                 continue;
             }
 
@@ -380,11 +376,28 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
 
     @Override
     public void onLostControl() {
-        active = false;
+        state = new State.Idle();
     }
 
     @Override
     public String displayName0() {
         return "Farming";
+    }
+
+    private State.Active active() {
+        if (state instanceof State.Active active) {
+            return active;
+        }
+        throw new IllegalStateException("Inactive FarmProcess tick");
+    }
+
+    private sealed interface State {
+        record Idle() implements State {}
+
+        record Active(int range, BlockPos center, List<BlockPos> locations) implements State {
+            Active withLocations(List<BlockPos> locations) {
+                return new Active(range, center, locations);
+            }
+        }
     }
 }

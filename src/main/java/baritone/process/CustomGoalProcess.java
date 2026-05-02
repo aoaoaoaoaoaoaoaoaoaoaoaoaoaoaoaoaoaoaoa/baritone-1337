@@ -17,21 +17,11 @@ import net.minecraft.network.chat.Component;
 public final class CustomGoalProcess extends BaritoneProcessHelper implements ICustomGoalProcess {
 
     /**
-     * The current goal
-     */
-    private Goal goal;
-
-    /**
      * The most recent goal. Not invalidated upon {@link #onLostControl()}
      */
     private Goal mostRecentGoal;
 
-    /**
-     * The current process state.
-     *
-     * @see State
-     */
-    private State state = State.NONE;
+    private State state = new State.Idle();
 
     public CustomGoalProcess(Baritone baritone) {
         super(baritone);
@@ -39,27 +29,26 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
 
     @Override
     public void setGoal(Goal goal) {
-        this.goal = goal;
         this.mostRecentGoal = goal;
         if (baritone.getElytraProcess().isActive()) {
             baritone.getElytraProcess().pathTo(goal);
         }
-        if (this.state == State.NONE) {
-            this.state = State.GOAL_SET;
-        }
-        if (this.state == State.EXECUTING) {
-            this.state = State.PATH_REQUESTED;
-        }
+        this.state = switch (this.state) {
+            case State.Idle() -> new State.GoalSet(goal);
+            case State.GoalSet(_) -> new State.GoalSet(goal);
+            case State.PathRequested(_) -> new State.PathRequested(goal);
+            case State.Executing(_) -> new State.PathRequested(goal);
+        };
     }
 
     @Override
     public void path() {
-        this.state = State.PATH_REQUESTED;
+        this.state = state.goal() == null ? state : new State.PathRequested(state.goal());
     }
 
     @Override
     public Goal getGoal() {
-        return this.goal;
+        return this.state.goal();
     }
 
     @Override
@@ -69,25 +58,25 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
 
     @Override
     public boolean isActive() {
-        return this.state != State.NONE;
+        return !(this.state instanceof State.Idle);
     }
 
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
-        switch (this.state) {
-            case GOAL_SET:
-                return new PathingCommand(this.goal, PathingCommandType.CANCEL_AND_SET_GOAL);
-            case PATH_REQUESTED:
+        return switch (this.state) {
+            case State.Idle() -> throw new IllegalStateException("Inactive CustomGoalProcess tick");
+            case State.GoalSet(var goal) -> new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
+            case State.PathRequested(var goal) -> {
                 // return FORCE_REVALIDATE_GOAL_AND_PATH just once
-                PathingCommand ret = new PathingCommand(this.goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
-                this.state = State.EXECUTING;
-                return ret;
-            case EXECUTING:
+                this.state = new State.Executing(goal);
+                yield new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
+            }
+            case State.Executing(var goal) -> {
                 if (calcFailed) {
                     onLostControl();
-                    return new PathingCommand(this.goal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                    yield new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
                 }
-                if (this.goal == null || (this.goal.isInGoal(ctx.playerFeet()) && this.goal.isInGoal(baritone.getPathingBehavior().pathStart()))) {
+                if (goal.isInGoal(ctx.playerFeet()) && goal.isInGoal(baritone.getPathingBehavior().pathStart())) {
                     onLostControl(); // we're there xd
                     if (Baritone.settings().disconnectOnArrival.value) {
                         if (ctx.world() instanceof ClientLevel clientLevel) {
@@ -97,29 +86,34 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
                     if (Baritone.settings().notificationOnPathComplete.value) {
                         logNotification("Pathing complete", false);
                     }
-                    return new PathingCommand(this.goal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                    yield new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
                 }
-                return new PathingCommand(this.goal, PathingCommandType.SET_GOAL_AND_PATH);
-            default:
-                throw new IllegalStateException("Unexpected state " + this.state);
-        }
+                yield new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
+            }
+        };
     }
 
     @Override
     public void onLostControl() {
-        this.state = State.NONE;
-        this.goal = null;
+        this.state = new State.Idle();
     }
 
     @Override
     public String displayName0() {
-        return "Custom Goal " + this.goal;
+        return "Custom Goal " + this.state.goal();
     }
 
-    protected enum State {
-        NONE,
-        GOAL_SET,
-        PATH_REQUESTED,
-        EXECUTING
+    private sealed interface State {
+        default Goal goal() {
+            return null;
+        }
+
+        record Idle() implements State {}
+
+        record GoalSet(Goal goal) implements State {}
+
+        record PathRequested(Goal goal) implements State {}
+
+        record Executing(Goal goal) implements State {}
     }
 }
