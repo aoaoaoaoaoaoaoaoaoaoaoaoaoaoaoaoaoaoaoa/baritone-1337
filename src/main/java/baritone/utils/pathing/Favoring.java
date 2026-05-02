@@ -22,7 +22,7 @@ public final class Favoring {
     public Favoring(IPath previous, CalculationContext context) { // create one just from previous path, no mob avoidances
         favorings = new Long2DoubleOpenHashMap();
         favorings.defaultReturnValue(1.0D);
-        double coeff = context.backtrackCostFavoringCoefficient;
+        double coeff = context.costs.backtrackFavoringCoefficient();
         if (coeff != 1D && previous != null) {
             previous.positions().forEach(pos -> favorings.put(BlockKey.pack(pos.getX(), pos.getY(), pos.getZ()), coeff));
         }

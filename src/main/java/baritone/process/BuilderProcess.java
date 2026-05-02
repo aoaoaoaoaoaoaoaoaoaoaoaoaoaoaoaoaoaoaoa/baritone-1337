@@ -1047,8 +1047,9 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             this.originY = origin.getY();
             this.originZ = origin.getZ();
 
-            this.jumpPenalty += 10;
-            this.backtrackCostFavoringCoefficient = 1;
+            this.costs = this.costs
+                    .withJumpPenalty(this.costs.jumpPenalty() + 10)
+                    .withBacktrackFavoringCoefficient(1);
         }
 
         private BlockState getSchematic(int x, int y, int z, BlockState current) {
@@ -1070,7 +1071,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                 if (sch.getBlock() instanceof AirBlock) {
                     // we want this to be air, but they're asking if they can place here
                     // this won't be a schematic block, this will be a throwaway
-                    return placeBlockCost * Baritone.settings().placeIncorrectBlockPenaltyMultiplier.value; // we're going to have to break it eventually
+                    return placement.blockCost() * Baritone.settings().placeIncorrectBlockPenaltyMultiplier.value; // we're going to have to break it eventually
                 }
                 if (placeable.contains(sch)) {
                     return 0; // thats right we gonna make it FREE to place a block where it should go in a structure
@@ -1078,15 +1079,15 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                     // i'm such an idiot that i just tried to copy and paste the epic gamer moment emoji too
                     // get added to unicode when?
                 }
-                if (!hasThrowaway) {
+                if (!placement.hasThrowaway()) {
                     return COST_INF;
                 }
                 // we want it to be something that we don't have
                 // even more of a pain to place something wrong
-                return placeBlockCost * 1.5 * Baritone.settings().placeIncorrectBlockPenaltyMultiplier.value;
+                return placement.blockCost() * 1.5 * Baritone.settings().placeIncorrectBlockPenaltyMultiplier.value;
             } else {
-                if (hasThrowaway) {
-                    return placeBlockCost;
+                if (placement.hasThrowaway()) {
+                    return placement.blockCost();
                 } else {
                     return COST_INF;
                 }
@@ -1095,7 +1096,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
 
         @Override
         public double breakCostMultiplierAt(int x, int y, int z, BlockState current) {
-            if ((!allowBreak && !allowBreakAnyway.contains(current.getBlock())) || isPossiblyProtected(x, y, z)) {
+            if (!breaking.allows(current.getBlock()) || isPossiblyProtected(x, y, z)) {
                 return COST_INF;
             }
             BlockState sch = getSchematic(x, y, z, current);

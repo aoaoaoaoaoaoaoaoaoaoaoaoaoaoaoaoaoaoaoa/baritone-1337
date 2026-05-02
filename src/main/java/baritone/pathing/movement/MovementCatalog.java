@@ -17,7 +17,7 @@ public final class MovementCatalog {
         primitives.add(new LegacyMovesPrimitive(move));
       }
     }
-    if (context.allowObliqueWalk) {
+    if (context.movement.allowObliqueWalk()) {
       for (int[] stride : ObliqueMovementPrimitive.STRIDES) {
         primitives.add(new ObliqueMovementPrimitive(stride[0], stride[1]));
       }
@@ -39,8 +39,8 @@ public final class MovementCatalog {
 
   private static boolean enabled(CalculationContext context, Moves move) {
     return switch (move) {
-      case DOWNWARD -> context.allowDownward;
-      case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> context.allowParkour;
+      case DOWNWARD -> context.movement.allowDownward();
+      case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> context.movement.allowParkour();
       default -> true;
     };
   }

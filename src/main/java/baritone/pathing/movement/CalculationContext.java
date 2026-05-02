@@ -10,7 +10,6 @@ import baritone.pathing.calc.PathingProfiler;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
-import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -39,32 +38,11 @@ public class CalculationContext {
   public final WorldData worldData;
   public final BlockStateInterface bsi;
   public final ToolSet toolSet;
-  public final boolean hasWaterBucket;
-  public final boolean hasThrowaway;
-  public final boolean canSprint;
-  protected final double placeBlockCost; // protected because you should call the function instead
-  public final boolean allowBreak;
-  public final List<Block> allowBreakAnyway;
-  public final boolean allowParkour;
-  public final boolean allowParkourPlace;
-  public final boolean allowJumpAtBuildLimit;
-  public final boolean allowParkourAscend;
-  public final boolean assumeWalkOnWater;
-  public boolean allowFallIntoLava;
-  public final int frostWalker;
-  public final boolean allowDiagonalDescend;
-  public final boolean allowDiagonalAscend;
-  public final boolean allowObliqueWalk;
-  public final boolean allowDownward;
-  public int minFallHeight;
-  public int maxFallHeightNoWater;
-  public final int maxFallHeightBucket;
-  public final double waterWalkSpeed;
-  public final double breakBlockAdditionalCost;
-  public double backtrackCostFavoringCoefficient;
-  public double jumpPenalty;
-  public final double walkOnWaterOnePenalty;
-  public final boolean allowWalkOnMagmaBlocks;
+  public final PlacementPolicy placement;
+  public final BreakPolicy breaking;
+  public final MovementPolicy movement;
+  public FallPolicy fall;
+  public CostPolicy costs;
   public final BetterWorldBorder worldBorder;
 
   public final BlockAffordanceCache affordances;
@@ -83,18 +61,6 @@ public class CalculationContext {
     this.worldData = (WorldData) baritone.getPlayerContext().worldData();
     this.bsi = new BlockStateInterface(baritone.getPlayerContext(), forUseOnAnotherThread);
     this.toolSet = new ToolSet(player);
-    this.hasThrowaway = Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
-    this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER;
-    this.canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
-    this.placeBlockCost = Baritone.settings().blockPlacementPenalty.value;
-    this.allowBreak = Baritone.settings().allowBreak.value;
-    this.allowBreakAnyway = new ArrayList<>(Baritone.settings().allowBreakAnyway.value);
-    this.allowParkour = Baritone.settings().allowParkour.value;
-    this.allowParkourPlace = Baritone.settings().allowParkourPlace.value;
-    this.allowJumpAtBuildLimit = Baritone.settings().allowJumpAtBuildLimit.value;
-    this.allowParkourAscend = Baritone.settings().allowParkourAscend.value;
-    this.assumeWalkOnWater = Baritone.settings().assumeWalkOnWater.value;
-    this.allowFallIntoLava = false; // Super secret internal setting for ElytraBehavior
     // todo: technically there can now be datapack enchants that replace blocks with any other at any range
     int frostWalkerLevel = 0;
     for (EquipmentSlot slot : EquipmentSlot.values()) {
@@ -105,14 +71,6 @@ public class CalculationContext {
         }
       }
     }
-    this.frostWalker = frostWalkerLevel;
-    this.allowDiagonalDescend = Baritone.settings().allowDiagonalDescend.value;
-    this.allowDiagonalAscend = Baritone.settings().allowDiagonalAscend.value;
-    this.allowObliqueWalk = Baritone.settings().allowObliqueWalk.value;
-    this.allowDownward = Baritone.settings().allowDownward.value;
-    this.minFallHeight = 3; // Minimum fall height used by MovementFall
-    this.maxFallHeightNoWater = Baritone.settings().maxFallHeightNoWater.value;
-    this.maxFallHeightBucket = Baritone.settings().maxFallHeightBucket.value;
     float waterSpeedMultiplier = 1.0f;
   OUTER:
     for (EquipmentSlot slot : EquipmentSlot.values()) {
@@ -127,12 +85,42 @@ public class CalculationContext {
         }
       }
     }
-    this.waterWalkSpeed = ActionCosts.WALK_ONE_IN_WATER_COST * (1 - waterSpeedMultiplier) + ActionCosts.WALK_ONE_BLOCK_COST * waterSpeedMultiplier;
-    this.breakBlockAdditionalCost = Baritone.settings().blockBreakAdditionalPenalty.value;
-    this.backtrackCostFavoringCoefficient = Baritone.settings().backtrackCostFavoringCoefficient.value;
-    this.jumpPenalty = Baritone.settings().jumpPenalty.value;
-    this.walkOnWaterOnePenalty = Baritone.settings().walkOnWaterOnePenalty.value;
-    this.allowWalkOnMagmaBlocks = Baritone.settings().allowWalkOnMagmaBlocks.value;
+    double waterWalkSpeed = ActionCosts.WALK_ONE_IN_WATER_COST * (1 - waterSpeedMultiplier) + ActionCosts.WALK_ONE_BLOCK_COST * waterSpeedMultiplier;
+    this.placement = new PlacementPolicy(
+        Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(),
+        Baritone.settings().blockPlacementPenalty.value,
+        Baritone.settings().allowPlaceInFluidsSource.value,
+        Baritone.settings().allowPlaceInFluidsFlow.value
+    );
+    this.breaking = new BreakPolicy(Baritone.settings().allowBreak.value, Baritone.settings().allowBreakAnyway.value);
+    this.movement = new MovementPolicy(
+        Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6,
+        Baritone.settings().allowParkour.value,
+        Baritone.settings().allowParkourPlace.value,
+        Baritone.settings().allowJumpAtBuildLimit.value,
+        Baritone.settings().allowParkourAscend.value,
+        Baritone.settings().assumeWalkOnWater.value,
+        frostWalkerLevel,
+        Baritone.settings().allowDiagonalDescend.value,
+        Baritone.settings().allowDiagonalAscend.value,
+        Baritone.settings().allowObliqueWalk.value,
+        Baritone.settings().allowDownward.value,
+        Baritone.settings().allowWalkOnMagmaBlocks.value
+    );
+    this.fall = new FallPolicy(
+        Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
+        false,
+        3,
+        Baritone.settings().maxFallHeightNoWater.value,
+        Baritone.settings().maxFallHeightBucket.value
+    );
+    this.costs = new CostPolicy(
+        Baritone.settings().blockBreakAdditionalPenalty.value,
+        Baritone.settings().backtrackCostFavoringCoefficient.value,
+        Baritone.settings().jumpPenalty.value,
+        Baritone.settings().walkOnWaterOnePenalty.value,
+        waterWalkSpeed
+    );
     // why cache these things here, why not let the movements just get directly from settings?
     // because if some movements are calculated one way and others are calculated another way,
     // then you get a wildly inconsistent path that isn't optimal for either scenario.
@@ -167,7 +155,7 @@ public class CalculationContext {
   }
 
   double uncachedCostOfPlacingAt(int x, int y, int z, BlockState current) {
-    if (!hasThrowaway) { // only true if allowPlace is true, see constructor
+    if (!placement.hasThrowaway()) { // only true if allowPlace is true, see constructor
       return COST_INF;
     }
     if (isPossiblyProtected(x, y, z)) {
@@ -176,17 +164,17 @@ public class CalculationContext {
     if (!worldBorder.canPlaceAt(x, z)) {
       return COST_INF;
     }
-    if (!Baritone.settings().allowPlaceInFluidsSource.value && current.getFluidState().isSource()) {
+    if (!placement.allowInSourceFluid() && current.getFluidState().isSource()) {
       return COST_INF;
     }
-    if (!Baritone.settings().allowPlaceInFluidsFlow.value && !current.getFluidState().isEmpty() && !current.getFluidState().isSource()) {
+    if (!placement.allowInFlowingFluid() && !current.getFluidState().isEmpty() && !current.getFluidState().isSource()) {
       return COST_INF;
     }
-    return placeBlockCost;
+    return placement.blockCost();
   }
 
   public double breakCostMultiplierAt(int x, int y, int z, BlockState current) {
-    if (!allowBreak && !allowBreakAnyway.contains(current.getBlock())) {
+    if (!breaking.allows(current.getBlock())) {
       return COST_INF;
     }
     if (isPossiblyProtected(x, y, z)) {
@@ -196,7 +184,7 @@ public class CalculationContext {
   }
 
   public double placeBucketCost() {
-    return placeBlockCost; // shrug
+    return placement.blockCost(); // shrug
   }
 
   public boolean isPossiblyProtected(int x, int y, int z) {

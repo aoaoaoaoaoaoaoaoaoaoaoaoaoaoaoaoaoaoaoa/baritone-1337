@@ -434,9 +434,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
 
         public WalkOffCalculationContext(IBaritone baritone) {
             super(baritone, true);
-            this.allowFallIntoLava = true;
-            this.minFallHeight = 8;
-            this.maxFallHeightNoWater = 10000;
+            this.fall = this.fall.walkOffIntoLava();
         }
 
         @Override

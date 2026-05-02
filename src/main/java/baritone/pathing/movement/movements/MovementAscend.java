@@ -109,7 +109,7 @@ public class MovementAscend extends Movement {
     if (jumpingToBottomSlab) {
       if (jumpingFromBottomSlab) {
         walk = Math.max(JUMP_ONE_BLOCK_COST, WALK_ONE_BLOCK_COST); // we hit space immediately on entering this action
-        walk += context.jumpPenalty;
+        walk += context.costs.jumpPenalty();
       } else {
         walk = WALK_ONE_BLOCK_COST; // we don't hit space we just walk into the slab
       }
@@ -122,7 +122,7 @@ public class MovementAscend extends Movement {
       } else {
         walk = Math.max(JUMP_ONE_BLOCK_COST, WALK_ONE_BLOCK_COST);
       }
-      walk += context.jumpPenalty;
+      walk += context.costs.jumpPenalty();
     }
 
     double totalCost = walk + additionalPlacementCost;

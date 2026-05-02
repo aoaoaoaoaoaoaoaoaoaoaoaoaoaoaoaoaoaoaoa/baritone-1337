@@ -102,7 +102,7 @@ public class MovementDiagonal extends Movement {
     boolean sneaking = false;
     if (!MovementHelper.canWalkThrough(context, destX, y, destZ, destInto)) {
       ascend = true;
-      if (!context.allowDiagonalAscend || !MovementHelper.canWalkThrough(context, x, y + 2, z) || !MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
+      if (!context.movement.allowDiagonalAscend() || !MovementHelper.canWalkThrough(context, x, y + 2, z) || !MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
           || !MovementHelper.canWalkThrough(context, destX, y + 2, destZ)) {
         return;
       }
@@ -115,23 +115,23 @@ public class MovementDiagonal extends Movement {
       frostWalker = standingOnABlock && MovementHelper.canUseFrostWalker(context, destWalkOn);
       if (!frostWalker && !MovementHelper.canWalkOn(context, destX, y - 1, destZ, destWalkOn)) {
         descend = true;
-        if (!context.allowDiagonalDescend || !MovementHelper.canWalkOn(context, destX, y - 2, destZ) || !MovementHelper.canWalkThrough(context, destX, y - 1, destZ, destWalkOn)) {
+        if (!context.movement.allowDiagonalDescend() || !MovementHelper.canWalkOn(context, destX, y - 2, destZ) || !MovementHelper.canWalkThrough(context, destX, y - 1, destZ, destWalkOn)) {
           return;
         }
       }
-      frostWalker &= !context.assumeWalkOnWater; // do this after checking for descends because jesus can't prevent the water from freezing, it just prevents us from relying on the water freezing
+      frostWalker &= !context.movement.assumeWalkOnWater(); // do this after checking for descends because jesus can't prevent the water from freezing, it just prevents us from relying on the water freezing
     }
     double multiplier = WALK_ONE_BLOCK_COST;
     // For either possible soul sand, that affects half of our walking
     if (destWalkOn.is(Blocks.SOUL_SAND)) {
       multiplier += (WALK_ONE_OVER_SOUL_SAND_COST - WALK_ONE_BLOCK_COST) / 2;
-    } else if (context.allowWalkOnMagmaBlocks && destWalkOn.is(Blocks.MAGMA_BLOCK)) {
+    } else if (context.movement.allowWalkOnMagmaBlocks() && destWalkOn.is(Blocks.MAGMA_BLOCK)) {
       multiplier += (SNEAK_ONE_BLOCK_COST - WALK_ONE_BLOCK_COST) / 2;
       sneaking = true;
     } else if (frostWalker) {
       // frostwalker lets us walk on water without the penalty
     } else if (destWalkOn.getBlock() == Blocks.WATER) {
-      multiplier += context.walkOnWaterOnePenalty * SQRT_2;
+      multiplier += context.costs.walkOnWaterOnePenalty() * SQRT_2;
     }
     Block fromDownBlock = fromDown.getBlock();
     if (fromDownBlock == Blocks.LADDER || fromDownBlock == Blocks.VINE) {
@@ -139,16 +139,16 @@ public class MovementDiagonal extends Movement {
     }
     if (fromDownBlock == Blocks.SOUL_SAND) {
       multiplier += (WALK_ONE_OVER_SOUL_SAND_COST - WALK_ONE_BLOCK_COST) / 2;
-    } else if (context.allowWalkOnMagmaBlocks && fromDownBlock.equals(Blocks.MAGMA_BLOCK)) {
+    } else if (context.movement.allowWalkOnMagmaBlocks() && fromDownBlock.equals(Blocks.MAGMA_BLOCK)) {
       multiplier += (SNEAK_ONE_BLOCK_COST - WALK_ONE_BLOCK_COST) / 2;
       sneaking = true;
     }
     BlockState cuttingOver1 = context.get(x, y - 1, destZ);
-    if ((!context.allowWalkOnMagmaBlocks && cuttingOver1.is(Blocks.MAGMA_BLOCK)) || MovementHelper.isLava(cuttingOver1)) {
+    if ((!context.movement.allowWalkOnMagmaBlocks() && cuttingOver1.is(Blocks.MAGMA_BLOCK)) || MovementHelper.isLava(cuttingOver1)) {
       return;
     }
     BlockState cuttingOver2 = context.get(destX, y - 1, z);
-    if ((!context.allowWalkOnMagmaBlocks && cuttingOver2.is(Blocks.MAGMA_BLOCK)) || MovementHelper.isLava(cuttingOver2)) {
+    if ((!context.movement.allowWalkOnMagmaBlocks() && cuttingOver2.is(Blocks.MAGMA_BLOCK)) || MovementHelper.isLava(cuttingOver2)) {
       return;
     }
     boolean water = false;
@@ -161,7 +161,7 @@ public class MovementDiagonal extends Movement {
       // Ignore previous multiplier
       // Whatever we were walking on (possibly soul sand) doesn't matter as we're actually floating on water
       // Not even touching the blocks below
-      multiplier = context.waterWalkSpeed;
+      multiplier = context.costs.waterWalkSpeed();
       water = true;
     }
     BlockState pb0 = context.get(x, y, destZ);
@@ -220,7 +220,7 @@ public class MovementDiagonal extends Movement {
       }
     } else {
       // only can sprint if not edging around
-      if (context.canSprint && !water && !sneaking) {
+      if (context.movement.canSprint() && !water && !sneaking) {
         // If we aren't edging around anything, and we aren't in water
         // We can sprint =D
         // Don't check for soul sand, since we can sprint on that too

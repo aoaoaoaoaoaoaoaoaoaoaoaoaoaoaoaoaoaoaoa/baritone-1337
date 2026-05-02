@@ -55,7 +55,7 @@ public final class MovementOblique extends Movement {
         }
       }
     }
-    return SQRT_5 * (context.canSprint ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
+    return SQRT_5 * (context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
   }
 
   @Override

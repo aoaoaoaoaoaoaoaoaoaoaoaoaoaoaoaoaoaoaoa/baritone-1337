@@ -52,13 +52,13 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public double minimumCost(CalculationContext ctx) {
-    if (ctx.breakBlockAdditionalCost < 0 || ctx.placeBlockCost < 0) {
+    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0) {
       return 0;
     }
     return switch (move) {
       case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST ->
-        ctx.walkOnWaterOnePenalty < 0 ? 0 : Math.min(ctx.canSprint ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.waterWalkSpeed);
-      case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> ctx.jumpPenalty < 0 ? 0 : ActionCosts.WALK_ONE_BLOCK_COST;
+        ctx.costs.walkOnWaterOnePenalty() < 0 ? 0 : Math.min(ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.costs.waterWalkSpeed());
+      case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> ctx.costs.jumpPenalty() < 0 ? 0 : ActionCosts.WALK_ONE_BLOCK_COST;
       default -> 0;
     };
   }

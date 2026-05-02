@@ -68,13 +68,13 @@ public class MovementTraverse extends Movement {
     BlockState srcDown = hasFacts ? facts.srcDown : context.get(x, y - 1, z);
     Block srcDownBlock = hasFacts ? facts.srcDownBlock : srcDown.getBlock();
     boolean standingOnABlock = hasFacts ? facts.standingOnABlock : MovementHelper.mustBeSolidToWalkOn(context, x, y - 1, z, srcDown);
-    boolean frostWalker = standingOnABlock && !context.assumeWalkOnWater && MovementHelper.canUseFrostWalker(context, destOn);
+    boolean frostWalker = standingOnABlock && !context.movement.assumeWalkOnWater() && MovementHelper.canUseFrostWalker(context, destOn);
     if (frostWalker || MovementHelper.canWalkOn(context, destX, y - 1, destZ, destOn)) { // this is a walk, not a bridge
       double WC = WALK_ONE_BLOCK_COST;
       boolean water = false;
       boolean sneaking = false;
       if (MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1)) {
-        WC = context.waterWalkSpeed;
+        WC = context.costs.waterWalkSpeed();
         water = true;
       } else {
         if (destOn.getBlock() == Blocks.SOUL_SAND) {
@@ -82,11 +82,11 @@ public class MovementTraverse extends Movement {
         } else if (frostWalker) {
           // with frostwalker we can walk on water without the penalty, if we are sure we won't be using jesus
         } else if (destOn.getBlock() == Blocks.WATER) {
-          WC += context.walkOnWaterOnePenalty;
+          WC += context.costs.walkOnWaterOnePenalty();
         }
         if (srcDownBlock == Blocks.SOUL_SAND) {
           WC += (WALK_ONE_OVER_SOUL_SAND_COST - WALK_ONE_BLOCK_COST) / 2;
-        } else if (context.allowWalkOnMagmaBlocks && srcDownBlock.equals(Blocks.MAGMA_BLOCK)) {
+        } else if (context.movement.allowWalkOnMagmaBlocks() && srcDownBlock.equals(Blocks.MAGMA_BLOCK)) {
           sneaking = true;
           WC += (SNEAK_ONE_BLOCK_COST - WALK_ONE_BLOCK_COST) / 2;
         }
@@ -97,7 +97,7 @@ public class MovementTraverse extends Movement {
       }
       double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
       if (hardness1 == 0 && hardness2 == 0) {
-        if (!water && !sneaking && context.canSprint) {
+        if (!water && !sneaking && context.movement.canSprint()) {
           // If there's nothing in the way, and this isn't water, and we aren't sneak placing
           // We can sprint =D
           // Don't check for soul sand, since we can sprint on that too
@@ -129,7 +129,7 @@ public class MovementTraverse extends Movement {
           return COST_INF;
         }
         double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
-        double WC = throughWater ? context.waterWalkSpeed : WALK_ONE_BLOCK_COST;
+        double WC = throughWater ? context.costs.waterWalkSpeed() : WALK_ONE_BLOCK_COST;
         for (int i = 0; i < 5; i++) {
           int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepX();
           int againstY = y - 1 + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepY();

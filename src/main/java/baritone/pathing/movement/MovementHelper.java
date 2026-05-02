@@ -482,7 +482,7 @@ public interface MovementHelper extends ActionCosts, Helper {
   }
 
   static boolean canUseFrostWalker(CalculationContext context, BlockState state) {
-    return context.frostWalker != 0 && state == FrostedIceBlock.meltsInto() && state.getValue(LiquidBlock.LEVEL) == 0;
+    return context.movement.frostWalker() != 0 && state == FrostedIceBlock.meltsInto() && state.getValue(LiquidBlock.LEVEL) == 0;
   }
 
   static boolean canUseFrostWalker(IPlayerContext ctx, BlockPos pos) {
@@ -532,7 +532,7 @@ public interface MovementHelper extends ActionCosts, Helper {
       } else if (block instanceof LeavesBlock) {
         return true;
       }
-      if (context.assumeWalkOnWater) {
+      if (context.movement.assumeWalkOnWater()) {
         return false;
       }
       Block blockAbove = context.getBlock(x, y + 1, z);
@@ -603,7 +603,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         return COST_INF;
       }
       double result = 1 / strVsBlock;
-      result += context.breakBlockAdditionalCost;
+      result += context.costs.breakBlockAdditional();
       result *= mult;
       if (includeFalling) {
         BlockState above = context.get(x, y + 1, z);

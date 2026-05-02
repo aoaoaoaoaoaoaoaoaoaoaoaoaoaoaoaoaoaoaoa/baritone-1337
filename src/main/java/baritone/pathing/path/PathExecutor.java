@@ -79,6 +79,7 @@ public class PathExecutor implements IPathExecutor, Helper {
      * not sneaking out over lava), false otherwise
      */
     public boolean onTick() {
+        ExecutionPolicy policy = ExecutionPolicy.capture(behavior);
         if (pathPosition == path.length() - 1) {
             pathPosition++;
         }
@@ -184,7 +185,7 @@ public class PathExecutor implements IPathExecutor, Helper {
             costEstimateIndex = pathPosition;
             // do this only once, when the movement starts, and deliberately get the cost as cached when this path was calculated, not the cost as it is right now
             currentMovementOriginalCostEstimate = movement.getCost();
-            for (int i = 1; i < Baritone.settings().costVerificationLookahead.value && pathPosition + i < path.length() - 1; i++) {
+            for (int i = 1; i < policy.costVerificationLookahead() && pathPosition + i < path.length() - 1; i++) {
                 if (((Movement) path.movements().get(pathPosition + i)).calculateCost(behavior.secretInternalGetCalculationContext()) >= ActionCosts.COST_INF && canCancel) {
                     logDebug("Something has changed in the world and a future movement has become impossible. Cancelling.");
                     cancel();
@@ -198,7 +199,7 @@ public class PathExecutor implements IPathExecutor, Helper {
             cancel();
             return true;
         }
-        if (!movement.calculatedWhileLoaded() && currentCost - currentMovementOriginalCostEstimate > Baritone.settings().maxCostIncrease.value && canCancel) {
+        if (!movement.calculatedWhileLoaded() && currentCost - currentMovementOriginalCostEstimate > policy.maxCostIncrease() && canCancel) {
             // don't do this if the movement was calculated while loaded
             // that means that this isn't a cache error, it's just part of the path interfering with a later part
             logDebug("Original cost " + currentMovementOriginalCostEstimate + " current cost " + currentCost + ". Cancelling.");
@@ -223,12 +224,12 @@ public class PathExecutor implements IPathExecutor, Helper {
             onTick();
             return true;
         } else {
-            sprintNextTick = shouldSprintNextTick();
+            sprintNextTick = shouldSprintNextTick(policy);
             if (!sprintNextTick) {
                 ctx.player().setSprinting(false); // letting go of control doesn't make you stop sprinting actually
             }
             ticksOnCurrent++;
-            if (ticksOnCurrent > currentMovementOriginalCostEstimate + Baritone.settings().movementTimeoutTicks.value) {
+            if (ticksOnCurrent > currentMovementOriginalCostEstimate + policy.movementTimeoutTicks()) {
                 // only cancel if the total time has exceeded the initial estimate
                 // as you break the blocks required, the remaining cost goes down, to the point where
                 // ticksOnCurrent is greater than recalculateCost + 100
@@ -328,14 +329,14 @@ public class PathExecutor implements IPathExecutor, Helper {
         return true;
     }
 
-    private boolean shouldSprintNextTick() {
+    private boolean shouldSprintNextTick(ExecutionPolicy policy) {
         boolean requested = behavior.baritone.getInputOverrideHandler().isInputForcedDown(Input.SPRINT);
 
         // we'll take it from here, no need for minecraft to see we're holding down control and sprint for us
         behavior.baritone.getInputOverrideHandler().setInputForceState(Input.SPRINT, false);
 
         // first and foremost, if allowSprint is off, or if we don't have enough hunger, don't try and sprint
-        if (!new CalculationContext(behavior.baritone, false).canSprint) {
+        if (!new CalculationContext(behavior.baritone, false).movement.canSprint()) {
             return false;
         }
         IMovement current = path.movements().get(pathPosition);
@@ -343,7 +344,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         // traverse requests sprinting, so we need to do this check first
         if (current instanceof MovementTraverse && pathPosition < path.length() - 3) {
             IMovement next = path.movements().get(pathPosition + 1);
-            if (next instanceof MovementAscend && sprintableAscend(ctx, (MovementTraverse) current, (MovementAscend) next, path.movements().get(pathPosition + 2))) {
+            if (next instanceof MovementAscend && sprintableAscend(policy, ctx, (MovementTraverse) current, (MovementAscend) next, path.movements().get(pathPosition + 2))) {
                 if (skipNow(ctx, current)) {
                     logDebug("Skipping traverse to straight ascend");
                     pathPosition++;
@@ -372,7 +373,7 @@ public class PathExecutor implements IPathExecutor, Helper {
                     // frostwalker only works if you cross the edge of the block on ground so in some cases we may not overshoot
                     // Since MovementDescend can't know the next movement we have to tell it
                     if (next instanceof MovementTraverse || next instanceof MovementParkour) {
-                        boolean couldPlaceInstead = Baritone.settings().allowPlace.value && behavior.baritone.getInventoryBehavior().hasGenericThrowaway() && next instanceof MovementParkour; // traverse doesn't react fast enough
+                        boolean couldPlaceInstead = policy.canPlaceGeneric() && next instanceof MovementParkour; // traverse doesn't react fast enough
                         // this is true if the next movement does not ascend or descends and goes into the same cardinal direction (N-NE-E-SE-S-SW-W-NW) as the descend
                         // in that case current.getDirection() is e.g. (0, -1, 1) and next.getDirection() is e.g. (0, 0, 3) so the cross product of (0, 0, 1) and (0, 0, 3) is taken, which is (0, 0, 0) because the vectors are colinear (don't form a plane)
                         // since movements in exactly the opposite direction (e.g. descend (0, -1, 1) and traverse (0, 0, -1)) would also pass this check we also have to rule out that case
@@ -401,11 +402,11 @@ public class PathExecutor implements IPathExecutor, Helper {
                     logDebug("Skipping descend to straight ascend");
                     return true;
                 }
-                if (canSprintFromDescendInto(ctx, current, next)) {
+                if (canSprintFromDescendInto(policy, ctx, current, next)) {
 
                     if (next instanceof MovementDescend && pathPosition < path.length() - 3) {
                         IMovement next_next = path.movements().get(pathPosition + 2);
-                        if (next_next instanceof MovementDescend && !canSprintFromDescendInto(ctx, next, next_next)) {
+                        if (next_next instanceof MovementDescend && !canSprintFromDescendInto(policy, ctx, next, next_next)) {
                             return false;
                         }
 
@@ -433,7 +434,7 @@ public class PathExecutor implements IPathExecutor, Helper {
                     return true;
                 }
             }
-            if (pathPosition < path.length() - 2 && prev instanceof MovementTraverse && sprintableAscend(ctx, (MovementTraverse) prev, (MovementAscend) current, path.movements().get(pathPosition + 1))) {
+            if (pathPosition < path.length() - 2 && prev instanceof MovementTraverse && sprintableAscend(policy, ctx, (MovementTraverse) prev, (MovementAscend) current, path.movements().get(pathPosition + 1))) {
                 return true;
             }
         }
@@ -532,6 +533,30 @@ public class PathExecutor implements IPathExecutor, Helper {
 
     private record ClosestPathPosition(double distance, BlockPos pos) {}
 
+    private record ExecutionPolicy(
+            int costVerificationLookahead,
+            double maxCostIncrease,
+            int movementTimeoutTicks,
+            boolean canPlaceGeneric,
+            boolean sprintAscends,
+            boolean allowOvershootDiagonalDescend,
+            int maxPathHistoryLength,
+            int pathHistoryCutoffAmount
+    ) {
+        static ExecutionPolicy capture(PathingBehavior behavior) {
+            return new ExecutionPolicy(
+                    Baritone.settings().costVerificationLookahead.value,
+                    Baritone.settings().maxCostIncrease.value,
+                    Baritone.settings().movementTimeoutTicks.value,
+                    Baritone.settings().allowPlace.value && behavior.baritone.getInventoryBehavior().hasGenericThrowaway(),
+                    Baritone.settings().sprintAscends.value,
+                    Baritone.settings().allowOvershootDiagonalDescend.value,
+                    Baritone.settings().maxPathHistoryLength.value,
+                    Baritone.settings().pathHistoryCutoffAmount.value
+            );
+        }
+    }
+
     private static boolean skipNow(IPlayerContext ctx, IMovement current) {
         double offTarget = Math.abs(current.getDirection().getX() * (current.getSrc().z + 0.5D - ctx.player().position().z)) + Math.abs(current.getDirection().getZ() * (current.getSrc().x + 0.5D - ctx.player().position().x));
         if (offTarget > 0.1) {
@@ -547,8 +572,8 @@ public class PathExecutor implements IPathExecutor, Helper {
         return flatDist > 0.8;
     }
 
-    private static boolean sprintableAscend(IPlayerContext ctx, MovementTraverse current, MovementAscend next, IMovement nextnext) {
-        if (!Baritone.settings().sprintAscends.value) {
+    private static boolean sprintableAscend(ExecutionPolicy policy, IPlayerContext ctx, MovementTraverse current, MovementAscend next, IMovement nextnext) {
+        if (!policy.sprintAscends()) {
             return false;
         }
         if (!current.getDirection().equals(next.getDirection().below())) {
@@ -583,7 +608,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         return !MovementHelper.avoidWalkingInto(ctx.world().getBlockState(next.getDest().above(2))); // codacy smh my head
     }
 
-    private static boolean canSprintFromDescendInto(IPlayerContext ctx, IMovement current, IMovement next) {
+    private static boolean canSprintFromDescendInto(ExecutionPolicy policy, IPlayerContext ctx, IMovement current, IMovement next) {
         if (next instanceof MovementDescend && next.getDirection().equals(current.getDirection())) {
             return true;
         }
@@ -593,7 +618,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         if (next instanceof MovementTraverse && next.getDirection().equals(current.getDirection())) {
             return true;
         }
-        return next instanceof MovementDiagonal && Baritone.settings().allowOvershootDiagonalDescend.value;
+        return next instanceof MovementDiagonal && policy.allowOvershootDiagonalDescend();
     }
 
     private void onChangeInPathPosition() {
@@ -638,8 +663,9 @@ public class PathExecutor implements IPathExecutor, Helper {
     }
 
     private PathExecutor cutIfTooLong() {
-        if (pathPosition > Baritone.settings().maxPathHistoryLength.value) {
-            int cutoffAmt = Baritone.settings().pathHistoryCutoffAmount.value;
+        ExecutionPolicy policy = ExecutionPolicy.capture(behavior);
+        if (pathPosition > policy.maxPathHistoryLength()) {
+            int cutoffAmt = policy.pathHistoryCutoffAmount();
             CutoffPath newPath = new CutoffPath(path, cutoffAmt, path.length() - 1);
             if (!newPath.getDest().equals(path.getDest())) {
                 throw new IllegalStateException(String.format(

@@ -42,10 +42,10 @@ public class MovementParkour extends Movement {
 
   public static void cost(CalculationContext context, int x, int y, int z, Direction dir, EdgeEvalScratch res) {
     res.blocked();
-    if (!context.allowParkour) {
+    if (!context.movement.allowParkour()) {
       return;
     }
-    if (!context.allowJumpAtBuildLimit && y >= context.world.getMaxY()) {
+    if (!context.movement.allowJumpAtBuildLimit() && y >= context.world.getMaxY()) {
       return;
     }
     int xDiff = dir.getStepX();
@@ -76,18 +76,18 @@ public class MovementParkour extends Movement {
       return;
     }
     // we can't jump from (frozen) water with assumeWalkOnWater because we can't be sure it will be frozen
-    if (context.assumeWalkOnWater && !standingOn.getFluidState().isEmpty()) {
+    if (context.movement.assumeWalkOnWater() && !standingOn.getFluidState().isEmpty()) {
       return;
     }
     if (!context.get(x, y, z).getFluidState().isEmpty()) {
       return; // can't jump out of water
     }
     int maxJump;
-    if (context.allowWalkOnMagmaBlocks && standingOn.is(Blocks.MAGMA_BLOCK)) {
+    if (context.movement.allowWalkOnMagmaBlocks() && standingOn.is(Blocks.MAGMA_BLOCK)) {
       maxJump = 2;
     } else if (standingOn.getBlock() == Blocks.SOUL_SAND) {
       maxJump = 2; // 1 block gap
-    } else if (context.canSprint) {
+    } else if (context.movement.canSprint()) {
       maxJump = 4;
     } else {
       maxJump = 3;
@@ -110,9 +110,9 @@ public class MovementParkour extends Movement {
       // check for ascend landing position
       BlockState destInto = context.bsi.get0(destX, y, destZ);
       if (!MovementHelper.fullyPassable(context, destX, y, destZ, destInto)) {
-        if (i <= 3 && context.allowParkourAscend && context.canSprint && MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
+        if (i <= 3 && context.movement.allowParkourAscend() && context.movement.canSprint() && MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
             && checkOvershootSafety(context.bsi, destX + xDiff, y + 1, destZ + zDiff)) {
-          res.reachable(destX, y + 1, destZ, i * SPRINT_ONE_BLOCK_COST + context.jumpPenalty, 0);
+          res.reachable(destX, y + 1, destZ, i * SPRINT_ONE_BLOCK_COST + context.costs.jumpPenalty(), 0);
           return;
         }
         break;
@@ -123,9 +123,9 @@ public class MovementParkour extends Movement {
       // farmland needs to be canWalkOn otherwise farm can never work at all, but we want to specifically disallow ending a jump on farmland haha
       // frostwalker works here because we can't jump from possibly unfrozen water
       if ((landingOn.getBlock() != Blocks.FARMLAND && MovementHelper.canWalkOn(context, destX, y - 1, destZ, landingOn))
-          || (Math.min(16, context.frostWalker + 2) >= i && MovementHelper.canUseFrostWalker(context, landingOn))) {
+          || (Math.min(16, context.movement.frostWalker() + 2) >= i && MovementHelper.canUseFrostWalker(context, landingOn))) {
         if (checkOvershootSafety(context.bsi, destX + xDiff, y, destZ + zDiff)) {
-          res.reachable(destX, y, destZ, costFromJumpDistance(i) + context.jumpPenalty, 0);
+          res.reachable(destX, y, destZ, costFromJumpDistance(i) + context.costs.jumpPenalty(), 0);
           return;
         }
         break;
@@ -139,7 +139,7 @@ public class MovementParkour extends Movement {
     }
 
     // parkour place starts here
-    if (!context.allowParkourPlace) {
+    if (!context.movement.allowParkourPlace()) {
       return;
     }
     // check parkour jumps from largest to smallest for positions to place blocks
@@ -165,7 +165,7 @@ public class MovementParkour extends Movement {
           continue;
         }
         if (MovementHelper.canPlaceAgainst(context, againstX, againstY, againstZ)) {
-          res.reachable(destX, y, destZ, costFromJumpDistance(i) + placeCost + context.jumpPenalty, 0);
+          res.reachable(destX, y, destZ, costFromJumpDistance(i) + placeCost + context.costs.jumpPenalty(), 0);
           return;
         }
       }

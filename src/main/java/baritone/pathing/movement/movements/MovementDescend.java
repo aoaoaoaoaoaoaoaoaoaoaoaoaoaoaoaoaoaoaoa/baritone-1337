@@ -139,7 +139,7 @@ public class MovementDescend extends Movement {
         // this check prevents it from getting the block at y=(below whatever the minimum height is) and crashing
         return false;
       }
-      boolean reachedMinimum = fallHeight >= context.minFallHeight;
+      boolean reachedMinimum = fallHeight >= context.fall.minHeight();
       BlockState ontoBlock = context.get(destX, newY, destZ);
       int unprotectedFallHeight =
           fallHeight - (y - effectiveStartHeight); // equal to fallHeight - y + effectiveFallHeight, which is equal to -newY + effectiveFallHeight, which is equal to effectiveFallHeight - newY
@@ -148,7 +148,7 @@ public class MovementDescend extends Movement {
         if (!MovementHelper.canWalkThrough(context, destX, newY, destZ, ontoBlock)) {
           return false;
         }
-        if (context.assumeWalkOnWater) {
+        if (context.movement.assumeWalkOnWater()) {
           return false; // TODO fix
         }
         if (context.affordances.flowingFluid(destX, newY, destZ, ontoBlock)) {
@@ -162,7 +162,7 @@ public class MovementDescend extends Movement {
         res.reachable(destX, newY, destZ, tentativeCost, 0); // TODO incorporate water swim up cost?
         return false;
       }
-      if (reachedMinimum && context.allowFallIntoLava && MovementHelper.isLava(ontoBlock)) {
+      if (reachedMinimum && context.fall.allowIntoLava() && MovementHelper.isLava(ontoBlock)) {
         // found a fall into lava
         res.reachable(destX, newY, destZ, tentativeCost, 0);
         return false;
@@ -184,12 +184,12 @@ public class MovementDescend extends Movement {
       if (MovementHelper.isBottomSlab(ontoBlock)) {
         return false; // falling onto a half slab is really glitchy, and can cause more fall damage than we'd expect
       }
-      if (reachedMinimum && unprotectedFallHeight <= context.maxFallHeightNoWater + 1) {
+      if (reachedMinimum && unprotectedFallHeight <= context.fall.maxNoWater() + 1) {
         // fallHeight = 4 means onto.up() is 3 blocks down, which is the max
         res.reachable(destX, newY + 1, destZ, tentativeCost, 0);
         return false;
       }
-      if (reachedMinimum && context.hasWaterBucket && unprotectedFallHeight <= context.maxFallHeightBucket + 1) {
+      if (reachedMinimum && context.fall.hasWaterBucket() && unprotectedFallHeight <= context.fall.maxBucket() + 1) {
         res.reachable(destX, newY + 1, destZ, tentativeCost + context.placeBucketCost(), 0); // this is the block we're falling onto, so dest is +1
         return true;
       } else {
