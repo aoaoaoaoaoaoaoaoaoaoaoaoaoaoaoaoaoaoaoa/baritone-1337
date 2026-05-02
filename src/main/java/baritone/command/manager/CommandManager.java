@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.command.manager;
 
 import baritone.Baritone;
@@ -35,6 +18,7 @@ import net.minecraft.util.Tuple;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
+
 
 /**
  * The default, internal implementation of {@link ICommandManager}
@@ -95,8 +79,8 @@ public class CommandManager implements ICommandManager {
     @Override
     public Stream<String> tabComplete(String prefix) {
         Tuple<String, List<ICommandArgument>> pair = expand(prefix, true);
-        String label = pair.getFirst();
-        List<ICommandArgument> args = pair.getSecond();
+        String label = pair.getA();
+        List<ICommandArgument> args = pair.getB();
         if (args.isEmpty()) {
             return new TabCompleteHelper()
                     .addCommands(this.baritone.getCommandManager())
@@ -108,8 +92,8 @@ public class CommandManager implements ICommandManager {
     }
 
     private ExecutionWrapper from(Tuple<String, List<ICommandArgument>> expanded) {
-        String label = expanded.getFirst();
-        ArgConsumer args = new ArgConsumer(this, expanded.getSecond());
+        String label = expanded.getA();
+        ArgConsumer args = new ArgConsumer(this, expanded.getB());
 
         ICommand command = this.getCommand(label);
         return command == null ? null : new ExecutionWrapper(command, label, args);
@@ -126,6 +110,7 @@ public class CommandManager implements ICommandManager {
     }
 
     private static final class ExecutionWrapper {
+
         private ICommand command;
         private String label;
         private ArgConsumer args;

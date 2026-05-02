@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.process;
 
 import baritone.Baritone;
@@ -26,18 +9,16 @@ import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
 import baritone.pathing.path.PathExecutor;
 import baritone.utils.BaritoneProcessHelper;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.EmptyChunk;
-
 import java.util.*;
 import java.util.stream.Collectors;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.EmptyLevelChunk;
 
 public final class BackfillProcess extends BaritoneProcessHelper {
 
-    public HashMap<BlockPos, IBlockState> blocksToReplace = new HashMap<>();
+    public HashMap<BlockPos, BlockState> blocksToReplace = new HashMap<>();
 
     public BackfillProcess(Baritone baritone) {
         super(baritone);
@@ -57,7 +38,7 @@ public final class BackfillProcess extends BaritoneProcessHelper {
             return false;
         }
         for (BlockPos pos : new ArrayList<>(blocksToReplace.keySet())) {
-            if (ctx.world().getChunk(pos) instanceof EmptyChunk || ctx.world().getBlockState(pos).getBlock() != Blocks.AIR) {
+            if (ctx.world().getChunk(pos) instanceof EmptyLevelChunk || ctx.world().getBlockState(pos).getBlock() != Blocks.AIR) {
                 blocksToReplace.remove(pos);
             }
         }
@@ -104,9 +85,9 @@ public final class BackfillProcess extends BaritoneProcessHelper {
                 .keySet()
                 .stream()
                 .filter(pos -> ctx.world().getBlockState(pos).getBlock() == Blocks.AIR)
-                .filter(pos -> ctx.world().mayPlace(Blocks.DIRT, pos, false, EnumFacing.UP, null))
+                .filter(pos -> baritone.getBuilderProcess().placementPlausible(pos, Blocks.DIRT.defaultBlockState()))
                 .filter(pos -> !partOfCurrentMovement(pos))
-                .sorted(Comparator.<BlockPos>comparingDouble(ctx.player()::getDistanceSq).reversed())
+                .sorted(Comparator.<BlockPos>comparingDouble(ctx.playerFeet()::distSqr).reversed())
                 .collect(Collectors.toList());
     }
 

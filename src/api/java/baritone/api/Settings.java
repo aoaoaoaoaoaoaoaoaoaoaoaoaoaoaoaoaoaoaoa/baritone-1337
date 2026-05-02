@@ -1,32 +1,22 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api;
 
+import baritone.api.utils.Helper;
 import baritone.api.utils.NotificationHelper;
 import baritone.api.utils.SettingsUtil;
 import baritone.api.utils.TypeUtils;
 import baritone.api.utils.gui.BaritoneToast;
-import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
-import net.minecraft.init.Blocks;
-import net.minecraft.item.Item;
-import net.minecraft.util.math.Vec3i;
-import net.minecraft.util.text.ITextComponent;
+import net.minecraft.client.multiplayer.chat.GuiMessageTag;
+import net.minecraft.core.Vec3i;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.awt.*;
 import java.lang.annotation.ElementType;
@@ -38,6 +28,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -47,6 +38,7 @@ import java.util.function.Consumer;
  * @author leijurv
  */
 public final class Settings {
+    private static final Logger LOGGER = LoggerFactory.getLogger("Baritone");
 
     /**
      * Allow Baritone to break blocks
@@ -67,6 +59,16 @@ public final class Settings {
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);
+
+    /**
+     * Allow Baritone to place blocks in fluid source blocks
+     */
+    public final Setting<Boolean> allowPlaceInFluidsSource = new Setting<>(true);
+
+    /**
+     * Allow Baritone to place blocks in flowing fluid
+     */
+    public final Setting<Boolean> allowPlaceInFluidsFlow = new Setting<>(true);
 
     /**
      * Allow Baritone to move items in your inventory to your hotbar
@@ -166,6 +168,13 @@ public final class Settings {
      * <p>
      * Defaults to false because this fails on constantiam. Please let me know if this is ever disabled. Please.
      */
+    public final Setting<Boolean> allowJumpAtBuildLimit = new Setting<>(false);
+
+    /**
+     * Just here so mods that use the API don't break. Does nothing.
+     */
+    @Deprecated
+    @JavaOnly
     public final Setting<Boolean> allowJumpAt256 = new Setting<>(false);
 
     /**
@@ -192,6 +201,14 @@ public final class Settings {
     public final Setting<Boolean> allowDiagonalAscend = new Setting<>(false);
 
     /**
+     * Allow conservative flat (2,1)/(1,2) oblique walking primitives.
+     * <p>
+     * These are first-class A* edges, not path smoothing. The initial implementation refuses block breaking,
+     * placement, vertical deltas, liquids, and non-full support geometry.
+     */
+    public final Setting<Boolean> allowObliqueWalk = new Setting<>(true);
+
+    /**
      * Allow mining the block directly beneath its feet
      * <p>
      * Turn this off to force it to make more staircases and less shafts
@@ -202,18 +219,18 @@ public final class Settings {
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(
-            Item.getItemFromBlock(Blocks.DIRT),
-            Item.getItemFromBlock(Blocks.COBBLESTONE),
-            Item.getItemFromBlock(Blocks.NETHERRACK),
-            Item.getItemFromBlock(Blocks.STONE)
+            Blocks.DIRT.asItem(),
+            Blocks.COBBLESTONE.asItem(),
+            Blocks.NETHERRACK.asItem(),
+            Blocks.STONE.asItem()
     )));
 
     /**
      * Blocks that Baritone will attempt to avoid (Used in avoidance)
      */
-    public final Setting<List<Block>> blocksToAvoid = new Setting<>(new ArrayList<>(
-            // Leave Empty by Default
-    ));
+    public final Setting<List<Block>> blocksToAvoid = new Setting<>(new ArrayList<>(List.of(
+            Blocks.TRIPWIRE
+    )));
 
     /**
      * Blocks that Baritone is not allowed to break
@@ -228,11 +245,8 @@ public final class Settings {
     public final Setting<List<Block>> blocksToAvoidBreaking = new Setting<>(new ArrayList<>(Arrays.asList( // TODO can this be a HashSet or ImmutableSet?
             Blocks.CRAFTING_TABLE,
             Blocks.FURNACE,
-            Blocks.LIT_FURNACE,
             Blocks.CHEST,
-            Blocks.TRAPPED_CHEST,
-            Blocks.STANDING_SIGN,
-            Blocks.WALL_SIGN
+            Blocks.TRAPPED_CHEST
     )));
 
     /**
@@ -373,9 +387,20 @@ public final class Settings {
     public final Setting<Integer> rightClickSpeed = new Setting<>(4);
 
     /**
+     * How many degrees to randomize the yaw every tick. Set to 0 to disable
+     */
+    public final Setting<Double> randomLooking113 = new Setting<>(2d);
+
+    /**
      * Block reach distance
      */
     public final Setting<Float> blockReachDistance = new Setting<>(4.5f);
+
+    /**
+     * How many ticks between breaking a block and starting to break the next block. Default in game is 6 ticks.
+     * Values under 1 will be clamped. The delay only applies to non-instant (1-tick) breaks.
+     */
+    public final Setting<Integer> blockBreakSpeed = new Setting<>(6);
 
     /**
      * How many degrees to randomize the pitch and yaw every tick. Set to 0 to disable
@@ -640,13 +665,6 @@ public final class Settings {
     public final Setting<Boolean> logAsToast = new Setting<>(false);
 
     /**
-     * The time of how long the message in the pop-up will display
-     * <p>
-     * If below 1000L (1sec), it's better to disable this
-     */
-    public final Setting<Long> toastTimer = new Setting<>(5000L);
-
-    /**
      * Print all the debug messages to chat
      */
     public final Setting<Boolean> chatDebug = new Setting<>(false);
@@ -694,8 +712,7 @@ public final class Settings {
     public final Setting<Boolean> renderGoalIgnoreDepth = new Setting<>(true);
 
     /**
-     * Renders X/Z type Goals with the vanilla beacon beam effect. Combining this with
-     * {@link #renderGoalIgnoreDepth} will cause strange render clipping.
+     * Renders X/Z type Goals as a no-depth beacon beam instead of the full-height goal box.
      */
     public final Setting<Boolean> renderGoalXZBeacon = new Setting<>(false);
 
@@ -734,6 +751,26 @@ public final class Settings {
      * Break and place blocks without having to force the client-sided rotations. Requires {@link #freeLook}.
      */
     public final Setting<Boolean> blockFreeLook = new Setting<>(false);
+
+    /**
+     * Automatically elytra fly without having to force the client-sided rotations.
+     */
+    public final Setting<Boolean> elytraFreeLook = new Setting<>(true);
+
+    /**
+     * Forces the client-sided yaw rotation to an average of the last {@link #smoothLookTicks} of server-sided rotations.
+     */
+    public final Setting<Boolean> smoothLook = new Setting<>(false);
+
+    /**
+     * Same as {@link #smoothLook} but for elytra flying.
+     */
+    public final Setting<Boolean> elytraSmoothLook = new Setting<>(false);
+
+    /**
+     * The number of ticks to average across for {@link #smoothLook};
+     */
+    public final Setting<Integer> smoothLookTicks = new Setting<>(5);
 
     /**
      * When true, the player will remain with its existing look direction as often as possible.
@@ -804,6 +841,11 @@ public final class Settings {
     public final Setting<Boolean> shortBaritonePrefix = new Setting<>(false);
 
     /**
+     * Use a modern message tag instead of a prefix when logging to chat
+     */
+    public final Setting<Boolean> useMessageTag = new Setting<>(false);
+
+    /**
      * Echo commands to chat when they are run
      */
     public final Setting<Boolean> echoCommands = new Setting<>(true);
@@ -871,14 +913,22 @@ public final class Settings {
     public final Setting<Integer> maxCachedWorldScanCount = new Setting<>(10);
 
     /**
+     * Mine will not scan for or remember more than this many target locations.
+     * Note that the number of locations retrieved from cache is additionaly
+     * limited by {@link #maxCachedWorldScanCount}.
+     */
+    public final Setting<Integer> mineMaxOreLocationsCount = new Setting<>(64);
+
+    /**
      * Sets the minimum y level whilst mining - set to 0 to turn off.
+     * if world has negative y values, subtract the min world height to get the value to put here
      */
     public final Setting<Integer> minYLevelWhileMining = new Setting<>(0);
 
     /**
      * Sets the maximum y level to mine ores at.
      */
-    public final Setting<Integer> maxYLevelWhileMining = new Setting<>(255); // 1.17+ defaults to maximum possible world height
+    public final Setting<Integer> maxYLevelWhileMining = new Setting<>(2031);
 
     /**
      * This will only allow baritone to mine exposed ores, can be used to stop ore obfuscators on servers that use them.
@@ -925,6 +975,11 @@ public final class Settings {
      * Replant nether wart while farming. This setting only has an effect when replantCrops is also enabled
      */
     public final Setting<Boolean> replantNetherWart = new Setting<>(false);
+
+    /**
+     * Farming will scan for at most this many blocks.
+     */
+    public final Setting<Integer> farmMaxScanSize = new Setting<>(256);
 
     /**
      * When the cache scan gives less blocks than the maximum threshold (but still above zero), scan the main world too.
@@ -1018,6 +1073,11 @@ public final class Settings {
     public final Setting<Double> breakCorrectBlockPenaltyMultiplier = new Setting<>(10d);
 
     /**
+     * Multiply the cost of placing a block that's incorrect in the builder's schematic by this coefficient
+     */
+    public final Setting<Double> placeIncorrectBlockPenaltyMultiplier = new Setting<>(2d);
+
+    /**
      * When this setting is true, build a schematic with the highest X coordinate being the origin, instead of the lowest
      */
     public final Setting<Boolean> schematicOrientationX = new Setting<>(false);
@@ -1031,6 +1091,28 @@ public final class Settings {
      * When this setting is true, build a schematic with the highest Z coordinate being the origin, instead of the lowest
      */
     public final Setting<Boolean> schematicOrientationZ = new Setting<>(false);
+
+    /**
+     * Rotates the schematic before building it.
+     * Possible values are
+     * <ul>
+     *  <li> NONE - No rotation </li>
+     *  <li> CLOCKWISE_90 - Rotate 90° clockwise </li>
+     *  <li> CLOCKWISE_180 - Rotate 180° clockwise </li>
+     *  <li> COUNTERCLOCKWISE_90 - Rotate 270° clockwise </li>
+     * </ul>
+     */
+    public final Setting<Rotation> buildSchematicRotation = new Setting<>(Rotation.NONE);
+
+    /**
+     * Mirrors the schematic before building it.
+     * Possible values are
+     * <ul>
+     *  <li> FRONT_BACK - mirror the schematic along its local x axis </li>
+     *  <li> LEFT_RIGHT - mirror the schematic along its local z axis </li>
+     * </ul>
+     */
+    public final Setting<Mirror> buildSchematicMirror = new Setting<>(Mirror.NONE);
 
     /**
      * The fallback used by the build command when no extension is specified. This may be useful if schematics of a
@@ -1098,7 +1180,7 @@ public final class Settings {
     /**
      * What Y level to go to for legit strip mining
      */
-    public final Setting<Integer> legitMineYLevel = new Setting<>(11);
+    public final Setting<Integer> legitMineYLevel = new Setting<>(-59);
 
     /**
      * Magically see ores that are separated diagonally from existing ores. Basically like mining around the ores that it finds
@@ -1144,6 +1226,11 @@ public final class Settings {
     public final Setting<Integer> followRadius = new Setting<>(3);
 
     /**
+     * The maximum distance to the entity you're following
+     */
+    public final Setting<Integer> followTargetMaxDistance = new Setting<>(0);
+
+    /**
      * Turn this on if your exploration filter is enormous, you don't want it to check if it's done,
      * and you are just fine with it just hanging on completion
      */
@@ -1177,7 +1264,18 @@ public final class Settings {
      * {@link Setting#value};
      */
     @JavaOnly
-    public final Setting<Consumer<ITextComponent>> logger = new Setting<>(msg -> Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage(msg));
+    public final Setting<Consumer<Component>> logger = new Setting<>((msg) -> {
+        try {
+            final GuiMessageTag tag = useMessageTag.value ? Helper.MESSAGE_TAG : null;
+            if (tag != null) {
+                Minecraft.getInstance().gui.getChat().addPlayerMessage(msg, null, tag);
+            } else {
+                Minecraft.getInstance().gui.getChat().addClientSystemMessage(msg);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("Failed to log message to chat: " + msg.getString(), t);
+        }
+    });
 
     /**
      * The function that is called when Baritone will send a desktop notification. This function can be added to
@@ -1193,7 +1291,12 @@ public final class Settings {
      * {@link Setting#value};
      */
     @JavaOnly
-    public final Setting<BiConsumer<ITextComponent, ITextComponent>> toaster = new Setting<>(BaritoneToast::addOrUpdate);
+    public final Setting<BiConsumer<Component, Component>> toaster = new Setting<>(BaritoneToast::addOrUpdate);
+
+    /**
+     * Print out ALL command exceptions as a stack trace to stdout, even simple syntax errors
+     */
+    public final Setting<Boolean> verboseCommandExceptions = new Setting<>(false);
 
     /**
      * The size of the box that is rendered when the current goal is a GoalYLevel
@@ -1319,6 +1422,125 @@ public final class Settings {
      * Desktop notification on mine fail
      */
     public final Setting<Boolean> notificationOnMineFail = new Setting<>(true);
+
+    /**
+     * The number of ticks of elytra movement to simulate while firework boost is not active. Higher values are
+     * computationally more expensive.
+     */
+    public final Setting<Integer> elytraSimulationTicks = new Setting<>(20);
+
+    /**
+     * The maximum allowed deviation in pitch from a direct line-of-sight to the flight target. Higher values are
+     * computationally more expensive.
+     */
+    public final Setting<Integer> elytraPitchRange = new Setting<>(25);
+
+    /**
+     * The minimum speed that the player can drop to (in blocks/tick) before a firework is automatically deployed.
+     */
+    public final Setting<Double> elytraFireworkSpeed = new Setting<>(1.2);
+
+    /**
+     * The delay after the player's position is set-back by the server that a firework may be automatically deployed.
+     * Value is in ticks.
+     */
+    public final Setting<Integer> elytraFireworkSetbackUseDelay = new Setting<>(15);
+
+    /**
+     * The minimum padding value that is added to the player's hitbox when considering which point to fly to on the
+     * path. High values can result in points not being considered which are otherwise safe to fly to. Low values can
+     * result in flight paths which are extremely tight, and there's the possibility of crashing due to getting too low
+     * to the ground.
+     */
+    public final Setting<Double> elytraMinimumAvoidance = new Setting<>(0.2);
+
+    /**
+     * If enabled, avoids using fireworks when descending along the flight path.
+     */
+    public final Setting<Boolean> elytraConserveFireworks = new Setting<>(false);
+
+    /**
+     * Renders the raytraces that are performed by the elytra fly calculation.
+     */
+    public final Setting<Boolean> elytraRenderRaytraces = new Setting<>(false);
+
+    /**
+     * Renders the raytraces that are used in the hitbox part of the elytra fly calculation.
+     * Requires {@link #elytraRenderRaytraces}.
+     */
+    public final Setting<Boolean> elytraRenderHitboxRaytraces = new Setting<>(false);
+
+    /**
+     * Renders the best elytra flight path that was simulated each tick.
+     */
+    public final Setting<Boolean> elytraRenderSimulation = new Setting<>(true);
+
+    /**
+     * Automatically path to and jump off of ledges to initiate elytra flight when grounded.
+     */
+    public final Setting<Boolean> elytraAutoJump = new Setting<>(false);
+
+    /**
+     * The seed used to generate chunks for long distance elytra path-finding in the nether.
+     * Defaults to 2b2t's nether seed.
+     */
+    public final Setting<Long> elytraNetherSeed = new Setting<>(146008555100680L);
+
+    /**
+     * Whether nether-pathfinder should generate terrain based on {@link #elytraNetherSeed}.
+     * If false all chunks that haven't been loaded are assumed to be air.
+     */
+    public final Setting<Boolean> elytraPredictTerrain = new Setting<>(false);
+
+    /**
+     * Automatically swap the current elytra with a new one when the durability gets too low
+     */
+    public final Setting<Boolean> elytraAutoSwap = new Setting<>(true);
+
+    /**
+     * The minimum durability an elytra can have before being swapped
+     */
+    public final Setting<Integer> elytraMinimumDurability = new Setting<>(5);
+
+    /**
+     * The minimum fireworks before landing early for safety
+     */
+    public final Setting<Integer> elytraMinFireworksBeforeLanding = new Setting<>(5);
+
+    /**
+     * Automatically land when elytra is almost out of durability, or almost out of fireworks
+     */
+    public final Setting<Boolean> elytraAllowEmergencyLand = new Setting<>(true);
+
+    /**
+     * Time between culling far away chunks from the nether pathfinder chunk cache
+     */
+    public final Setting<Long> elytraTimeBetweenCacheCullSecs = new Setting<>(TimeUnit.MINUTES.toSeconds(3));
+
+    /**
+     * Maximum distance chunks can be before being culled from the nether pathfinder chunk cache
+     */
+    public final Setting<Integer> elytraCacheCullDistance = new Setting<>(5000);
+
+    /**
+     * Should elytra consider nether brick a valid landing block
+     */
+    public final Setting<Boolean> elytraAllowLandOnNetherFortress = new Setting<>(false);
+
+    /**
+     * Has the user read and understood the elytra terms and conditions
+     */
+    public final Setting<Boolean> elytraTermsAccepted = new Setting<>(false);
+
+    /**
+     * Verbose chat logging in elytra mode
+     */
+    public final Setting<Boolean> elytraChatSpam = new Setting<>(false);
+
+    /**
+     * Sneak when magma blocks are under feet
+     */
+    public final Setting<Boolean> allowWalkOnMagmaBlocks = new Setting<>(false);
 
     /**
      * A map of lowercase setting field names to their respective setting

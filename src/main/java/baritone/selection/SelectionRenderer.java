@@ -5,7 +5,9 @@ import baritone.api.event.events.RenderEvent;
 import baritone.api.event.listener.AbstractGameEventListener;
 import baritone.api.selection.ISelection;
 import baritone.utils.IRenderer;
-import net.minecraft.util.math.AxisAlignedBB;
+import baritone.utils.RenderContext;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import net.minecraft.world.phys.AABB;
 
 public class SelectionRenderer implements IRenderer, AbstractGameEventListener {
 
@@ -18,7 +20,7 @@ public class SelectionRenderer implements IRenderer, AbstractGameEventListener {
         baritone.getGameEventHandler().registerEventListener(this);
     }
 
-    public static void renderSelections(ISelection[] selections) {
+    public static void renderSelections(RenderContext view, ISelection[] selections) {
         float opacity = settings.selectionOpacity.value;
         boolean ignoreDepth = settings.renderSelectionIgnoreDepth.value;
         float lineWidth = settings.selectionLineWidth.value;
@@ -27,31 +29,31 @@ public class SelectionRenderer implements IRenderer, AbstractGameEventListener {
             return;
         }
 
-        IRenderer.startLines(settings.colorSelection.value, opacity, lineWidth, ignoreDepth);
+        BufferBuilder bufferBuilder = IRenderer.startLines(settings.colorSelection.value, opacity);
 
         for (ISelection selection : selections) {
-            IRenderer.emitAABB(selection.aabb(), SELECTION_BOX_EXPANSION);
+            IRenderer.emitAABB(bufferBuilder, view, selection.aabb(), SELECTION_BOX_EXPANSION, lineWidth);
         }
 
         if (settings.renderSelectionCorners.value) {
             IRenderer.glColor(settings.colorSelectionPos1.value, opacity);
 
             for (ISelection selection : selections) {
-                IRenderer.emitAABB(new AxisAlignedBB(selection.pos1(), selection.pos1().add(1, 1, 1)));
+                IRenderer.emitAABB(bufferBuilder, view, new AABB(selection.pos1()), lineWidth);
             }
 
             IRenderer.glColor(settings.colorSelectionPos2.value, opacity);
 
             for (ISelection selection : selections) {
-                IRenderer.emitAABB(new AxisAlignedBB(selection.pos2(), selection.pos2().add(1, 1, 1)));
+                IRenderer.emitAABB(bufferBuilder, view, new AABB(selection.pos2()), lineWidth);
             }
         }
 
-        IRenderer.endLines(ignoreDepth);
+        IRenderer.endLines(bufferBuilder, ignoreDepth);
     }
 
     @Override
     public void onRenderPass(RenderEvent event) {
-        renderSelections(manager.getSelections());
+        renderSelections(RenderContext.capture(event), manager.getSelections());
     }
 }

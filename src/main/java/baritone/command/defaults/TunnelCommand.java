@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.command.defaults;
 
 import baritone.api.IBaritone;
@@ -23,12 +6,11 @@ import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.exception.CommandException;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalStrictDirection;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.BlockPos;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 public class TunnelCommand extends Command {
 
@@ -45,7 +27,7 @@ public class TunnelCommand extends Command {
             int width = Integer.parseInt(args.getArgs().get(1).getValue());
             int depth = Integer.parseInt(args.getArgs().get(2).getValue());
 
-            if (width < 1 || height < 2 || depth < 1 || height > 255) {
+            if (width < 1 || height < 2 || depth < 1 || height > ctx.world().getMaxY()){
                 logDirect("Width and depth must at least be 1 block; Height must at least be 2 blocks, and cannot be greater than the build limit.");
                 cont = false;
             }
@@ -55,7 +37,7 @@ public class TunnelCommand extends Command {
                 width--;
                 BlockPos corner1;
                 BlockPos corner2;
-                EnumFacing enumFacing = ctx.player().getHorizontalFacing();
+                Direction enumFacing = ctx.player().getDirection();
                 int addition = ((width % 2 == 0) ? 0 : 1);
                 switch (enumFacing) {
                     case EAST:
@@ -83,7 +65,7 @@ public class TunnelCommand extends Command {
         } else {
             Goal goal = new GoalStrictDirection(
                     ctx.playerFeet(),
-                    ctx.player().getHorizontalFacing()
+                    ctx.player().getDirection()
             );
             baritone.getCustomGoalProcess().setGoalAndPath(goal);
             logDirect(String.format("Goal: %s", goal.toString()));

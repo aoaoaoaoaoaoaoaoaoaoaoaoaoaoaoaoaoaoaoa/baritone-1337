@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.command.defaults;
 
 import baritone.api.IBaritone;
@@ -25,11 +8,11 @@ import baritone.api.command.exception.CommandException;
 import baritone.api.command.exception.CommandNotFoundException;
 import baritone.api.command.helpers.Paginator;
 import baritone.api.command.helpers.TabCompleteHelper;
-import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraft.util.text.event.ClickEvent;
-import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 
 import java.util.Arrays;
 import java.util.List;
@@ -58,22 +41,22 @@ public class HelpCommand extends Command {
                     command -> {
                         String names = String.join("/", command.getNames());
                         String name = command.getNames().get(0);
-                        ITextComponent shortDescComponent = new TextComponentString(" - " + command.getShortDesc());
-                        shortDescComponent.getStyle().setColor(TextFormatting.DARK_GRAY);
-                        ITextComponent namesComponent = new TextComponentString(names);
-                        namesComponent.getStyle().setColor(TextFormatting.WHITE);
-                        ITextComponent hoverComponent = new TextComponentString("");
-                        hoverComponent.getStyle().setColor(TextFormatting.GRAY);
-                        hoverComponent.appendSibling(namesComponent);
-                        hoverComponent.appendText("\n" + command.getShortDesc());
-                        hoverComponent.appendText("\n\nClick to view full help");
+                        MutableComponent shortDescComponent = Component.literal(" - " + command.getShortDesc());
+                        shortDescComponent.setStyle(shortDescComponent.getStyle().withColor(ChatFormatting.DARK_GRAY));
+                        MutableComponent namesComponent = Component.literal(names);
+                        namesComponent.setStyle(namesComponent.getStyle().withColor(ChatFormatting.WHITE));
+                        MutableComponent hoverComponent = Component.literal("");
+                        hoverComponent.setStyle(hoverComponent.getStyle().withColor(ChatFormatting.GRAY));
+                        hoverComponent.append(namesComponent);
+                        hoverComponent.append("\n" + command.getShortDesc());
+                        hoverComponent.append("\n\nClick to view full help");
                         String clickCommand = FORCE_COMMAND_PREFIX + String.format("%s %s", label, command.getNames().get(0));
-                        ITextComponent component = new TextComponentString(name);
-                        component.getStyle().setColor(TextFormatting.GRAY);
-                        component.appendSibling(shortDescComponent);
-                        component.getStyle()
-                                .setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent))
-                                .setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, clickCommand));
+                        MutableComponent component = Component.literal(name);
+                        component.setStyle(component.getStyle().withColor(ChatFormatting.GRAY));
+                        component.append(shortDescComponent);
+                        component.setStyle(component.getStyle()
+                                .withHoverEvent(new HoverEvent.ShowText(hoverComponent))
+                                .withClickEvent(new ClickEvent.RunCommand(clickCommand)));
                         return component;
                     },
                     FORCE_COMMAND_PREFIX + label
@@ -88,11 +71,10 @@ public class HelpCommand extends Command {
             logDirect("");
             command.getLongDesc().forEach(this::logDirect);
             logDirect("");
-            ITextComponent returnComponent = new TextComponentString("Click to return to the help menu");
-            returnComponent.getStyle().setClickEvent(new ClickEvent(
-                    ClickEvent.Action.RUN_COMMAND,
+            MutableComponent returnComponent = Component.literal("Click to return to the help menu");
+            returnComponent.setStyle(returnComponent.getStyle().withClickEvent(new ClickEvent.RunCommand(
                     FORCE_COMMAND_PREFIX + label
-            ));
+            )));
             logDirect(returnComponent);
         }
     }

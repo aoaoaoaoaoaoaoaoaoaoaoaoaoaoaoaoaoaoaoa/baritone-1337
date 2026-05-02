@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.command.defaults;
 
 import baritone.Baritone;
@@ -23,7 +6,7 @@ import baritone.api.command.Command;
 import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.datatypes.ForAxis;
 import baritone.api.command.datatypes.ForBlockOptionalMeta;
-import baritone.api.command.datatypes.ForEnumFacing;
+import baritone.api.command.datatypes.ForDirection;
 import baritone.api.command.datatypes.RelativeBlockPos;
 import baritone.api.command.exception.CommandException;
 import baritone.api.command.exception.CommandInvalidStateException;
@@ -41,17 +24,18 @@ import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.BlockOptionalMetaLookup;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.IRenderer;
+import baritone.utils.RenderContext;
 import baritone.utils.schematic.StaticSchematic;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3i;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
 import java.awt.*;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -75,9 +59,9 @@ public class SelCommand extends Command {
                 float opacity = Baritone.settings().selectionOpacity.value;
                 float lineWidth = Baritone.settings().selectionLineWidth.value;
                 boolean ignoreDepth = Baritone.settings().renderSelectionIgnoreDepth.value;
-                IRenderer.startLines(color, opacity, lineWidth, ignoreDepth);
-                IRenderer.emitAABB(new AxisAlignedBB(pos1, pos1.add(1, 1, 1)));
-                IRenderer.endLines(ignoreDepth);
+                BufferBuilder bufferBuilder = IRenderer.startLines(color, opacity);
+                IRenderer.emitAABB(bufferBuilder, RenderContext.capture(event), new AABB(pos1), lineWidth);
+                IRenderer.endLines(bufferBuilder, ignoreDepth);
             }
         });
     }
@@ -127,7 +111,7 @@ public class SelCommand extends Command {
                     : args.getDatatypeFor(ForBlockOptionalMeta.INSTANCE);
 
             final BlockOptionalMetaLookup replaces; // Action.REPLACE
-            final EnumFacing.Axis alignment;        // Action.(H)CYLINDER
+            final Direction.Axis alignment;         // Action.(H)CYLINDER
             if (action == Action.REPLACE) {
                 args.requireMin(1);
                 List<BlockOptionalMeta> replacesList = new ArrayList<>();
@@ -140,7 +124,7 @@ public class SelCommand extends Command {
                 alignment = null;
             } else if (action == Action.CYLINDER || action == Action.HCYLINDER) {
                 args.requireMax(1);
-                alignment = args.hasAny() ? args.getDatatypeFor(ForAxis.INSTANCE) : EnumFacing.Axis.Y;
+                alignment = args.hasAny() ? args.getDatatypeFor(ForAxis.INSTANCE) : Direction.Axis.Y;
                 replaces = null;
             } else {
                 args.requireMax(0);
@@ -219,7 +203,7 @@ public class SelCommand extends Command {
             for (ISelection selection : selections) {
                 Vec3i size = selection.size();
                 BetterBlockPos min = selection.min();
-                IBlockState[][][] blockstates = new IBlockState[size.getX()][size.getZ()][size.getY()];
+                BlockState[][][] blockstates = new BlockState[size.getX()][size.getZ()][size.getY()];
                 for (int x = 0; x < size.getX(); x++) {
                     for (int y = 0; y < size.getY(); y++) {
                         for (int z = 0; z < size.getZ(); z++) {
@@ -227,12 +211,7 @@ public class SelCommand extends Command {
                         }
                     }
                 }
-                ISchematic schematic = new StaticSchematic() {{
-                    states = blockstates;
-                    x = size.getX();
-                    y = size.getY();
-                    z = size.getZ();
-                }};
+                ISchematic schematic = new StaticSchematic(blockstates);
                 composite.put(schematic, min.x - origin.x, min.y - origin.y, min.z - origin.z);
             }
             clipboard = composite;
@@ -245,7 +224,7 @@ public class SelCommand extends Command {
             if (clipboard == null) {
                 throw new CommandInvalidStateException("You need to copy a selection first");
             }
-            baritone.getBuilderProcess().build("Fill", clipboard, pos.add(clipboardOffset));
+            baritone.getBuilderProcess().build("Fill", clipboard, pos.offset(clipboardOffset));
             logDirect("Building now");
         } else if (action == Action.EXPAND || action == Action.CONTRACT || action == Action.SHIFT) {
             args.requireExactly(3);
@@ -253,7 +232,7 @@ public class SelCommand extends Command {
             if (transformTarget == null) {
                 throw new CommandInvalidStateException("Invalid transform type");
             }
-            EnumFacing direction = args.getDatatypeFor(ForEnumFacing.INSTANCE);
+            Direction direction = args.getDatatypeFor(ForDirection.INSTANCE);
             int blocks = args.getAs(Integer.class);
             ISelection[] selections = manager.getSelections();
             if (selections.length < 1) {
@@ -308,7 +287,7 @@ public class SelCommand extends Command {
                     } else {
                         TransformTarget target = TransformTarget.getByName(args.getString());
                         if (target != null && args.hasExactlyOne()) {
-                            return args.tabCompleteDatatype(ForEnumFacing.INSTANCE);
+                            return args.tabCompleteDatatype(ForDirection.INSTANCE);
                         }
                     }
                 }

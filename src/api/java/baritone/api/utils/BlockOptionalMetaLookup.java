@@ -1,27 +1,10 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.utils;
 
 import baritone.api.utils.accessor.IItemStack;
 import com.google.common.collect.ImmutableSet;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.item.ItemStack;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -31,14 +14,14 @@ import java.util.stream.Stream;
 
 public class BlockOptionalMetaLookup {
     private final ImmutableSet<Block> blockSet;
-    private final ImmutableSet<IBlockState> blockStateSet;
+    private final ImmutableSet<BlockState> blockStateSet;
     private final ImmutableSet<Integer> stackHashes;
     private final BlockOptionalMeta[] boms;
 
     public BlockOptionalMetaLookup(BlockOptionalMeta... boms) {
         this.boms = boms;
         Set<Block> blocks = new HashSet<>();
-        Set<IBlockState> blockStates = new HashSet<>();
+        Set<BlockState> blockStates = new HashSet<>();
         Set<Integer> stacks = new HashSet<>();
         for (BlockOptionalMeta bom : boms) {
             blocks.add(bom.getBlock());
@@ -73,14 +56,14 @@ public class BlockOptionalMetaLookup {
         return blockSet.contains(block);
     }
 
-    public boolean has(IBlockState state) {
+    public boolean has(BlockState state) {
         return blockStateSet.contains(state);
     }
 
     public boolean has(ItemStack stack) {
         int hash = ((IItemStack) (Object) stack).getBaritoneHash();
-        return stackHashes.contains(hash)
-                || stackHashes.contains(hash - stack.getItemDamage());
+        hash -= stack.getDamageValue();
+        return stackHashes.contains(hash);
     }
 
     public List<BlockOptionalMeta> blocks() {

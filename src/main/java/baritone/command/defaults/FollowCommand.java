@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.command.defaults;
 
 import baritone.KeepName;
@@ -27,11 +10,12 @@ import baritone.api.command.datatypes.NearbyPlayer;
 import baritone.api.command.exception.CommandErrorMessageException;
 import baritone.api.command.exception.CommandException;
 import baritone.api.command.helpers.TabCompleteHelper;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityList;
-import net.minecraft.entity.EntityLiving;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 
 import java.util.*;
 import java.util.function.Predicate;
@@ -49,7 +33,7 @@ public class FollowCommand extends Command {
         FollowGroup group;
         FollowList list;
         List<Entity> entities = new ArrayList<>();
-        List<Class<? extends Entity>> classes = new ArrayList<>();
+        List<EntityType> classes = new ArrayList<>();
         if (args.hasExactlyOne()) {
             baritone.getFollowProcess().follow((group = args.getEnum(FollowGroup.class)).filter);
         } else {
@@ -58,17 +42,18 @@ public class FollowCommand extends Command {
             list = args.getEnum(FollowList.class);
             while (args.hasAny()) {
                 Object gotten = args.getDatatypeFor(list.datatype);
-                if (gotten instanceof Class) {
+                if (gotten instanceof EntityType) {
                     //noinspection unchecked
-                    classes.add((Class<? extends Entity>) gotten);
+                    classes.add((EntityType) gotten);
                 } else if (gotten != null) {
                     entities.add((Entity) gotten);
                 }
             }
+
             baritone.getFollowProcess().follow(
                     classes.isEmpty()
                             ? entities::contains
-                            : e -> classes.stream().anyMatch(c -> c.isInstance(e))
+                            : e -> classes.stream().anyMatch(c -> e.getType().equals(c))
             );
         }
         if (group != null) {
@@ -83,9 +68,9 @@ public class FollowCommand extends Command {
             } else {
                 logDirect("Following these types of entities:");
                 classes.stream()
-                        .map(EntityList::getKey)
+                        .map(BuiltInRegistries.ENTITY_TYPE::getKey)
                         .map(Objects::requireNonNull)
-                        .map(ResourceLocation::toString)
+                        .map(Identifier::toString)
                         .forEach(this::logDirect);
             }
         }
@@ -136,8 +121,8 @@ public class FollowCommand extends Command {
 
     @KeepName
     private enum FollowGroup {
-        ENTITIES(EntityLiving.class::isInstance),
-        PLAYERS(EntityPlayer.class::isInstance); /* ,
+        ENTITIES(LivingEntity.class::isInstance),
+        PLAYERS(Player.class::isInstance); /* ,
         FRIENDLY(entity -> entity.getAttackTarget() != HELPER.mc.player),
         HOSTILE(FRIENDLY.filter.negate()); */
         final Predicate<Entity> filter;

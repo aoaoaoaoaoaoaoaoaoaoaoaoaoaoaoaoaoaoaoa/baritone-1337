@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.gradle.util;
 
 import com.google.gson.*;
@@ -22,7 +5,10 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -36,10 +22,11 @@ import java.util.stream.Collectors;
  */
 public class Determinizer {
 
-    public static void determinize(String inputPath, String outputPath, Optional<File> toInclude) throws IOException {
+    public static void determinize(String inputPath, String outputPath, List<File> toInclude) throws IOException {
         System.out.println("Running Determinizer");
         System.out.println(" Input path: " + inputPath);
         System.out.println(" Output path: " + outputPath);
+        System.out.println(" Shade: " + toInclude);
 
         try (
                 JarFile jarFile = new JarFile(new File(inputPath));
@@ -61,23 +48,14 @@ public class Determinizer {
                 clone.setTime(42069);
                 jos.putNextEntry(clone);
                 if (entry.getName().endsWith(".refmap.json")) {
-                    JsonObject object = new JsonParser().parse(new InputStreamReader(jarFile.getInputStream(entry))).getAsJsonObject();
-                    jos.write(writeSorted(object).getBytes());
-                } else if (entry.getName().equals("META-INF/MANIFEST.MF") && toInclude.isPresent()) { // only replace for forge jar
-                    ByteArrayOutputStream cancer = new ByteArrayOutputStream();
-                    copy(jarFile.getInputStream(entry), cancer);
-                    String manifest = new String(cancer.toByteArray());
-                    if (!manifest.contains("baritone.launch.BaritoneTweaker")) {
-                        throw new IllegalStateException("unable to replace");
-                    }
-                    manifest = manifest.replace("baritone.launch.BaritoneTweaker", "org.spongepowered.asm.launch.MixinTweaker");
-                    jos.write(manifest.getBytes());
+                    JsonElement json = new JsonParser().parse(new InputStreamReader(jarFile.getInputStream(entry)));
+                    jos.write(writeSorted(json).getBytes());
                 } else {
                     copy(jarFile.getInputStream(entry), jos);
                 }
             }
-            if (toInclude.isPresent()) {
-                try (JarFile mixin = new JarFile(toInclude.get())) {
+            for (File file : toInclude) {
+                try (JarFile mixin = new JarFile(file)) {
                     for (JarEntry entry : mixin.stream().sorted(Comparator.comparing(JarEntry::getName)).collect(Collectors.toList())) {
                         if (entry.getName().startsWith("META-INF") && !entry.getName().startsWith("META-INF/services")) {
                             continue;
@@ -89,6 +67,7 @@ public class Determinizer {
             }
             jos.finish();
         }
+        System.out.println("Done with determinizer");
     }
 
     private static void copy(InputStream is, OutputStream os) throws IOException {
@@ -99,7 +78,7 @@ public class Determinizer {
         }
     }
 
-    private static String writeSorted(JsonObject in) throws IOException {
+    private static String writeSorted(JsonElement in) throws IOException {
         StringWriter writer = new StringWriter();
         JsonWriter jw = new JsonWriter(writer);
         ORDERED_JSON_WRITER.write(jw, in);

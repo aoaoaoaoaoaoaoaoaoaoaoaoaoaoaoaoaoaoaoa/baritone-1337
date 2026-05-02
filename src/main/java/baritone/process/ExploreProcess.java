@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.process;
 
 import baritone.Baritone;
@@ -32,14 +15,13 @@ import baritone.utils.BaritoneProcessHelper;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
 
 public final class ExploreProcess extends BaritoneProcessHelper implements IExploreProcess {
 
@@ -119,7 +101,9 @@ public final class ExploreProcess extends BaritoneProcessHelper implements IExpl
                     int dz = (mult * 2 - 1) * zval; // dz can be either -zval or zval
                     int trueDist = Math.abs(dx) + Math.abs(dz);
                     if (trueDist != dist) {
-                        throw new IllegalStateException();
+                        throw new IllegalStateException(String.format(
+                                "Offset %s %s has distance %s, expected %s",
+                                dx, dz, trueDist, dist));
                     }
                     switch (filter.isAlreadyExplored(chunkX + dx, chunkZ + dz)) {
                         case UNKNOWN:
@@ -224,13 +208,13 @@ public final class ExploreProcess extends BaritoneProcessHelper implements IExpl
             logDirect("Loaded " + positions.length + " positions");
             inFilter = new LongOpenHashSet();
             for (MyChunkPos mcp : positions) {
-                inFilter.add(ChunkPos.asLong(mcp.x, mcp.z));
+                inFilter.add(ChunkPos.pack(mcp.x, mcp.z));
             }
         }
 
         @Override
         public Status isAlreadyExplored(int chunkX, int chunkZ) {
-            if (inFilter.contains(ChunkPos.asLong(chunkX, chunkZ)) ^ invert) {
+            if (inFilter.contains(ChunkPos.pack(chunkX, chunkZ)) ^ invert) {
                 // either it's on the list of explored chunks, or it's not on the list of unexplored chunks
                 // either way, we have it
                 return Status.EXPLORED;

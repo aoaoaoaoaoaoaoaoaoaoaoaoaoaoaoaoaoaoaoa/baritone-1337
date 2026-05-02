@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.pathing.movement.movements;
 
 import baritone.api.IBaritone;
@@ -25,11 +8,10 @@ import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
 import com.google.common.collect.ImmutableSet;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-
 import java.util.Set;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 
 public class MovementDownward extends Movement {
 
@@ -56,13 +38,13 @@ public class MovementDownward extends Movement {
     }
 
     public static double cost(CalculationContext context, int x, int y, int z) {
-        if (!context.allowDownward) {
+        if (!context.movement.allowDownward()) {
             return COST_INF;
         }
         if (!MovementHelper.canWalkOn(context, x, y - 2, z)) {
             return COST_INF;
         }
-        IBlockState down = context.get(x, y - 1, z);
+        BlockState down = context.get(x, y - 1, z);
         Block downBlock = down.getBlock();
         if (downBlock == Blocks.LADDER || downBlock == Blocks.VINE) {
             return LADDER_DOWN_ONE_COST;
@@ -84,8 +66,8 @@ public class MovementDownward extends Movement {
         } else if (!playerInValidPosition()) {
             return state.setStatus(MovementStatus.UNREACHABLE);
         }
-        double diffX = ctx.player().posX - (dest.getX() + 0.5);
-        double diffZ = ctx.player().posZ - (dest.getZ() + 0.5);
+        double diffX = ctx.player().position().x - (dest.getX() + 0.5);
+        double diffZ = ctx.player().position().z - (dest.getZ() + 0.5);
         double ab = Math.sqrt(diffX * diffX + diffZ * diffZ);
 
         if (numTicks++ < 10 && ab < 0.2) {

@@ -1,26 +1,9 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.schematic.mask;
 
 import baritone.api.schematic.mask.operator.BinaryOperatorMask;
 import baritone.api.schematic.mask.operator.NotMask;
 import baritone.api.utils.BooleanBinaryOperators;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * A mask that is context-free. In other words, it doesn't require the current block state to determine if a relative
@@ -42,7 +25,7 @@ public interface StaticMask extends Mask {
 
     /**
      * Implements the parent {@link Mask#partOfMask partOfMask function} by calling the static function
-     * provided in this functional interface without needing the {@link IBlockState} argument. This {@code default}
+     * provided in this functional interface without needing the {@link BlockState} argument. This {@code default}
      * implementation should <b><u>NOT</u></b> be overriden.
      *
      * @param x            The relative x position of the block
@@ -52,7 +35,7 @@ public interface StaticMask extends Mask {
      * @return Whether the given position is included in this mask
      */
     @Override
-    default boolean partOfMask(int x, int y, int z, IBlockState currentState) {
+    default boolean partOfMask(int x, int y, int z, BlockState currentState) {
         return this.partOfMask(x, y, z);
     }
 

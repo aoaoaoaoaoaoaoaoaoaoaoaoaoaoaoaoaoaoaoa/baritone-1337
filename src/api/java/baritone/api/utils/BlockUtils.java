@@ -1,24 +1,8 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.utils;
 
-import net.minecraft.block.Block;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +12,7 @@ public class BlockUtils {
     private static transient Map<String, Block> resourceCache = new HashMap<>();
 
     public static String blockToString(Block block) {
-        ResourceLocation loc = Block.REGISTRY.getNameForObject(block);
+        Identifier loc = BuiltInRegistries.BLOCK.getKey(block);
         String name = loc.getPath(); // normally, only write the part after the minecraft:
         if (!loc.getNamespace().equals("minecraft")) {
             // Baritone is running on top of forge with mods installed, perhaps?
@@ -56,7 +40,7 @@ public class BlockUtils {
         if (resourceCache.containsKey(name)) {
             return null; // cached as null
         }
-        block = Block.getBlockFromName(name.contains(":") ? name : "minecraft:" + name);
+        block = BuiltInRegistries.BLOCK.getOptional(Identifier.tryParse(name.contains(":") ? name : "minecraft:" + name)).orElse(null);
         Map<String, Block> copy = new HashMap<>(resourceCache); // read only copy is safe, wont throw concurrentmodification
         copy.put(name, block);
         resourceCache = copy;

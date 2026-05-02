@@ -1,28 +1,12 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.command.datatypes;
 
 import baritone.api.command.exception.CommandException;
 import baritone.api.command.helpers.TabCompleteHelper;
 import baritone.api.utils.BlockOptionalMeta;
-import net.minecraft.block.Block;
-import net.minecraft.block.properties.IProperty;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.properties.Property;
 
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -76,7 +60,7 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
             properties = parts[1];
         }
 
-        Block block = Block.REGISTRY.getObject(new ResourceLocation(blockId));
+        Block block = BuiltInRegistries.BLOCK.getOptional(Identifier.parse(blockId)).orElse(null);
         if (block == null) {
             // This block doesn't exist so there's no properties to complete.
             return Stream.empty();
@@ -98,10 +82,10 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
             String prefix = arg.substring(0, arg.length() - lastProperty.length());
             return new TabCompleteHelper()
                     .append(
-                            block.getBlockState()
+                            block.getStateDefinition()
                                     .getProperties()
                                     .stream()
-                                    .map(IProperty::getName)
+                                    .map(Property::getName)
                     )
                     .filter(prop -> !usedProps.contains(prop))
                     .filterPrefix(lastProperty)
@@ -120,7 +104,7 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
         // We are completing the value of a property
         String prefix = arg.substring(0, arg.length() - lastValue.length());
 
-        IProperty<?> property = block.getBlockState().getProperty(lastName);
+        Property<?> property = block.getStateDefinition().getProperty(lastName);
         if (property == null) {
             // The property does not exist so there's no values to complete
             return Stream.empty();
@@ -147,7 +131,7 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
     }
 
     // this shouldn't need to be a separate method?
-    private static <T extends Comparable<T>> Stream<String> getValues(IProperty<T> property) {
-        return property.getAllowedValues().stream().map(property::getName);
+    private static <T extends Comparable<T>> Stream<String> getValues(Property<T> property) {
+        return property.getPossibleValues().stream().map(property::getName);
     }
 }

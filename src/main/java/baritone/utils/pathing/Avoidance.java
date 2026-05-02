@@ -1,31 +1,14 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.utils.pathing;
 
 import baritone.Baritone;
-import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
+import baritone.pathing.calc.BlockKey;
 import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
-import net.minecraft.entity.monster.EntityEnderman;
-import net.minecraft.entity.monster.EntityMob;
-import net.minecraft.entity.monster.EntityPigZombie;
-import net.minecraft.entity.monster.EntitySpider;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.EnderMan;
+import net.minecraft.world.entity.monster.spider.Spider;
+import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -72,12 +55,12 @@ public class Avoidance {
                     .forEach(mobspawner -> res.add(new Avoidance(mobspawner, mobSpawnerCoeff, Baritone.settings().mobSpawnerAvoidanceRadius.value)));
         }
         if (mobCoeff != 1.0D) {
-            ctx.world().loadedEntityList.stream()
-                    .filter(entity -> entity instanceof EntityMob)
-                    .filter(entity -> (!(entity instanceof EntitySpider)) || ctx.player().getBrightness() < 0.5)
-                    .filter(entity -> !(entity instanceof EntityPigZombie) || ((EntityPigZombie) entity).isAngry())
-                    .filter(entity -> !(entity instanceof EntityEnderman) || ((EntityEnderman) entity).isScreaming())
-                    .forEach(entity -> res.add(new Avoidance(new BlockPos(entity), mobCoeff, Baritone.settings().mobAvoidanceRadius.value)));
+            ctx.entitiesStream()
+                    .filter(entity -> entity instanceof Mob)
+                    .filter(entity -> (!(entity instanceof Spider)) || ctx.player().getLightLevelDependentMagicValue() < 0.5)
+                    .filter(entity -> !(entity instanceof ZombifiedPiglin) || ((ZombifiedPiglin) entity).getLastHurtByMob() != null)
+                    .filter(entity -> !(entity instanceof EnderMan) || ((EnderMan) entity).isCreepy())
+                    .forEach(entity -> res.add(new Avoidance(entity.blockPosition(), mobCoeff, Baritone.settings().mobAvoidanceRadius.value)));
         }
         return res;
     }
@@ -87,7 +70,7 @@ public class Avoidance {
             for (int y = -radius; y <= radius; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     if (x * x + y * y + z * z <= radius * radius) {
-                        long hash = BetterBlockPos.longHash(centerX + x, centerY + y, centerZ + z);
+                        long hash = BlockKey.pack(centerX + x, centerY + y, centerZ + z);
                         map.put(hash, map.get(hash) * coefficient);
                     }
                 }

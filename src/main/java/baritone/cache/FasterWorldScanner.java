@@ -1,51 +1,31 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.cache;
 
 import baritone.api.cache.ICachedWorld;
 import baritone.api.cache.IWorldScanner;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.BlockOptionalMetaLookup;
 import baritone.api.utils.IPlayerContext;
-import baritone.utils.accessor.IBitArray;
-import baritone.utils.accessor.IBlockStateContainer;
+import baritone.utils.accessor.IPalettedContainer;
 import io.netty.buffer.Unpooled;
-import it.unimi.dsi.fastutil.ints.IntArrayList;
-import it.unimi.dsi.fastutil.ints.IntList;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.network.PacketBuffer;
-import net.minecraft.util.BitArray;
-import net.minecraft.util.ObjectIntIdentityMap;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.*;
-import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.util.BitStorage;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BiConsumer;
-import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public enum FasterWorldScanner implements IWorldScanner {
     INSTANCE;
+
+    private static final BlockState[] PALETTE_REGISTRY_SENTINEL = new BlockState[0];
+
     @Override
     public List<BlockPos> scanChunkRadius(IPlayerContext ctx, BlockOptionalMetaLookup filter, int max, int yLevelThreshold, int maxSearchRadius) {
         assert ctx.world() != null;
@@ -71,7 +51,7 @@ public enum FasterWorldScanner implements IWorldScanner {
 
     @Override
     public int repack(IPlayerContext ctx, int range) {
-        IChunkProvider chunkProvider = ctx.world().getChunkProvider();
+        ChunkSource chunkProvider = ctx.world().getChunkSource();
         ICachedWorld cachedWorld = ctx.worldData().getCachedWorld();
 
         BetterBlockPos playerPos = ctx.playerFeet();
@@ -87,7 +67,7 @@ public enum FasterWorldScanner implements IWorldScanner {
         int queued = 0;
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
-                Chunk chunk = chunkProvider.getLoadedChunk(x, z);
+                LevelChunk chunk = chunkProvider.getChunk(x, z, false);
 
                 if (chunk != null && !chunk.isEmpty()) {
                     queued++;
@@ -143,103 +123,113 @@ public enum FasterWorldScanner implements IWorldScanner {
     }
 
     private Stream<BlockPos> scanChunkInternal(IPlayerContext ctx, BlockOptionalMetaLookup lookup, ChunkPos pos) {
-        IChunkProvider chunkProvider = ctx.world().getChunkProvider();
+        ChunkSource chunkProvider = ctx.world().getChunkSource();
         // if chunk is not loaded, return empty stream
-        if (!chunkProvider.isChunkGeneratedAt(pos.x, pos.z)) {
+        if (!chunkProvider.hasChunk(pos.x(), pos.z())) {
             return Stream.empty();
         }
 
-        long chunkX = (long) pos.x << 4;
-        long chunkZ = (long) pos.z << 4;
+        long chunkX = (long) pos.x() << 4;
+        long chunkZ = (long) pos.z() << 4;
 
-        int playerSectionY = ctx.playerFeet().y >> 4;
+        int playerSectionY = (ctx.playerFeet().y - ctx.world().getMinY()) >> 4;
 
-        return collectChunkSections(lookup, chunkProvider.getLoadedChunk(pos.x, pos.z), chunkX, chunkZ, playerSectionY).stream();
+        return collectChunkSections(lookup, chunkProvider.getChunk(pos.x(), pos.z(), false), chunkX, chunkZ, playerSectionY).stream();
     }
 
 
-
-    private List<BlockPos> collectChunkSections(BlockOptionalMetaLookup lookup, Chunk chunk, long chunkX, long chunkZ, int playerSection) {
+    private List<BlockPos> collectChunkSections(BlockOptionalMetaLookup lookup, LevelChunk chunk, long chunkX, long chunkZ, int playerSection) {
         // iterate over sections relative to player
         List<BlockPos> blocks = new ArrayList<>();
-        ExtendedBlockStorage[] sections = chunk.getBlockStorageArray();
+        int chunkY = chunk.getMinY();
+        LevelChunkSection[] sections = chunk.getSections();
         int l = sections.length;
         int i = playerSection - 1;
         int j = playerSection;
         for (; i >= 0 || j < l; ++j, --i) {
             if (j < l) {
-                visitSection(lookup, sections[j], blocks, chunkX, chunkZ);
+                visitSection(lookup, sections[j], blocks, chunkX, chunkY + j * 16, chunkZ);
             }
             if (i >= 0) {
-                visitSection(lookup, sections[i], blocks, chunkX, chunkZ);
+                visitSection(lookup, sections[i], blocks, chunkX, chunkY + i * 16, chunkZ);
             }
         }
         return blocks;
     }
 
-    private void visitSection(BlockOptionalMetaLookup lookup, ExtendedBlockStorage section, List<BlockPos> blocks, long chunkX, long chunkZ) {
-        if (section == null || section.isEmpty()) {
+    private void visitSection(BlockOptionalMetaLookup lookup, LevelChunkSection section, List<BlockPos> blocks, long chunkX, int sectionY, long chunkZ) {
+        if (section == null || section.hasOnlyAir()) {
             return;
         }
 
-        BlockStateContainer sectionContainer = section.getData();
+        PalettedContainer<BlockState> sectionContainer = section.getStates();
         //this won't work if the PaletteStorage is of the type EmptyPaletteStorage
-        if (((IBlockStateContainer) sectionContainer).getStorage() == null) {
+        if (((IPalettedContainer<BlockState>) sectionContainer).getStorage() == null) {
             return;
         }
 
-        boolean[] isInFilter = getIncludedFilterIndices(lookup, ((IBlockStateContainer) sectionContainer).getPalette());
+        Palette<BlockState> palette = ((IPalettedContainer<BlockState>) sectionContainer).getPalette();
+
+        if (palette instanceof SingleValuePalette) {
+            // single value palette doesn't have any data
+            if (lookup.has(palette.valueFor(0))) {
+                // TODO this is 4k hits, maybe don't return all of them?
+                for (int x = 0; x < 16; ++x) {
+                    for (int y = 0; y < 16; ++y) {
+                        for (int z = 0; z < 16; ++z) {
+                            blocks.add(new BlockPos(
+                                (int) chunkX + x,
+                                sectionY + y,
+                                (int) chunkZ + z
+                            ));
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        boolean[] isInFilter = getIncludedFilterIndices(lookup, palette);
         if (isInFilter.length == 0) {
             return;
         }
 
-        BitArray array = ((IBlockStateContainer) section.getData()).getStorage();
-        long[] longArray = array.getBackingLongArray();
-        int arraySize = array.size();
-        int bitsPerEntry = ((IBitArray) array).getBitsPerEntry();
-        long maxEntryValue = ((IBitArray) array).getMaxEntryValue();
+        BitStorage array = ((IPalettedContainer<BlockState>) section.getStates()).getStorage();
+        long[] longArray = array.getRaw();
+        int arraySize = array.getSize();
+        int bitsPerEntry = array.getBits();
+        long maxEntryValue = (1L << bitsPerEntry) - 1L;
 
-
-        int yOffset = section.getYLocation();
-
-        for (int idx = 0, kl = bitsPerEntry - 1; idx < arraySize; idx++, kl += bitsPerEntry) {
-            final int i = idx * bitsPerEntry;
-            final int j = i >> 6;
-            final int l = i & 63;
-            final int k = kl >> 6;
-            final long jl = longArray[j] >>> l;
-
-            if (j == k) {
-                if (isInFilter[(int) (jl & maxEntryValue)]) {
+        for (int i = 0, idx = 0; i < longArray.length && idx < arraySize; ++i) {
+            long l = longArray[i];
+            for (int offset = 0; offset <= (64 - bitsPerEntry) && idx < arraySize; offset += bitsPerEntry, ++idx) {
+                int value = (int) ((l >> offset) & maxEntryValue);
+                if (isInFilter[value]) {
                     //noinspection DuplicateExpressions
                     blocks.add(new BlockPos(
-                        chunkX + ((idx & 255) & 15),
-                        yOffset + (idx >> 8),
-                        chunkZ + ((idx & 255) >> 4)
-                    ));
-                }
-            } else {
-                if (isInFilter[(int) ((jl | longArray[k] << (64 - l)) & maxEntryValue)]) {
-                    //noinspection DuplicateExpressions
-                    blocks.add(new BlockPos(
-                        chunkX + ((idx & 255) & 15),
-                        yOffset + (idx >> 8),
-                        chunkZ + ((idx & 255) >> 4)
+                        (int) chunkX + ((idx & 255) & 15),
+                        sectionY + (idx >> 8),
+                        (int) chunkZ + ((idx & 255) >> 4)
                     ));
                 }
             }
         }
     }
 
-    private boolean[] getIncludedFilterIndices(BlockOptionalMetaLookup lookup, IBlockStatePalette palette) {
+    private boolean[] getIncludedFilterIndices(BlockOptionalMetaLookup lookup, Palette<BlockState> palette) {
         boolean commonBlockFound = false;
-        ObjectIntIdentityMap<IBlockState> paletteMap = getPalette(palette);
-        int size = paletteMap.size();
+        BlockState[] paletteMap = getPalette(palette);
+
+        if (paletteMap == PALETTE_REGISTRY_SENTINEL) {
+            return getIncludedFilterIndicesFromRegistry(lookup);
+        }
+
+        int size = paletteMap.length;
 
         boolean[] isInFilter = new boolean[size];
 
         for (int i = 0; i < size; i++) {
-            IBlockState state = paletteMap.getByValue(i);
+            BlockState state = paletteMap[i];
             if (lookup.has(state)) {
                 isInFilter[i] = true;
                 commonBlockFound = true;
@@ -254,21 +244,34 @@ public enum FasterWorldScanner implements IWorldScanner {
         return isInFilter;
     }
 
+    private boolean[] getIncludedFilterIndicesFromRegistry(BlockOptionalMetaLookup lookup) {
+        boolean[] isInFilter = new boolean[Block.BLOCK_STATE_REGISTRY.size()];
+
+        for (BlockOptionalMeta bom : lookup.blocks()) {
+            for (BlockState state : bom.getAllBlockStates()) {
+                isInFilter[Block.BLOCK_STATE_REGISTRY.getId(state)] = true;
+            }
+        }
+
+        return isInFilter;
+    }
+
     /**
      * cheats to get the actual map of id -> blockstate from the various palette implementations
      */
-    private static ObjectIntIdentityMap<IBlockState> getPalette(IBlockStatePalette palette) {
-        if (palette instanceof BlockStatePaletteRegistry) {
-            return Block.BLOCK_STATE_IDS;
+    private static BlockState[] getPalette(Palette<BlockState> palette) {
+        if (palette instanceof GlobalPalette) {
+            // copying the entire registry is not nice so we treat it as a special case
+            return PALETTE_REGISTRY_SENTINEL;
         } else {
-            PacketBuffer buf = new PacketBuffer(Unpooled.buffer());
-            palette.write(buf);
+            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+            palette.write(buf, Block.BLOCK_STATE_REGISTRY);
             int size = buf.readVarInt();
-            ObjectIntIdentityMap<IBlockState> states = new ObjectIntIdentityMap<>();
+            BlockState[] states = new BlockState[size];
             for (int i = 0; i < size; i++) {
-                IBlockState state = Block.BLOCK_STATE_IDS.getByValue(buf.readVarInt());
+                BlockState state = Block.BLOCK_STATE_REGISTRY.byId(buf.readVarInt());
                 assert state != null;
-                states.put(state, i);
+                states[i] = state;
             }
             return states;
         }

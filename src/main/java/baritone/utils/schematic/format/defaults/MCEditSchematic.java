@@ -1,26 +1,11 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.utils.schematic.format.defaults;
 
 import baritone.utils.schematic.StaticSchematic;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.nbt.NBTTagCompound;
+import baritone.utils.schematic.format.BlockStateCodec;
+import baritone.utils.schematic.format.SchematicVolume;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.datafix.fixes.ItemIdFix;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * @author Brady
@@ -28,42 +13,46 @@ import net.minecraft.nbt.NBTTagCompound;
  */
 public final class MCEditSchematic extends StaticSchematic {
 
-    public MCEditSchematic(NBTTagCompound schematic) {
-        String type = schematic.getString("Materials");
-        if (!type.equals("Alpha")) {
-            throw new IllegalStateException("bad schematic " + type);
-        }
-        this.x = schematic.getInteger("Width");
-        this.y = schematic.getInteger("Height");
-        this.z = schematic.getInteger("Length");
-        byte[] blocks = schematic.getByteArray("Blocks");
-        byte[] metadata = schematic.getByteArray("Data");
-
-        byte[] additional = null;
-        if (schematic.hasKey("AddBlocks")) {
-            byte[] addBlocks = schematic.getByteArray("AddBlocks");
-            additional = new byte[addBlocks.length * 2];
-            for (int i = 0; i < addBlocks.length; i++) {
-                additional[i * 2 + 0] = (byte) ((addBlocks[i] >> 4) & 0xF); // lower nibble
-                additional[i * 2 + 1] = (byte) ((addBlocks[i] >> 0) & 0xF); // upper nibble
-            }
-        }
-        this.states = new IBlockState[this.x][this.z][this.y];
-        for (int y = 0; y < this.y; y++) {
-            for (int z = 0; z < this.z; z++) {
-                for (int x = 0; x < this.x; x++) {
-                    int blockInd = (y * this.z + z) * this.x + x;
-
-                    int blockID = blocks[blockInd] & 0xFF;
-                    if (additional != null) {
-                        // additional is 0 through 15 inclusive since it's & 0xF above
-                        blockID |= additional[blockInd] << 8;
-                    }
-                    Block block = Block.REGISTRY.getObjectById(blockID);
-                    int meta = metadata[blockInd] & 0xFF;
-                    this.states[x][z][y] = block.getStateFromMeta(meta);
-                }
-            }
-        }
+  public MCEditSchematic(CompoundTag schematic) {
+    String type = schematic.getString("Materials").orElseThrow();
+    if (!type.equals("Alpha")) {
+      throw new IllegalStateException("bad schematic " + type);
     }
+    SchematicVolume volume = SchematicVolume.dimensions(schematic, "Width", "Height", "Length");
+    this.x = volume.x();
+    this.y = volume.y();
+    this.z = volume.z();
+    int blockCount = volume.intVolume();
+    byte[] blocks = schematic.getByteArray("Blocks").orElseThrow();
+    if (blocks.length < blockCount) {
+      throw new IllegalArgumentException("MCEdit Blocks has " + blocks.length + " entries, expected " + blockCount);
+    }
+
+    byte[] additional = null;
+    if (schematic.contains("AddBlocks")) {
+      byte[] addBlocks = schematic.getByteArray("AddBlocks").orElseThrow();
+      additional = new byte[addBlocks.length * 2];
+      for (int i = 0; i < addBlocks.length; i++) {
+        additional[i * 2] = (byte) ((addBlocks[i] >> 4) & 0xF);
+        additional[i * 2 + 1] = (byte) (addBlocks[i] & 0xF);
+      }
+      if (additional.length < blockCount) {
+        throw new IllegalArgumentException("MCEdit AddBlocks has " + additional.length + " unpacked entries, expected " + blockCount);
+      }
+    }
+    this.states = volume.blockStates();
+    for (int y = 0; y < this.y; y++) {
+      for (int z = 0; z < this.z; z++) {
+        for (int x = 0; x < this.x; x++) {
+          int blockInd = (y * this.z + z) * this.x + x;
+
+          int blockID = blocks[blockInd] & 0xFF;
+          if (additional != null) {
+            blockID |= additional[blockInd] << 8;
+          }
+          this.states[x][z][y] = BlockStateCodec.defaultState(ItemIdFix.getItem(blockID));
+        }
+      }
+    }
+  }
 }

@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.cache;
 
 import baritone.Baritone;
@@ -26,9 +9,12 @@ import baritone.api.utils.Helper;
 import com.google.common.cache.CacheBuilder;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.Chunk;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.dimension.DimensionType;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -69,11 +55,13 @@ public final class CachedWorld implements ICachedWorld, Helper {
      * All chunk positions pending packing. This map will be updated in-place if a new update to the chunk occurs
      * while waiting in the queue for the packer thread to get to it.
      */
-    private final Map<ChunkPos, Chunk> toPackMap = CacheBuilder.newBuilder().softValues().<ChunkPos, Chunk>build().asMap();
+    private final Map<ChunkPos, LevelChunk> toPackMap = CacheBuilder.newBuilder().softValues().<ChunkPos, LevelChunk>build().asMap();
 
-    private final int dimension;
+    private final DimensionType dimension;
 
-    CachedWorld(Path directory, int dimension) {
+    private final ResourceKey<Level> dimensionId;
+
+    CachedWorld(Path directory, DimensionType dimension, ResourceKey<Level> dimensionId) {
         if (!Files.exists(directory)) {
             try {
                 Files.createDirectories(directory);
@@ -82,6 +70,7 @@ public final class CachedWorld implements ICachedWorld, Helper {
         }
         this.directory = directory.toString();
         this.dimension = dimension;
+        this.dimensionId = dimensionId;
         System.out.println("Cached world directory: " + directory);
         Baritone.getExecutor().execute(new PackerThread());
         Baritone.getExecutor().execute(() -> {
@@ -101,7 +90,7 @@ public final class CachedWorld implements ICachedWorld, Helper {
     }
 
     @Override
-    public final void queueForPacking(Chunk chunk) {
+    public final void queueForPacking(LevelChunk chunk) {
         if (toPackMap.put(chunk.getPos(), chunk) == null) {
             toPackQueue.add(chunk.getPos());
         }
@@ -195,9 +184,7 @@ public final class CachedWorld implements ICachedWorld, Helper {
             int distZ = ((region.getZ() << 9) + 256) - pruneCenter.getZ();
             double dist = Math.sqrt(distX * distX + distZ * distZ);
             if (dist > 1024) {
-                if (!Baritone.settings().censorCoordinates.value) {
-                    logDebug("Deleting cached region " + region.getX() + "," + region.getZ() + " from ram");
-                }
+                logDebug("Deleting cached region from ram");
                 cachedRegions.remove(getRegionID(region.getX(), region.getZ()));
             }
         }
@@ -263,7 +250,7 @@ public final class CachedWorld implements ICachedWorld, Helper {
      */
     private synchronized CachedRegion getOrCreateRegion(int regionX, int regionZ) {
         return cachedRegions.computeIfAbsent(getRegionID(regionX, regionZ), id -> {
-            CachedRegion newRegion = new CachedRegion(regionX, regionZ, dimension);
+            CachedRegion newRegion = new CachedRegion(regionX, regionZ, dimension, dimensionId);
             newRegion.load(this.directory);
             return newRegion;
         });
@@ -306,7 +293,7 @@ public final class CachedWorld implements ICachedWorld, Helper {
             while (true) {
                 try {
                     ChunkPos pos = toPackQueue.take();
-                    Chunk chunk = toPackMap.remove(pos);
+                    LevelChunk chunk = toPackMap.remove(pos);
                     if (toPackQueue.size() > Baritone.settings().chunkPackerQueueMaxSize.value) {
                         continue;
                     }

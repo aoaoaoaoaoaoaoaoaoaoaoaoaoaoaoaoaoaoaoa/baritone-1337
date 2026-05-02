@@ -1,23 +1,6 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.utils.pathing;
 
-import net.minecraft.world.border.WorldBorder;
+import net.minecraft.world.level.border.WorldBorder;
 
 /**
  * Essentially, a "rule" for the path finder, prevents proposed movements from attempting to venture
@@ -31,10 +14,10 @@ public class BetterWorldBorder {
     private final double maxZ;
 
     public BetterWorldBorder(WorldBorder border) {
-        this.minX = border.minX();
-        this.maxX = border.maxX();
-        this.minZ = border.minZ();
-        this.maxZ = border.maxZ();
+        this.minX = border.getMinX();
+        this.maxX = border.getMaxX();
+        this.minZ = border.getMinZ();
+        this.maxZ = border.getMaxZ();
     }
 
     public boolean entirelyContains(int x, int z) {

@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.command.argument;
 
 import baritone.api.command.ICommand;
@@ -27,11 +10,10 @@ import baritone.api.command.exception.CommandInvalidTypeException;
 import baritone.api.command.exception.CommandNotEnoughArgumentsException;
 import baritone.api.command.exception.CommandTooManyArgumentsException;
 import baritone.api.utils.Helper;
-import net.minecraft.util.EnumFacing;
-
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.stream.Stream;
+import net.minecraft.core.Direction;
 
 /**
  * The {@link IArgConsumer} is how {@link ICommand}s read the arguments passed to them. This class has many benefits:
@@ -404,8 +386,8 @@ public interface IArgConsumer {
     /**
      * Gets an enum value from the enum class with the same name as the next argument's value
      * <p>
-     * For example if you getEnum as an {@link EnumFacing}, and the next argument's value is "up", this will return
-     * {@link EnumFacing#UP}
+     * For example if you getEnum as an {@link Direction}, and the next argument's value is "up", this will return
+     * {@link Direction#UP}
      *
      * @param enumClass The enum class to search
      * @return An enum constant of that class with the same name as the next argument's value
@@ -419,8 +401,8 @@ public interface IArgConsumer {
     /**
      * Gets an enum value from the enum class with the same name as the next argument's value
      * <p>
-     * For example if you getEnum as an {@link EnumFacing}, and the next argument's value is "up", this will return
-     * {@link EnumFacing#UP}
+     * For example if you getEnum as an {@link Direction}, and the next argument's value is "up", this will return
+     * {@link Direction#UP}
      *
      * @param enumClass The enum class to search
      * @param def       The default value
@@ -436,8 +418,8 @@ public interface IArgConsumer {
     /**
      * Gets an enum value from the enum class with the same name as the next argument's value
      * <p>
-     * For example if you getEnum as an {@link EnumFacing}, and the next argument's value is "up", this will return
-     * {@link EnumFacing#UP}
+     * For example if you getEnum as an {@link Direction}, and the next argument's value is "up", this will return
+     * {@link Direction#UP}
      *
      * @param enumClass The enum class to search
      * @return An enum constant of that class with the same name as the next argument's value, or {@code null} if it

@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.event.events;
 
 import baritone.api.event.events.type.EventState;
@@ -57,29 +40,36 @@ public final class ChunkEvent {
     /**
      * @return The state of the event
      */
-    public final EventState getState() {
+    public EventState getState() {
         return this.state;
     }
 
     /**
      * @return The type of chunk event that occurred;
      */
-    public final Type getType() {
+    public Type getType() {
         return this.type;
     }
 
     /**
      * @return The Chunk X position.
      */
-    public final int getX() {
+    public int getX() {
         return this.x;
     }
 
     /**
      * @return The Chunk Z position.
      */
-    public final int getZ() {
+    public int getZ() {
         return this.z;
+    }
+
+    /**
+     * @return {@code true} if the event was fired after a chunk population
+     */
+    public boolean isPostPopulate() {
+        return this.state == EventState.POST && this.type.isPopulate();
     }
 
     public enum Type {
@@ -106,6 +96,10 @@ public final class ChunkEvent {
          * <p>
          * And it's a partial chunk
          */
-        POPULATE_PARTIAL
+        POPULATE_PARTIAL;
+
+        public final boolean isPopulate() {
+            return this == POPULATE_FULL || this == POPULATE_PARTIAL;
+        }
     }
 }

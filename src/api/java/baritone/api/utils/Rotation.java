@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.utils;
 
 /**
@@ -36,6 +19,9 @@ public class Rotation {
     public Rotation(float yaw, float pitch) {
         this.yaw = yaw;
         this.pitch = pitch;
+        if (Float.isInfinite(yaw) || Float.isNaN(yaw) || Float.isInfinite(pitch) || Float.isNaN(pitch)) {
+            throw new IllegalStateException(yaw + " " + pitch);
+        }
     }
 
     /**
@@ -154,6 +140,26 @@ public class Rotation {
             newYaw -= 360F;
         }
         return newYaw;
+    }
+
+    /**
+     * Gets the distance between a starting yaw and an offset yaw.
+     * Distance can be negative if the offset yaw is behind of the starting yaw.
+     *
+     * @param yaw The initial yaw
+     * @param offsetYaw The offset yaw
+     * @return The distance between the yaws
+     */
+    public static float yawDistanceFromOffset(float yaw, float offsetYaw) {
+        if ((yaw > 0 ^ offsetYaw > 0) && ((yaw > 90 || yaw < -90) ^ (offsetYaw > 90 || offsetYaw < -90))) {
+            if (yaw < 0) {
+                return 360 + (yaw - offsetYaw);
+            } else {
+                return 360 - (yaw - offsetYaw);
+            }
+        } else {
+            return yaw - offsetYaw;
+        }
     }
 
     @Override

@@ -1,26 +1,9 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.pathing.goals;
 
 import baritone.api.utils.SettingsUtil;
 import it.unimi.dsi.fastutil.doubles.DoubleIterator;
 import it.unimi.dsi.fastutil.doubles.DoubleOpenHashSet;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -44,9 +27,9 @@ public class GoalRunAway implements Goal {
 
     public GoalRunAway(double distance, Integer maintainY, BlockPos... from) {
         if (from.length == 0) {
-            throw new IllegalArgumentException();
+            throw new IllegalArgumentException("Positions to run away from must not be empty");
         }
-        this.from = from;
+        this.from = from.clone();
         this.distanceSq = (int) (distance * distance);
         this.maintainY = maintainY;
     }
@@ -96,9 +79,9 @@ public class GoalRunAway implements Goal {
             minX = Math.min(minX, p.getX() - distance);
             minY = Math.min(minY, p.getY() - distance);
             minZ = Math.min(minZ, p.getZ() - distance);
-            maxX = Math.max(minX, p.getX() + distance);
-            maxY = Math.max(minY, p.getY() + distance);
-            maxZ = Math.max(minZ, p.getZ() + distance);
+            maxX = Math.max(maxX, p.getX() + distance);
+            maxY = Math.max(maxY, p.getY() + distance);
+            maxZ = Math.max(maxZ, p.getZ() + distance);
         }
         DoubleOpenHashSet maybeAlwaysInside = new DoubleOpenHashSet(); // see pull request #1978
         double minOutside = Double.POSITIVE_INFINITY;
@@ -144,7 +127,7 @@ public class GoalRunAway implements Goal {
     public int hashCode() {
         int hash = Arrays.hashCode(from);
         hash = hash * 1196803141 + distanceSq;
-        hash = hash * -2053788840 + maintainY;
+        hash = hash * -2053788840 + Objects.hashCode(maintainY);
         return hash;
     }
 

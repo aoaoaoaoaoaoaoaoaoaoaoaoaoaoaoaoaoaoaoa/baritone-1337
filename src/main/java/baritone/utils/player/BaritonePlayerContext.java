@@ -1,31 +1,13 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.utils.player;
 
 import baritone.Baritone;
 import baritone.api.cache.IWorldData;
 import baritone.api.utils.*;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.world.World;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.HitResult;
 
 /**
  * Implementation of {@link IPlayerContext} that provides information about the primary player.
@@ -51,7 +33,7 @@ public final class BaritonePlayerContext implements IPlayerContext {
     }
 
     @Override
-    public EntityPlayerSP player() {
+    public LocalPlayer player() {
         return this.mc.player;
     }
 
@@ -61,8 +43,8 @@ public final class BaritonePlayerContext implements IPlayerContext {
     }
 
     @Override
-    public World world() {
-        return this.mc.world;
+    public Level world() {
+        return this.mc.level;
     }
 
     @Override
@@ -72,8 +54,8 @@ public final class BaritonePlayerContext implements IPlayerContext {
 
     @Override
     public BetterBlockPos viewerPos() {
-        final Entity entity = this.mc.getRenderViewEntity();
-        return entity == null ? this.playerFeet() : BetterBlockPos.from(new BlockPos(entity));
+        final Entity entity = this.mc.getCameraEntity();
+        return entity == null ? this.playerFeet() : BetterBlockPos.from(entity.blockPosition());
     }
 
     @Override
@@ -82,7 +64,7 @@ public final class BaritonePlayerContext implements IPlayerContext {
     }
 
     @Override
-    public RayTraceResult objectMouseOver() {
+    public HitResult objectMouseOver() {
         return RayTraceUtils.rayTraceTowards(player(), playerRotations(), playerController().getBlockReachDistance());
     }
 }

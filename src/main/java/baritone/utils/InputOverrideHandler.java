@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.utils;
 
 import baritone.Baritone;
@@ -23,9 +6,10 @@ import baritone.api.event.events.TickEvent;
 import baritone.api.utils.IInputOverrideHandler;
 import baritone.api.utils.input.Input;
 import baritone.behavior.Behavior;
-import net.minecraft.util.MovementInputFromOptions;
+import net.minecraft.client.player.KeyboardInput;
 
-import java.util.HashMap;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.Map;
 
 /**
@@ -41,7 +25,8 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     /**
      * Maps inputs to whether or not we are forcing their state down.
      */
-    private final Map<Input, Boolean> inputForceStateMap = new HashMap<>();
+    private static final EnumSet<Input> MOVEMENT_INPUTS = EnumSet.of(Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP);
+    private final Map<Input, Boolean> inputForceStateMap = new EnumMap<>(Input.class);
 
     private final BlockBreakHelper blockBreakHelper;
     private final BlockPlaceHelper blockPlaceHelper;
@@ -71,6 +56,9 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
      */
     @Override
     public final void setInputForceState(Input input, boolean forced) {
+        if (input == null) {
+            return;
+        }
         this.inputForceStateMap.put(input, forced);
     }
 
@@ -94,12 +82,12 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         blockPlaceHelper.tick(isInputForcedDown(Input.CLICK_RIGHT));
 
         if (inControl()) {
-            if (ctx.player().movementInput.getClass() != PlayerMovementInput.class) {
-                ctx.player().movementInput = new PlayerMovementInput(this);
+            if (ctx.player().input.getClass() != PlayerMovementInput.class) {
+                ctx.player().input = new PlayerMovementInput(this);
             }
         } else {
-            if (ctx.player().movementInput.getClass() == PlayerMovementInput.class) { // allow other movement inputs that aren't this one, e.g. for a freecam
-                ctx.player().movementInput = new MovementInputFromOptions(ctx.minecraft().gameSettings);
+            if (ctx.player().input.getClass() == PlayerMovementInput.class) { // allow other movement inputs that aren't this one, e.g. for a freecam
+                ctx.player().input = new KeyboardInput(ctx.minecraft().options);
             }
         }
         // only set it if it was previously incorrect
@@ -107,7 +95,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     }
 
     private boolean inControl() {
-        for (Input input : new Input[]{Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK}) {
+        for (Input input : MOVEMENT_INPUTS) {
             if (isInputForcedDown(input)) {
                 return true;
             }

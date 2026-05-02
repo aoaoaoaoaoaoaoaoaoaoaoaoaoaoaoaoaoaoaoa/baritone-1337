@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.utils;
 
 import baritone.Baritone;
@@ -27,7 +10,7 @@ import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.behavior.PathingBehavior;
 import baritone.pathing.path.PathExecutor;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.*;
 
@@ -68,7 +51,7 @@ public class PathingControlManager implements IPathingControlManager {
         for (IBaritoneProcess proc : processes) {
             proc.onLostControl();
             if (proc.isActive() && !proc.isTemporary()) { // it's okay only for a temporary thing (like combat pause) to maintain control even if you say to cancel
-                throw new IllegalStateException(proc.displayName());
+                throw new IllegalStateException(proc.displayName() + " stayed active after being cancelled");
             }
         }
     }
@@ -99,6 +82,8 @@ public class PathingControlManager implements IPathingControlManager {
             // get rid of the in progress stuff from the last process
         }
         switch (command.commandType) {
+            case SET_GOAL_AND_PAUSE:
+                p.secretInternalSetGoalAndPath(command);
             case REQUEST_PAUSE:
                 p.requestPause();
                 break;
@@ -107,10 +92,6 @@ public class PathingControlManager implements IPathingControlManager {
                 p.cancelSegmentIfSafe();
                 break;
             case FORCE_REVALIDATE_GOAL_AND_PATH:
-                if (!p.isPathing() && !p.getInProgress().isPresent()) {
-                    p.secretInternalSetGoalAndPath(command);
-                }
-                break;
             case REVALIDATE_GOAL_AND_PATH:
                 if (!p.isPathing() && !p.getInProgress().isPresent()) {
                     p.secretInternalSetGoalAndPath(command);
@@ -119,11 +100,11 @@ public class PathingControlManager implements IPathingControlManager {
             case SET_GOAL_AND_PATH:
                 // now this i can do
                 if (command.goal != null) {
-                    baritone.getPathingBehavior().secretInternalSetGoalAndPath(command);
+                    p.secretInternalSetGoalAndPath(command);
                 }
                 break;
             default:
-                throw new IllegalStateException();
+                throw new IllegalStateException("Unexpected command type " + command.commandType);
         }
     }
 

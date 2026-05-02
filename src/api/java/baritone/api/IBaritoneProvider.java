@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api;
 
 import baritone.api.cache.IWorldScanner;
@@ -22,7 +5,8 @@ import baritone.api.command.ICommand;
 import baritone.api.command.ICommandSystem;
 import baritone.api.schematic.ISchematicSystem;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.player.LocalPlayer;
 
 import java.util.List;
 import java.util.Objects;
@@ -48,17 +32,17 @@ public interface IBaritoneProvider {
      * returned by {@link #getPrimaryBaritone()}.
      *
      * @return All active {@link IBaritone} instances.
-     * @see #getBaritoneForPlayer(EntityPlayerSP)
+     * @see #getBaritoneForPlayer(LocalPlayer)
      */
     List<IBaritone> getAllBaritones();
 
     /**
-     * Provides the {@link IBaritone} instance for a given {@link EntityPlayerSP}.
+     * Provides the {@link IBaritone} instance for a given {@link LocalPlayer}.
      *
      * @param player The player
      * @return The {@link IBaritone} instance.
      */
-    default IBaritone getBaritoneForPlayer(EntityPlayerSP player) {
+    default IBaritone getBaritoneForPlayer(LocalPlayer player) {
         for (IBaritone baritone : this.getAllBaritones()) {
             if (Objects.equals(player, baritone.getPlayerContext().player())) {
                 return baritone;
@@ -76,6 +60,22 @@ public interface IBaritoneProvider {
     default IBaritone getBaritoneForMinecraft(Minecraft minecraft) {
         for (IBaritone baritone : this.getAllBaritones()) {
             if (Objects.equals(minecraft, baritone.getPlayerContext().minecraft())) {
+                return baritone;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Provides the {@link IBaritone} instance for the player with the specified connection.
+     *
+     * @param connection The connection
+     * @return The {@link IBaritone} instance.
+     */
+    default IBaritone getBaritoneForConnection(ClientPacketListener connection) {
+        for (IBaritone baritone : this.getAllBaritones()) {
+            final LocalPlayer player = baritone.getPlayerContext().player();
+            if (player != null && player.connection == connection) {
                 return baritone;
             }
         }

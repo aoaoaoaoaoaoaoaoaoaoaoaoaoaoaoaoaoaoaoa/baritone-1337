@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.behavior;
 
 import baritone.Baritone;
@@ -36,7 +19,9 @@ import baritone.pathing.path.PathExecutor;
 import baritone.utils.PathRenderer;
 import baritone.utils.PathingCommandContext;
 import baritone.utils.pathing.Favoring;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -158,7 +143,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                     queuePathEvent(PathEvent.AT_GOAL);
                     next = null;
                     if (Baritone.settings().disconnectOnArrival.value) {
-                        ctx.world().sendQuittingDisconnectingPacket();
+                        if (ctx.world() instanceof ClientLevel clientLevel) {
+                            clientLevel.disconnect(Component.literal("[Baritone] Arrived at goal!"));
+                        }
                     }
                     return;
                 }
@@ -239,11 +226,11 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         if (current != null) {
             switch (event.getState()) {
                 case PRE:
-                    lastAutoJump = ctx.minecraft().gameSettings.autoJump;
-                    ctx.minecraft().gameSettings.autoJump = false;
+                    lastAutoJump = ctx.minecraft().options.autoJump().get();
+                    ctx.minecraft().options.autoJump().set(false);
                     break;
                 case POST:
-                    ctx.minecraft().gameSettings.autoJump = lastAutoJump;
+                    ctx.minecraft().options.autoJump().set(lastAutoJump);
                     break;
                 default:
                     break;
@@ -265,7 +252,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         if (goal == null) {
             return false;
         }
-        if (goal.isInGoal(ctx.playerFeet()) || goal.isInGoal(expectedSegmentStart)) {
+        if (goal.isInGoal(ctx.playerFeet())) {
             return false;
         }
         synchronized (pathPlanLock) {
@@ -309,7 +296,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
 
     public boolean isSafeToCancel() {
-        return current == null || safeToCancel;
+        if (current == null) {
+            return !baritone.getElytraProcess().isActive() || baritone.getElytraProcess().isSafeToCancel();
+        }
+        return safeToCancel;
     }
 
     public void requestPause() {
@@ -352,7 +342,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
 
     // just cancel the current path
-    private void secretInternalSegmentCancel() {
+    public void secretInternalSegmentCancel() {
         queuePathEvent(PathEvent.CANCELED);
         synchronized (pathPlanLock) {
             getInProgress().ifPresent(AbstractNodeCostSearch::cancel);
@@ -419,10 +409,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
      */
     public BetterBlockPos pathStart() { // TODO move to a helper or util class
         BetterBlockPos feet = ctx.playerFeet();
-        if (!MovementHelper.canWalkOn(ctx, feet.down())) {
-            if (ctx.player().onGround) {
-                double playerX = ctx.player().posX;
-                double playerZ = ctx.player().posZ;
+        if (!MovementHelper.canWalkOn(ctx, feet.below())) {
+            if (ctx.player().onGround()) {
+                double playerX = ctx.player().position().x;
+                double playerZ = ctx.player().position().z;
                 ArrayList<BetterBlockPos> closest = new ArrayList<>();
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dz = -1; dz <= 1; dz++) {
@@ -438,7 +428,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                         // can't possibly be sneaking off of this one, we're too far away
                         continue;
                     }
-                    if (MovementHelper.canWalkOn(ctx, possibleSupport.down()) && MovementHelper.canWalkThrough(ctx, possibleSupport) && MovementHelper.canWalkThrough(ctx, possibleSupport.up())) {
+                    if (MovementHelper.canWalkOn(ctx, possibleSupport.below()) && MovementHelper.canWalkThrough(ctx, possibleSupport) && MovementHelper.canWalkThrough(ctx, possibleSupport.above())) {
                         // this is plausible
                         //logDebug("Faking path start assuming player is standing off the edge of a block");
                         return possibleSupport;
@@ -448,9 +438,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
             } else {
                 // !onGround
                 // we're in the middle of a jump
-                if (MovementHelper.canWalkOn(ctx, feet.down().down())) {
+                if (MovementHelper.canWalkOn(ctx, feet.below().below())) {
                     //logDebug("Faking path start assuming player is midair and falling");
-                    return feet.down();
+                    return feet.below();
                 }
             }
         }
@@ -550,7 +540,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         });
     }
 
-    private static AbstractNodeCostSearch createPathfinder(BlockPos start, Goal goal, IPath previous, CalculationContext context) {
+    private AbstractNodeCostSearch createPathfinder(BlockPos start, Goal goal, IPath previous, CalculationContext context) {
         Goal transformed = goal;
         if (Baritone.settings().simplifyUnloadedYCoord.value && goal instanceof IGoalRenderPos) {
             BlockPos pos = ((IGoalRenderPos) goal).getGoalPos();
@@ -559,7 +549,14 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
             }
         }
         Favoring favoring = new Favoring(context.getBaritone().getPlayerContext(), previous, context);
-        return new AStarPathFinder(start.getX(), start.getY(), start.getZ(), transformed, favoring, context);
+        BetterBlockPos feet = ctx.playerFeet();
+        var realStart = new BetterBlockPos(start);
+        var sub = feet.subtract(realStart);
+        if (feet.getY() == realStart.getY() && Math.abs(sub.getX()) <= 1 && Math.abs(sub.getZ()) <= 1) {
+            realStart = feet;
+        }
+        return new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context);
+
     }
 
     @Override

@@ -1,32 +1,26 @@
 .DS_Store
 **/*.swp
-
-run/
-autotest/
-dist/
-
-# Gradle
-build/
-.gradle/
-classes/
 *.class
 
-# IntelliJ Files
+.gradle/
+build/
+classes/
+out/
+dist/
+mapping/
+run/
+logs/
+notes/
+
 .idea/
 *.iml
 *.ipr
 *.iws
-/logs/
+.vscode/launch.json
 
-# Eclipse Files
 .classpath
 .project
 .settings/
+bin/
+*/bin/
 baritone_Client.launch
-
-# Copyright Files
-!/.idea/copyright/Baritone.xml
-!/.idea/copyright/profiles_settings.xml
-
-.vscode/launch.json
-

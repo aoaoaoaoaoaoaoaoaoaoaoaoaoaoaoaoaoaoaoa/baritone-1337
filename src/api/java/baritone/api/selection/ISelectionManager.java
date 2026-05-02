@@ -1,24 +1,7 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.api.selection;
 
 import baritone.api.utils.BetterBlockPos;
-import net.minecraft.util.EnumFacing;
+import net.minecraft.core.Direction;
 
 /**
  * The selection manager handles setting Baritone's selections. You can set the selection here, as well as retrieving
@@ -87,7 +70,7 @@ public interface ISelectionManager {
      * @param blocks    How many blocks to expand it.
      * @return The new selection, expanded as specified.
      */
-    ISelection expand(ISelection selection, EnumFacing direction, int blocks);
+    ISelection expand(ISelection selection, Direction direction, int blocks);
 
     /**
      * Replaces the specified {@link ISelection} with one contracted in the specified direction by the specified number
@@ -101,7 +84,7 @@ public interface ISelectionManager {
      * @param blocks    How many blocks to contract it.
      * @return The new selection, contracted as specified.
      */
-    ISelection contract(ISelection selection, EnumFacing direction, int blocks);
+    ISelection contract(ISelection selection, Direction direction, int blocks);
 
     /**
      * Replaces the specified {@link ISelection} with one shifted in the specified direction by the specified number of
@@ -112,5 +95,5 @@ public interface ISelectionManager {
      * @param blocks    How many blocks to shift it.
      * @return The new selection, shifted as specified.
      */
-    ISelection shift(ISelection selection, EnumFacing direction, int blocks);
+    ISelection shift(ISelection selection, Direction direction, int blocks);
 }
