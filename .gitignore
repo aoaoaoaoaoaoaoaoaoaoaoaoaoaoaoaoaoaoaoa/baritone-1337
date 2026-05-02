@@ -28,6 +28,8 @@ common/logs/
 .classpath
 .project
 .settings/
+bin/
+*/bin/
 baritone_Client.launch
 
 # Copyright Files

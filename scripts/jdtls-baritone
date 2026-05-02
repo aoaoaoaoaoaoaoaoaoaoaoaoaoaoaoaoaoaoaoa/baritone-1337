@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import threading
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+JAVA_HOME = Path(os.environ.get("JAVA_HOME", "/usr/lib/jvm/java-26-openjdk"))
+GRADLE_USER_HOME = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".cache/gradle"))
+JDTLS_HOME = Path(os.environ.get("JDTLS_HOME", Path.home() / ".local/share/jdtls"))
+JDTLS_DATA = Path(os.environ.get("JDTLS_DATA", Path.home() / ".cache/jdtls/baritone"))
+
+
+def ensure_classpath() -> None:
+  if os.environ.get("BARITONE_JDTLS_GENERATE_CLASSPATH", "1") == "0":
+    return
+  classpath = ROOT / ".classpath"
+  project = ROOT / ".project"
+  if classpath.exists() and project.exists() and "org.eclipse.buildship" not in classpath.read_text() and "org.eclipse.buildship" not in project.read_text():
+    return
+  subprocess.run([str(ROOT / "scripts/jdtls-classpath")], cwd=ROOT, check=True)
+
+
+def read_message(stream):
+  headers = {}
+  while True:
+    line = stream.readline()
+    if not line:
+      return None
+    if line in (b"\r\n", b"\n"):
+      break
+    key, _, value = line.decode("ascii").partition(":")
+    headers[key.lower()] = value.strip()
+  length = int(headers["content-length"])
+  body = stream.read(length)
+  if not body:
+    return None
+  return json.loads(body)
+
+
+def write_message(stream, message) -> None:
+  body = json.dumps(message, separators=(",", ":")).encode("utf-8")
+  stream.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii"))
+  stream.write(body)
+  stream.flush()
+
+
+def inject_initialization(message):
+  if message.get("method") != "initialize":
+    return message
+  params = message.setdefault("params", {})
+  options = params.get("initializationOptions")
+  if not isinstance(options, dict):
+    options = {}
+    params["initializationOptions"] = options
+  settings = options.get("settings")
+  if not isinstance(settings, dict):
+    settings = {}
+    options["settings"] = settings
+  settings.update({
+    "java.home": str(JAVA_HOME),
+    "java.autobuild.enabled": True,
+    "java.import.gradle.enabled": False,
+    "java.import.maven.enabled": False,
+    "java.configuration.updateBuildConfiguration": "disabled",
+    "java.configuration.runtimes": [{
+      "name": "JavaSE-25",
+      "path": str(JAVA_HOME),
+      "default": True,
+    }],
+  })
+  return message
+
+
+def pump_client_to_server(child) -> None:
+  while True:
+    message = read_message(sys.stdin.buffer)
+    if message is None:
+      try:
+        child.stdin.close()
+      except BrokenPipeError:
+        pass
+      return
+    write_message(child.stdin, inject_initialization(message))
+
+
+def pump_server_to_client(child) -> None:
+  while True:
+    message = read_message(child.stdout)
+    if message is None:
+      return
+    write_message(sys.stdout.buffer, message)
+
+
+def pump_stderr(child) -> None:
+  for chunk in iter(lambda: child.stderr.read(8192), b""):
+    sys.stderr.buffer.write(chunk)
+    sys.stderr.buffer.flush()
+
+
+def main() -> int:
+  ensure_classpath()
+  env = os.environ.copy()
+  env["JAVA_HOME"] = str(JAVA_HOME)
+  env["GRADLE_USER_HOME"] = str(GRADLE_USER_HOME)
+  extra = sys.argv[1:]
+  argv = [str(JDTLS_HOME / "bin/jdtls")]
+  if "--java-executable" not in extra:
+    argv += ["--java-executable", str(JAVA_HOME / "bin/java")]
+  if "-data" not in extra:
+    argv += ["-data", str(JDTLS_DATA)]
+  argv += extra
+  child = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  assert child.stdin is not None
+  assert child.stdout is not None
+  assert child.stderr is not None
+  threads = [
+    threading.Thread(target=pump_client_to_server, args=(child,), daemon=True),
+    threading.Thread(target=pump_server_to_client, args=(child,), daemon=True),
+    threading.Thread(target=pump_stderr, args=(child,), daemon=True),
+  ]
+  for thread in threads:
+    thread.start()
+  try:
+    return child.wait()
+  finally:
+    for thread in threads:
+      thread.join(timeout=0.2)
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

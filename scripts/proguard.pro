@@ -3,7 +3,6 @@
 -keepattributes InnerClasses
 
 -optimizationpasses 5
--verbose
 
 -allowaccessmodification # anything not kept can be changed from public to private and inlined etc
 -overloadaggressively
@@ -19,6 +18,8 @@
 -dontwarn module-info
 # progard doesn't like signature polymorphism
 -dontwarn java.lang.invoke.MethodHandle
+# ProGuard notes are dominated by deliberate duplicate library definitions in the Fabric/Mixin/Minecraft toolchain.
+-dontnote
 
 # please do not change the comment below
 -keep class baritone.api.** { *; } # this is the keep api

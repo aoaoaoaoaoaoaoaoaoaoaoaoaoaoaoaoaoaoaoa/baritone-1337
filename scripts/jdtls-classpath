@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+init="$(mktemp)"
+trap 'rm -f "$init"' EXIT
+
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-26-openjdk}"
+export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.cache/gradle}"
+export GRADLE_OPTS="${GRADLE_OPTS:---enable-native-access=ALL-UNNAMED}"
+
+cat >"$init" <<'GRADLE'
+import groovy.xml.MarkupBuilder
+import groovy.xml.XmlUtil
+import org.gradle.api.tasks.SourceSetContainer
+
+gradle.projectsEvaluated {
+  def root = gradle.rootProject
+  root.tasks.register("writeJdtlsClasspath") {
+    group = "ide"
+    description = "Write a hard Eclipse/JDT classpath from the resolved Unimined Gradle model."
+
+    doLast {
+      def javaRelease = (root.findProperty("java_release") ?: "25").toString()
+      def sourceSets = root.extensions.getByType(SourceSetContainer)
+      def sourceEntries = []
+      sourceSets.each { sourceSet ->
+        sourceSet.allJava.srcDirs.findAll { it.isDirectory() }.sort { it.absolutePath }.each { dir ->
+          sourceEntries << [
+            path: root.relativePath(dir),
+            output: "build/jdtls/classes/${sourceSet.name}",
+            test: sourceSet.name == "test"
+          ]
+        }
+      }
+
+      def jars = new TreeSet<String>()
+      sourceSets.each { sourceSet ->
+        sourceSet.compileClasspath.files.findAll { it.isFile() && it.name.endsWith(".jar") }.each { jar ->
+          jars.add(jar.absolutePath)
+        }
+      }
+
+      def classpathWriter = new StringWriter()
+      def classpathXml = new MarkupBuilder(classpathWriter)
+      classpathXml.mkp.xmlDeclaration(version: "1.0", encoding: "UTF-8")
+      classpathXml.classpath {
+        sourceEntries.each { entry ->
+          classpathentry(kind: "src", path: entry.path, output: entry.output) {
+            if (entry.test) {
+              attributes {
+                attribute(name: "test", value: "true")
+              }
+            }
+          }
+        }
+        classpathentry(kind: "con", path: "org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-${javaRelease}/")
+        jars.each { jar ->
+          classpathentry(kind: "lib", path: jar)
+        }
+        classpathentry(kind: "output", path: "build/jdtls/classes/default")
+      }
+      root.file(".classpath").text = XmlUtil.serialize(classpathWriter.toString())
+
+      def projectWriter = new StringWriter()
+      def projectXml = new MarkupBuilder(projectWriter)
+      projectXml.mkp.xmlDeclaration(version: "1.0", encoding: "UTF-8")
+      projectXml.projectDescription {
+        name(root.name)
+        comment("")
+        projects()
+        buildSpec {
+          buildCommand {
+            name("org.eclipse.jdt.core.javabuilder")
+            arguments()
+          }
+        }
+        natures {
+          nature("org.eclipse.jdt.core.javanature")
+        }
+        filteredResources {
+          filter {
+            id("1777699740672")
+            name("")
+            type("30")
+            matcher {
+              id("org.eclipse.core.resources.regexFilterMatcher")
+              arguments("node_modules|\\.git|__CREATED_BY_JAVA_LANGUAGE_SERVER__")
+            }
+          }
+        }
+      }
+      root.file(".project").text = XmlUtil.serialize(projectWriter.toString())
+
+      def settings = root.file(".settings")
+      settings.mkdirs()
+      root.file(".settings/org.eclipse.jdt.core.prefs").text = """\
+eclipse.preferences.version=1
+org.eclipse.jdt.core.compiler.codegen.targetPlatform=${javaRelease}
+org.eclipse.jdt.core.compiler.compliance=${javaRelease}
+org.eclipse.jdt.core.compiler.release=enabled
+org.eclipse.jdt.core.compiler.source=${javaRelease}
+"""
+      root.file(".settings/org.eclipse.buildship.core.prefs").delete()
+      root.file("fabric/.classpath").delete()
+      root.file("fabric/.project").delete()
+      root.file("fabric/.settings/org.eclipse.buildship.core.prefs").delete()
+      root.file("fabric/.settings/org.eclipse.jdt.core.prefs").delete()
+
+      println "wrote .classpath with ${sourceEntries.size()} source roots and ${jars.size()} jars"
+    }
+  }
+}
+GRADLE
+
+cd "$root"
+"$root/gradlew" --no-daemon -q --init-script "$init" writeJdtlsClasspath
