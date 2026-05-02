@@ -65,12 +65,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     eval.nodeFacts = terrainFacts;
     BetterWorldBorder worldBorder = new BetterWorldBorder(calcContext.world.getWorldBorder());
     long startTime = System.currentTimeMillis();
-    boolean slowPath = Baritone.settings().slowPath.value;
-    if (slowPath) {
-      logDebug("slowPath is on, path timeout will be " + Baritone.settings().slowPathTimeoutMS.value + "ms instead of " + primaryTimeout + "ms");
-    }
-    long primaryTimeoutTime = startTime + (slowPath ? Baritone.settings().slowPathTimeoutMS.value : primaryTimeout);
-    long failureTimeoutTime = startTime + (slowPath ? Baritone.settings().slowPathTimeoutMS.value : failureTimeout);
+    long primaryTimeoutTime = startTime + primaryTimeout;
+    long failureTimeoutTime = startTime + failureTimeout;
     boolean failing = true;
     int numNodes = 0;
     int numMovementsConsidered = 0;
@@ -79,7 +75,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     int timeCheckInterval = 1 << 6;
     int pathingMaxChunkBorderFetch =
         Baritone.settings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
-    double minimumImprovement = Baritone.settings().minimumImprovementRepropagation.value ? MIN_IMPROVEMENT : 0;
+    double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
     while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
@@ -88,11 +84,6 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         if (now - failureTimeoutTime >= 0 || (!failing && now - primaryTimeoutTime >= 0)) {
           break;
         }
-      }
-      if (slowPath) {
-        try {
-          Thread.sleep(Baritone.settings().slowPathTimeDelayMS.value);
-        } catch (InterruptedException ignored) {}
       }
       heapStart = activeProfile == null ? 0 : System.nanoTime();
       PathNode currentNode = openSet.removeLowest();

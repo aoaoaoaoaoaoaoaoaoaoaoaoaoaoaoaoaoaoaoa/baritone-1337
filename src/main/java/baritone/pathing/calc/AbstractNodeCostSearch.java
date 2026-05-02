@@ -1,6 +1,5 @@
 package baritone.pathing.calc;
 
-import baritone.Baritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.calc.IPathFinder;
 import baritone.api.pathing.goals.Goal;
@@ -60,6 +59,8 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
    * who cares about a hundredth of a tick? that's half a millisecond for crying out loud!
    */
   protected static final double MIN_IMPROVEMENT = 0.01;
+  private static final int NODE_MAP_DEFAULT_SIZE = 1024;
+  private static final float NODE_MAP_LOAD_FACTOR = 0.75f;
 
   AbstractNodeCostSearch(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, CalculationContext context) {
     this.realStart = realStart;
@@ -68,7 +69,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     this.startZ = startZ;
     this.goal = goal;
     this.context = context;
-    this.nodes = new PathNodeArena(goal, Baritone.settings().pathingMapDefaultSize.value, Baritone.settings().pathingMapLoadFactor.value);
+    this.nodes = new PathNodeArena(goal, NODE_MAP_DEFAULT_SIZE, NODE_MAP_LOAD_FACTOR);
   }
 
   public void cancel() {
