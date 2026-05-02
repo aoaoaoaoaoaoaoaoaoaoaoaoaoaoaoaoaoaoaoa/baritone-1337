@@ -15,6 +15,8 @@ import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.movements.*;
 import baritone.utils.BlockStateInterface;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
 import net.minecraft.util.Tuple;
@@ -43,6 +45,8 @@ public class PathExecutor implements IPathExecutor, Helper {
     private static final double MAX_TICKS_AWAY = 200;
 
     private final IPath path;
+    private final BlockPos[] flatValidPositions;
+    private final Long2IntOpenHashMap pathIndexByPosition;
     private int pathPosition;
     private int ticksAway;
     private int ticksOnCurrent;
@@ -63,6 +67,8 @@ public class PathExecutor implements IPathExecutor, Helper {
         this.behavior = behavior;
         this.ctx = behavior.ctx;
         this.path = path;
+        this.flatValidPositions = flatValidPositions(path);
+        this.pathIndexByPosition = pathIndexByPosition(path.positions());
         this.pathPosition = 0;
     }
 
@@ -108,10 +114,10 @@ public class PathExecutor implements IPathExecutor, Helper {
                 }
             }
         }
-        Tuple<Double, BlockPos> status = closestPathPos(path);
+        ClosestPathPosition status = closestPathPos();
         if (possiblyOffPath(status, MAX_DIST_FROM_PATH)) {
             ticksAway++;
-            System.out.println("FAR AWAY FROM PATH FOR " + ticksAway + " TICKS. Current distance: " + status.getA() + ". Threshold: " + MAX_DIST_FROM_PATH);
+            System.out.println("FAR AWAY FROM PATH FOR " + ticksAway + " TICKS. Current distance: " + status.distance() + ". Threshold: " + MAX_DIST_FROM_PATH);
             if (ticksAway > MAX_TICKS_AWAY) {
                 logDebug("Too far away from path for too long, cancelling path");
                 cancel();
@@ -235,19 +241,17 @@ public class PathExecutor implements IPathExecutor, Helper {
         return canCancel; // movement is in progress, but if it reports cancellable, PathingBehavior is good to cut onto the next path
     }
 
-    private Tuple<Double, BlockPos> closestPathPos(IPath path) {
+    private ClosestPathPosition closestPathPos() {
         double best = -1;
         BlockPos bestPos = null;
-        for (IMovement movement : path.movements()) {
-            for (BlockPos pos : ((Movement) movement).getValidPositions()) {
-                double dist = VecUtils.entityDistanceToCenter(ctx.player(), pos);
-                if (dist < best || best == -1) {
-                    best = dist;
-                    bestPos = pos;
-                }
+        for (BlockPos pos : flatValidPositions) {
+            double dist = VecUtils.entityDistanceToCenter(ctx.player(), pos);
+            if (dist < best || best == -1) {
+                best = dist;
+                bestPos = pos;
             }
         }
-        return new Tuple<>(best, bestPos);
+        return new ClosestPathPosition(best, bestPos);
     }
 
     private boolean shouldPause() {
@@ -283,8 +287,8 @@ public class PathExecutor implements IPathExecutor, Helper {
         return positions.contains(ctx.playerFeet());
     }
 
-    private boolean possiblyOffPath(Tuple<Double, BlockPos> status, double leniency) {
-        double distanceFromPath = status.getA();
+    private boolean possiblyOffPath(ClosestPathPosition status, double leniency) {
+        double distanceFromPath = status.distance();
         if (distanceFromPath > leniency) {
             // when we're midair in the middle of a fall, we're very far from both the beginning and the end, but we aren't actually off path
             if (path.movements().get(pathPosition) instanceof MovementFall) {
@@ -315,7 +319,7 @@ public class PathExecutor implements IPathExecutor, Helper {
                 return false; // so don't
             }
         }
-        int index = path.positions().indexOf(ctx.playerFeet());
+        int index = pathIndex(ctx.playerFeet());
         if (index == -1) {
             return false;
         }
@@ -437,13 +441,14 @@ public class PathExecutor implements IPathExecutor, Helper {
             Tuple<Vec3, BlockPos> data = overrideFall((MovementFall) current);
             if (data != null) {
                 BetterBlockPos fallDest = new BetterBlockPos(data.getB());
-                if (!path.positions().contains(fallDest)) {
+                int fallDestIndex = pathIndex(fallDest);
+                if (fallDestIndex == -1) {
                     throw new IllegalStateException(String.format(
                             "Fall override at %s %s %s returned illegal destination %s %s %s",
                             current.getSrc(), fallDest));
                 }
                 if (ctx.playerFeet().equals(fallDest)) {
-                    pathPosition = path.positions().indexOf(fallDest);
+                    pathPosition = fallDestIndex;
                     onChangeInPathPosition();
                     onTick();
                     return true;
@@ -495,6 +500,37 @@ public class PathExecutor implements IPathExecutor, Helper {
                 new Vec3(flatDir.getX() * len + movement.getDest().x + 0.5, movement.getDest().y, flatDir.getZ() * len + movement.getDest().z + 0.5),
                 movement.getDest().offset(flatDir.getX() * (i - pathPosition), 0, flatDir.getZ() * (i - pathPosition)));
     }
+
+    private int pathIndex(BlockPos pos) {
+        return pathIndexByPosition.get(pos.asLong());
+    }
+
+    private static BlockPos[] flatValidPositions(IPath path) {
+        ArrayList<BlockPos> validPositions = new ArrayList<>();
+        LongOpenHashSet seen = new LongOpenHashSet();
+        for (IMovement movement : path.movements()) {
+            for (BlockPos pos : ((Movement) movement).getValidPositions()) {
+                if (seen.add(pos.asLong())) {
+                    validPositions.add(pos);
+                }
+            }
+        }
+        return validPositions.toArray(BlockPos[]::new);
+    }
+
+    private static Long2IntOpenHashMap pathIndexByPosition(List<BetterBlockPos> positions) {
+        Long2IntOpenHashMap indices = new Long2IntOpenHashMap(positions.size());
+        indices.defaultReturnValue(-1);
+        for (int i = 0; i < positions.size(); i++) {
+            long key = positions.get(i).asLong();
+            if (!indices.containsKey(key)) {
+                indices.put(key, i);
+            }
+        }
+        return indices;
+    }
+
+    private record ClosestPathPosition(double distance, BlockPos pos) {}
 
     private static boolean skipNow(IPlayerContext ctx, IMovement current) {
         double offTarget = Math.abs(current.getDirection().getX() * (current.getSrc().z + 0.5D - ctx.player().position().z)) + Math.abs(current.getDirection().getZ() * (current.getSrc().x + 0.5D - ctx.player().position().x));
