@@ -7,7 +7,6 @@ import baritone.api.IBaritone;
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.cache.WorldData;
 import baritone.pathing.calc.PathingProfiler;
-import baritone.pathing.precompute.PrecomputedData;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
@@ -68,7 +67,6 @@ public class CalculationContext {
   public final boolean allowWalkOnMagmaBlocks;
   public final BetterWorldBorder worldBorder;
 
-  public final PrecomputedData precomputedData;
   public final BlockAffordanceCache affordances;
   public final PathingProfiler pathingProfiler;
   public final MovementCatalog movementCatalog;
@@ -78,7 +76,6 @@ public class CalculationContext {
   }
 
   public CalculationContext(IBaritone baritone, boolean forUseOnAnotherThread) {
-    this.precomputedData = new PrecomputedData();
     this.safeForThreadedUse = forUseOnAnotherThread;
     this.baritone = baritone;
     LocalPlayer player = baritone.getPlayerContext().player();

@@ -2,7 +2,7 @@ package baritone.pathing.movement;
 
 import static baritone.api.utils.RotationUtils.DEG_TO_RAD_F;
 import static baritone.pathing.movement.Movement.HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP;
-import static baritone.pathing.precompute.Ternary.*;
+import static baritone.pathing.movement.StateAffordance.*;
 
 import baritone.Baritone;
 import baritone.api.BaritoneAPI;
@@ -13,7 +13,6 @@ import baritone.api.utils.*;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.MovementState.MovementTarget;
-import baritone.pathing.precompute.Ternary;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import java.util.ArrayList;
@@ -105,7 +104,7 @@ public interface MovementHelper extends ActionCosts, Helper {
   }
 
   static boolean canWalkThrough(BlockStateInterface bsi, int x, int y, int z, BlockState state) {
-    Ternary canWalkThrough = canWalkThroughBlockState(state);
+    StateAffordance canWalkThrough = canWalkThroughBlockState(state);
     if (canWalkThrough == YES) {
       return true;
     }
@@ -115,7 +114,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     return canWalkThroughPosition(bsi, x, y, z, state);
   }
 
-  static Ternary canWalkThroughBlockState(BlockState state) {
+  static StateAffordance canWalkThroughBlockState(BlockState state) {
     Block block = state.getBlock();
     if (block instanceof AirBlock) {
       return YES;
@@ -209,7 +208,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     return state.isPathfindable(PathComputationType.LAND);
   }
 
-  static Ternary fullyPassableBlockState(BlockState state) {
+  static StateAffordance fullyPassableBlockState(BlockState state) {
     Block block = state.getBlock();
     if (block instanceof AirBlock) { // early return for most common case
       return YES;
@@ -243,7 +242,7 @@ public interface MovementHelper extends ActionCosts, Helper {
 
   static boolean fullyPassable(IPlayerContext ctx, BlockPos pos) {
     BlockState state = ctx.world().getBlockState(pos);
-    Ternary fullyPassable = fullyPassableBlockState(state);
+    StateAffordance fullyPassable = fullyPassableBlockState(state);
     if (fullyPassable == YES) {
       return true;
     }
@@ -261,6 +260,17 @@ public interface MovementHelper extends ActionCosts, Helper {
   }
 
   static boolean isReplaceable(int x, int y, int z, BlockState state, BlockStateInterface bsi) {
+    StateAffordance replaceable = replaceableBlockState(state);
+    if (replaceable == YES) {
+      return true;
+    }
+    if (replaceable == NO) {
+      return false;
+    }
+    return replaceablePosition(x, z, state, bsi);
+  }
+
+  static StateAffordance replaceableBlockState(BlockState state) {
     // for MovementTraverse and MovementAscend
     // block double plant defaults to true when the block doesn't match, so don't need to check that case
     // all other overrides just return true or false
@@ -274,19 +284,27 @@ public interface MovementHelper extends ActionCosts, Helper {
     Block block = state.getBlock();
     if (block instanceof AirBlock) {
       // early return for common cases hehe
-      return true;
+      return YES;
     }
     if (block instanceof SnowLayerBlock) {
-      // as before, default to true (mostly because it would otherwise make long distance pathing through snowy biomes impossible)
-      if (!bsi.worldContainsLoadedChunk(x, z)) {
-        return true;
-      }
-      return state.getValue(SnowLayerBlock.LAYERS) == 1;
+      return MAYBE;
     }
     if (block == Blocks.LARGE_FERN || block == Blocks.TALL_GRASS) {
+      return YES;
+    }
+    return state.canBeReplaced() ? YES : NO;
+  }
+
+  static boolean replaceablePosition(int x, int z, BlockState state, BlockStateInterface bsi) {
+    // as before, default to true (mostly because it would otherwise make long distance pathing through snowy biomes impossible)
+    if (!bsi.worldContainsLoadedChunk(x, z)) {
       return true;
     }
-    return state.canBeReplaced();
+    return state.getValue(SnowLayerBlock.LAYERS) == 1;
+  }
+
+  static boolean canPlaceAgainstBlockState(BlockState state) {
+    return isBlockNormalCube(state) || isGlassLike(state);
   }
 
   @Deprecated
@@ -351,7 +369,7 @@ public interface MovementHelper extends ActionCosts, Helper {
    * through? Includes water because we know that we automatically jump on
    * water
    * <p>
-   * If changing something in this function remember to also change it in precomputed data
+   * If changing something in this function remember to also change the state-level affordance cache.
    *
    * @param bsi   Block state provider
    * @param x     The block's x position
@@ -361,7 +379,7 @@ public interface MovementHelper extends ActionCosts, Helper {
    * @return Whether or not the specified block can be walked on
    */
   static boolean canWalkOn(BlockStateInterface bsi, int x, int y, int z, BlockState state) {
-    Ternary canWalkOn = canWalkOnBlockState(state);
+    StateAffordance canWalkOn = canWalkOnBlockState(state);
     if (canWalkOn == YES) {
       return true;
     }
@@ -371,7 +389,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     return canWalkOnPosition(bsi, x, y, z, state);
   }
 
-  static Ternary canWalkOnBlockState(BlockState state) {
+  static StateAffordance canWalkOnBlockState(BlockState state) {
     Block block = state.getBlock();
     if (isBlockNormalCube(state) && (block != Blocks.MAGMA_BLOCK || Baritone.settings().allowWalkOnMagmaBlocks.value) && block != Blocks.BUBBLE_COLUMN && block != Blocks.HONEY_BLOCK) {
       return YES;
@@ -544,7 +562,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     // can we look at the center of a side face of this block and likely be able to place?
     // (thats how this check is used)
     // therefore dont include weird things that we technically could place against (like carpet) but practically can't
-    return isBlockNormalCube(state) || isGlassLike(state);
+    return canPlaceAgainstBlockState(state);
   }
 
   static boolean canPlaceAgainst(CalculationContext context, int x, int y, int z) {

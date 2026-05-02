@@ -43,7 +43,7 @@ public class MovementDiagonal extends Movement {
   @Override
   protected boolean safeToCancel(MovementState state) {
     // too simple. backfill does not work after cornering with this
-    // return context.precomputedData.canWalkOn(ctx, ctx.playerFeet().down());
+    // return context.affordances.canWalkOn(ctx.playerFeet().down());
     LocalPlayer player = ctx.player();
     double offset = 0.25;
     double x = player.position().x;
