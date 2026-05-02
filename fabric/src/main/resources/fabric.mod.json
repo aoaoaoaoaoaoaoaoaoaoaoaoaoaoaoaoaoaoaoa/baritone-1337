@@ -1,21 +1,15 @@
 {
   "schemaVersion": 1,
-  "id": "baritone",
+  "id": "baritone-1337",
   "version": "${version}",
 
-  "name": "Baritone",
-  "description": "Google Maps for Blockgame",
+  "name": "baritone-1337",
+  "description": "An optimized Baritone fork for Minecraft 26.1.2.",
   "authors": [
-    "leijurv", "Brady"
+    "leijurv", "Brady", "baritone-1337 maintainers"
   ],
-  "contact": {
-    "homepage": "https://github.com/cabaletta/baritone",
-    "sources": "https://github.com/cabaletta/baritone",
-    "issues": "https://github.com/cabaletta/baritone/issues"
-  },
 
   "license": "LGPL-3.0",
-  "icon": "assets/baritone/icon.png",
 
   "environment": "*",
   "entrypoints": {
@@ -27,12 +21,5 @@
     "fabricloader": ">=${fabric_version}",
     "java": ">=${java_release}",
     "minecraft": ["${minecraft_version}"]
-  },
-  "custom": {
-    "modmenu": {
-      "links": {
-        "modmenu.discord": "https://discord.gg/s6fRBAUpmr"
-      }
-    }
   }
 }

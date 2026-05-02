@@ -51,6 +51,6 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'baritone'
+rootProject.name = 'baritone-1337'
 
 include("fabric")
