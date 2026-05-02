@@ -8,7 +8,6 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.api.utils.PathCalculationResult;
 import baritone.pathing.movement.CalculationContext;
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.util.Optional;
 
 /**
@@ -26,10 +25,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
   private final CalculationContext context;
 
-  /**
-   * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue #107</a>
-   */
-  private final Long2ObjectOpenHashMap<PathNode> map;
+  private final PathNodeArena nodes;
 
   protected PathNode startNode;
 
@@ -72,7 +68,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     this.startZ = startZ;
     this.goal = goal;
     this.context = context;
-    this.map = new Long2ObjectOpenHashMap<>(Baritone.settings().pathingMapDefaultSize.value, Baritone.settings().pathingMapLoadFactor.value);
+    this.nodes = new PathNodeArena(goal, Baritone.settings().pathingMapDefaultSize.value, Baritone.settings().pathingMapLoadFactor.value);
   }
 
   public void cancel() {
@@ -155,7 +151,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   protected abstract Optional<IPath> calculate0(long primaryTimeout, long failureTimeout);
 
   protected int nodeMapSize() {
-    return map.size();
+    return nodes.size();
   }
 
   /**
@@ -174,9 +170,8 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   }
 
   /**
-   * Attempts to search the block position hashCode long to {@link PathNode} map
-   * for the node mapped to the specified pos. If no node is found,
-   * a new node is created.
+   * Attempts to search the exact block-key arena for the node mapped to the specified pos.
+   * If no node is found, a new node is created.
    *
    * @param x        The x position of the node
    * @param y        The y position of the node
@@ -187,16 +182,15 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
    */
 
   protected PathNode getNodeAtPosition(int x, int y, int z, long blockKey) {
-    PathNode node = map.get(blockKey);
-    if (node == null) {
-      node = new PathNode(x, y, z, goal);
-      map.put(blockKey, node);
-    }
-    return node;
+    return nodes.getOrCreate(x, y, z, blockKey);
+  }
+
+  protected PathNode createNodeAtKnownAbsentPosition(int x, int y, int z, long blockKey) {
+    return nodes.createAbsent(x, y, z, blockKey);
   }
 
   protected PathNode peekNodeAtPosition(long blockKey) {
-    return map.get(blockKey);
+    return nodes.peek(blockKey);
   }
 
   @Override
@@ -260,6 +254,6 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   }
 
   protected int mapSize() {
-    return map.size();
+    return nodes.size();
   }
 }

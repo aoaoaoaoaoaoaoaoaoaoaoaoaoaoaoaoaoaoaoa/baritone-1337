@@ -114,6 +114,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         DestinationSpec spec = primitive.destinationSpec();
         BlockOffset probe = spec.precheckOffset();
         int newX = currentNode.x + probe.dx();
+        int newY = currentNode.y + probe.dy();
         int newZ = currentNode.z + probe.dz();
         if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.isLoaded(newX, newZ)) {
           // only need to check if the destination is a loaded chunk if it's in a different chunk than the start of the movement
@@ -125,25 +126,28 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         if (!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) {
           continue;
         }
-        if (currentNode.y + probe.dy() > height || currentNode.y + probe.dy() < minY) {
+        if (newY > height || newY < minY) {
           continue;
         }
         long blockKey = 0;
         boolean hasStaticBlockKey = false;
+        boolean staticIncumbentKnown = false;
+        PathNode staticIncumbent = null;
         if (!spec.dynamicXZ() && !spec.dynamicY()) {
-          blockKey = BlockKey.pack(newX, currentNode.y + probe.dy(), newZ);
+          blockKey = BlockKey.pack(newX, newY, newZ);
           hasStaticBlockKey = true;
           double minimumCost = primitive.minimumCost(calcContext);
           if (minimumCost > 0) {
             nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
-            PathNode incumbent = peekNodeAtPosition(blockKey);
+            staticIncumbent = peekNodeAtPosition(blockKey);
+            staticIncumbentKnown = true;
             if (activeProfile != null) {
               nodeMapNanos += System.nanoTime() - nodeMapStart;
             }
-            if (incumbent != null) {
-              long favoringHash = BetterBlockPos.longHash(newX, currentNode.y + probe.dy(), newZ);
+            if (staticIncumbent != null) {
+              long favoringHash = BetterBlockPos.longHash(newX, newY, newZ);
               double lowerBoundActionCost = minimumCost * (isFavoring ? favoring.calculate(favoringHash) : 1);
-              if (incumbent.cost - (currentNode.cost + lowerBoundActionCost) <= minimumImprovement) {
+              if (staticIncumbent.cost - (currentNode.cost + lowerBoundActionCost) <= minimumImprovement) {
                 if (activeProfile != null && primitive instanceof LegacyMovesPrimitive legacy) {
                   activeProfile.recordLowerBoundPrune(legacy.move());
                 }
@@ -180,9 +184,9 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
               String.format("%s from %s %s %s ended at x z %s %s instead of %s %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x), SettingsUtil.maybeCensor(currentNode.y),
                   SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.x), SettingsUtil.maybeCensor(eval.z), SettingsUtil.maybeCensor(newX), SettingsUtil.maybeCensor(newZ)));
         }
-        if (!spec.dynamicY() && eval.y != currentNode.y + probe.dy()) {
+        if (!spec.dynamicY() && eval.y != newY) {
           throw new IllegalStateException(String.format("%s from %s %s %s ended at y %s instead of %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
-              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(currentNode.y + probe.dy())));
+              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(newY)));
         }
         long favoringHash = BetterBlockPos.longHash(eval.x, eval.y, eval.z);
         if (isFavoring) {
@@ -192,10 +196,23 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         if (!hasStaticBlockKey) {
           blockKey = BlockKey.pack(eval.x, eval.y, eval.z);
         }
-        nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
-        PathNode neighbor = getNodeAtPosition(eval.x, eval.y, eval.z, blockKey);
-        if (activeProfile != null) {
-          nodeMapNanos += System.nanoTime() - nodeMapStart;
+        PathNode neighbor;
+        if (hasStaticBlockKey && staticIncumbentKnown) {
+          if (staticIncumbent == null) {
+            nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
+            neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
+            if (activeProfile != null) {
+              nodeMapNanos += System.nanoTime() - nodeMapStart;
+            }
+          } else {
+            neighbor = staticIncumbent;
+          }
+        } else {
+          nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
+          neighbor = getNodeAtPosition(eval.x, eval.y, eval.z, blockKey);
+          if (activeProfile != null) {
+            nodeMapNanos += System.nanoTime() - nodeMapStart;
+          }
         }
         double tentativeCost = currentNode.cost + actionCost;
         if (neighbor.cost - tentativeCost > minimumImprovement) {
