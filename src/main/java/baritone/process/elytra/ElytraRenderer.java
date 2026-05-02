@@ -8,6 +8,7 @@ import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.Pair;
 import baritone.utils.IRenderer;
 import baritone.utils.PathRenderer;
+import baritone.utils.RenderContext;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
@@ -50,23 +51,24 @@ final class ElytraRenderer {
 
   void render(IPlayerContext ctx, RenderEvent event) {
     Settings settings = baritone.Baritone.settings();
+    RenderContext view = RenderContext.capture(event);
     if (visiblePath != null) {
-      PathRenderer.drawPath(event.getModelViewStack(), visiblePath, 0, Color.RED, false, 0, 0, 0.0D);
+      PathRenderer.drawPath(view, visiblePath, 0, Color.RED, false, 0, 0, 0.0D);
     }
     if (aimPos != null) {
-      PathRenderer.drawGoal(event.getModelViewStack(), ctx, new GoalBlock(aimPos), event.getPartialTicks(), Color.GREEN);
+      PathRenderer.drawGoal(view, ctx, new GoalBlock(aimPos), Color.GREEN);
     }
     if (!clearLines.isEmpty() && settings.elytraRenderRaytraces.value) {
       BufferBuilder bufferBuilder = IRenderer.startLines(Color.GREEN);
       for (Pair<Vec3, Vec3> line : clearLines) {
-        IRenderer.emitLine(bufferBuilder, event.getModelViewStack(), line.first(), line.second(), settings.pathRenderLineWidthPixels.value);
+        IRenderer.emitLine(bufferBuilder, view, line.first(), line.second(), settings.pathRenderLineWidthPixels.value);
       }
       IRenderer.endLines(bufferBuilder, settings.renderPathIgnoreDepth.value);
     }
     if (!blockedLines.isEmpty() && settings.elytraRenderRaytraces.value) {
       BufferBuilder bufferBuilder = IRenderer.startLines(Color.BLUE);
       for (Pair<Vec3, Vec3> line : blockedLines) {
-        IRenderer.emitLine(bufferBuilder, event.getModelViewStack(), line.first(), line.second(), settings.pathRenderLineWidthPixels.value);
+        IRenderer.emitLine(bufferBuilder, view, line.first(), line.second(), settings.pathRenderLineWidthPixels.value);
       }
       IRenderer.endLines(bufferBuilder, settings.renderPathIgnoreDepth.value);
     }
@@ -74,7 +76,7 @@ final class ElytraRenderer {
       BufferBuilder bufferBuilder = IRenderer.startLines(new Color(0x36CCDC));
       Vec3 offset = ctx.player().getPosition(event.getPartialTicks());
       for (int i = 0; i < simulationLine.size() - 1; i++) {
-        IRenderer.emitLine(bufferBuilder, event.getModelViewStack(), simulationLine.get(i).add(offset), simulationLine.get(i + 1).add(offset), settings.pathRenderLineWidthPixels.value);
+        IRenderer.emitLine(bufferBuilder, view, simulationLine.get(i).add(offset), simulationLine.get(i + 1).add(offset), settings.pathRenderLineWidthPixels.value);
       }
       IRenderer.endLines(bufferBuilder, settings.renderPathIgnoreDepth.value);
     }
