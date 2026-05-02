@@ -23,7 +23,6 @@ import baritone.utils.schematic.MapArtSchematic;
 import baritone.utils.schematic.SchematicSystem;
 import baritone.utils.schematic.SelectionSchematic;
 import baritone.utils.schematic.litematica.LitematicaHelper;
-import baritone.utils.schematic.schematica.SchematicaHelper;
 import com.google.common.collect.ImmutableSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
@@ -181,23 +180,6 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             schematic = new SelectionSchematic(schematic, origin, baritone.getSelectionManager().getSelections());
         }
         return schematic;
-    }
-
-    @Override
-    public void buildOpenSchematic() {
-        if (SchematicaHelper.isSchematicaPresent()) {
-            Optional<Tuple<IStaticSchematic, BlockPos>> schematic = SchematicaHelper.getOpenSchematic();
-            if (schematic.isPresent()) {
-                IStaticSchematic raw = schematic.get().getA();
-                BlockPos origin = schematic.get().getB();
-                ISchematic schem = applyMapArtAndSelection(origin, raw);
-                this.build(raw.toString(), schem, origin);
-            } else {
-                logDirect("No schematic currently open");
-            }
-        } else {
-            logDirect("Schematica is not present");
-        }
     }
 
     @Override

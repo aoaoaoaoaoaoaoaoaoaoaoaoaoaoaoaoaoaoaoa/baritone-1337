@@ -14,9 +14,13 @@ public final class VarInt {
     private final int size;
 
     public VarInt(int value) {
+        this(value, serialize0(value), -1);
+    }
+
+    private VarInt(int value, byte[] serialized, int size) {
         this.value = value;
-        this.serialized = serialize0(this.value);
-        this.size = this.serialized.length;
+        this.serialized = serialized;
+        this.size = size < 0 ? serialized.length : size;
     }
 
     /**
@@ -34,7 +38,7 @@ public final class VarInt {
     }
 
     public final byte[] serialize() {
-        return this.serialized;
+        return this.serialized.clone();
     }
 
     private static byte[] serialize0(int valueIn) {
@@ -60,12 +64,14 @@ public final class VarInt {
         int index = start;
 
         while (true) {
-            byte b = bytes[index++];
-            value |= (b & 0x7F) << size++ * 7;
-
-            if (size > 5) {
+            if (size == 5) {
                 throw new IllegalArgumentException("VarInt size cannot exceed 5 bytes");
             }
+            if (index >= bytes.length) {
+                throw new IllegalArgumentException("VarInt extends past end of input");
+            }
+            byte b = bytes[index++];
+            value |= (b & 0x7F) << (size++ * 7);
 
             // Most significant bit denotes another byte is to be read.
             if ((b & 0x80) == 0) {
@@ -73,6 +79,6 @@ public final class VarInt {
             }
         }
 
-        return new VarInt(value);
+        return new VarInt(value, serialize0(value), size);
     }
 }

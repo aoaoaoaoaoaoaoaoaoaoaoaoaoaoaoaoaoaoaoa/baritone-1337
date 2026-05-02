@@ -38,7 +38,7 @@ public class Waypoint implements IWaypoint {
 
     @Override
     public int hashCode() {
-        return name.hashCode() ^ tag.hashCode() ^ location.hashCode() ^ Long.hashCode(creationTimestamp);
+        return name.hashCode() ^ tag.hashCode() ^ location.hashCode();
     }
 
     @Override

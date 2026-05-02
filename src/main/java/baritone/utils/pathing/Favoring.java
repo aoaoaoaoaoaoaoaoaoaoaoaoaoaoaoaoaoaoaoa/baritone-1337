@@ -1,9 +1,9 @@
 package baritone.utils.pathing;
 
 import baritone.api.pathing.calc.IPath;
-import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
+import baritone.pathing.calc.BlockKey;
 import baritone.pathing.movement.CalculationContext;
 import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 
@@ -24,7 +24,7 @@ public final class Favoring {
         favorings.defaultReturnValue(1.0D);
         double coeff = context.backtrackCostFavoringCoefficient;
         if (coeff != 1D && previous != null) {
-            previous.positions().forEach(pos -> favorings.put(BetterBlockPos.longHash(pos), coeff));
+            previous.positions().forEach(pos -> favorings.put(BlockKey.pack(pos.getX(), pos.getY(), pos.getZ()), coeff));
         }
     }
 

@@ -1,8 +1,8 @@
 package baritone.utils.pathing;
 
 import baritone.Baritone;
-import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
+import baritone.pathing.calc.BlockKey;
 import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Mob;
@@ -70,7 +70,7 @@ public class Avoidance {
             for (int y = -radius; y <= radius; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     if (x * x + y * y + z * z <= radius * radius) {
-                        long hash = BetterBlockPos.longHash(centerX + x, centerY + y, centerZ + z);
+                        long hash = BlockKey.pack(centerX + x, centerY + y, centerZ + z);
                         map.put(hash, map.get(hash) * coefficient);
                     }
                 }

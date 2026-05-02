@@ -13,7 +13,6 @@ public final class DefaultCommands {
         new CommandAlias(baritone, Arrays.asList("modified", "mod", "baritone", "modifiedsettings"), "List modified settings", "set modified"),
         new CommandAlias(baritone, "reset", "Reset all settings or just one", "set reset"), new GoalCommand(baritone), new GotoCommand(baritone), new PathCommand(baritone), new ProcCommand(baritone),
         new ETACommand(baritone), new ProfileCommand(baritone), new VersionCommand(baritone), new RepackCommand(baritone), new BuildCommand(baritone),
-        // new SchematicaCommand(baritone),
         new LitematicaCommand(baritone), new ComeCommand(baritone), new AxisCommand(baritone), new ForceCancelCommand(baritone), new GcCommand(baritone), new InvertCommand(baritone),
         new TunnelCommand(baritone), new RenderCommand(baritone), new FarmCommand(baritone), new FollowCommand(baritone), new PickupCommand(baritone), new ExploreFilterCommand(baritone),
         new ReloadAllCommand(baritone), new SaveAllCommand(baritone), new ExploreCommand(baritone), new BlacklistCommand(baritone), new FindCommand(baritone), new MineCommand(baritone),

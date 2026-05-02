@@ -43,7 +43,7 @@ public class FindCommand extends Command {
                                 BuiltInRegistries.BLOCK.getKey(block).getPath(),
                                 Integer.MAX_VALUE,
                                 origin.x,
-                                origin.y,
+                                origin.z,
                                 4
                         ).stream()
                 )

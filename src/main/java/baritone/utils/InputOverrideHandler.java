@@ -8,7 +8,8 @@ import baritone.api.utils.input.Input;
 import baritone.behavior.Behavior;
 import net.minecraft.client.player.KeyboardInput;
 
-import java.util.HashMap;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.Map;
 
 /**
@@ -24,7 +25,8 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     /**
      * Maps inputs to whether or not we are forcing their state down.
      */
-    private final Map<Input, Boolean> inputForceStateMap = new HashMap<>();
+    private static final EnumSet<Input> MOVEMENT_INPUTS = EnumSet.of(Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP);
+    private final Map<Input, Boolean> inputForceStateMap = new EnumMap<>(Input.class);
 
     private final BlockBreakHelper blockBreakHelper;
     private final BlockPlaceHelper blockPlaceHelper;
@@ -54,6 +56,9 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
      */
     @Override
     public final void setInputForceState(Input input, boolean forced) {
+        if (input == null) {
+            return;
+        }
         this.inputForceStateMap.put(input, forced);
     }
 
@@ -90,7 +95,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     }
 
     private boolean inControl() {
-        for (Input input : new Input[]{Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP}) {
+        for (Input input : MOVEMENT_INPUTS) {
             if (isInputForcedDown(input)) {
                 return true;
             }

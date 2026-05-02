@@ -40,8 +40,6 @@ public interface IBuilderProcess extends IBaritoneProcess {
         return build(schematicFile, file, origin);
     }
 
-    void buildOpenSchematic();
-
     void buildOpenLitematic(int i);
 
     void pause();

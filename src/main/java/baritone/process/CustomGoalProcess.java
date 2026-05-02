@@ -31,7 +31,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
      *
      * @see State
      */
-    private State state;
+    private State state = State.NONE;
 
     public CustomGoalProcess(Baritone baritone) {
         super(baritone);

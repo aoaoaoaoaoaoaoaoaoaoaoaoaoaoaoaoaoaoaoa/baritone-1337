@@ -41,7 +41,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     long heapNanos = 0;
     long nodeMapNanos = 0;
     int minY = calcContext.world.dimensionType().minY();
-    int height = calcContext.world.dimensionType().height();
+    int maxYExclusive = minY + calcContext.world.dimensionType().height();
     long nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
     startNode = getNodeAtPosition(startX, startY, startZ, BlockKey.pack(startX, startY, startZ));
     if (activeProfile != null) {
@@ -126,7 +126,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         if (!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) {
           continue;
         }
-        if (newY > height || newY < minY) {
+        if (newY < minY || newY >= maxYExclusive) {
           continue;
         }
         long blockKey = 0;
@@ -145,7 +145,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
               nodeMapNanos += System.nanoTime() - nodeMapStart;
             }
             if (staticIncumbent != null) {
-              long favoringHash = BetterBlockPos.longHash(newX, newY, newZ);
+              long favoringHash = BlockKey.pack(newX, newY, newZ);
               double lowerBoundActionCost = minimumCost * (isFavoring ? favoring.calculate(favoringHash) : 1);
               if (staticIncumbent.cost - (currentNode.cost + lowerBoundActionCost) <= minimumImprovement) {
                 if (activeProfile != null && primitive instanceof LegacyMovesPrimitive legacy) {
@@ -192,7 +192,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           throw new IllegalStateException(String.format("%s from %s %s %s ended at y %s instead of %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
               SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(newY)));
         }
-        long favoringHash = BetterBlockPos.longHash(eval.x, eval.y, eval.z);
+        long favoringHash = BlockKey.pack(eval.x, eval.y, eval.z);
         if (isFavoring) {
           // see issue #18
           actionCost *= favoring.calculate(favoringHash);

@@ -93,15 +93,15 @@ public final class BetterBlockPos extends BlockPos {
 
     @Override
     public boolean equals(Object o) {
-        if (o == null) {
-            return false;
-        }
         if (o instanceof BetterBlockPos) {
             BetterBlockPos oth = (BetterBlockPos) o;
             return oth.x == x && oth.y == y && oth.z == z;
         }
         // during path execution, like "if (whereShouldIBe.equals(whereAmI)) {"
         // sometimes we compare a BlockPos to a BetterBlockPos
+        if (!(o instanceof BlockPos)) {
+            return false;
+        }
         BlockPos oth = (BlockPos) o;
         return oth.getX() == x && oth.getY() == y && oth.getZ() == z;
     }

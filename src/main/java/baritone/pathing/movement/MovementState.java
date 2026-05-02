@@ -4,7 +4,7 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.input.Input;
 
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -12,7 +12,7 @@ public class MovementState {
 
     private MovementStatus status;
     private MovementTarget target = new MovementTarget();
-    private final Map<Input, Boolean> inputState = new HashMap<>();
+    private final Map<Input, Boolean> inputState = new EnumMap<>(Input.class);
 
     public MovementState setStatus(MovementStatus status) {
         this.status = status;
