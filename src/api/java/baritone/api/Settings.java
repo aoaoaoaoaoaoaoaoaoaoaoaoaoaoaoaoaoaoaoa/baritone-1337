@@ -201,6 +201,14 @@ public final class Settings {
     public final Setting<Boolean> allowDiagonalAscend = new Setting<>(false);
 
     /**
+     * Allow conservative flat (2,1)/(1,2) oblique walking primitives.
+     * <p>
+     * These are first-class A* edges, not path smoothing. The initial implementation refuses block breaking,
+     * placement, vertical deltas, liquids, and non-full support geometry.
+     */
+    public final Setting<Boolean> allowObliqueWalk = new Setting<>(true);
+
+    /**
      * Allow mining the block directly beneath its feet
      * <p>
      * Turn this off to force it to make more staircases and less shafts

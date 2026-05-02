@@ -11,7 +11,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 public final class PathingProfiler {
@@ -134,6 +136,7 @@ public final class PathingProfiler {
     private final long[] lowerBoundPrunedByMove = new long[Moves.values().length];
     private final long[] nanosByMove = new long[Moves.values().length];
     private final long[] maxNanosByMove = new long[Moves.values().length];
+    private final Map<String, MoveCounters> extraMoves = new LinkedHashMap<>();
     private int numNodes;
     private int numMovementsConsidered;
     private int numEmptyChunk;
@@ -173,8 +176,16 @@ public final class PathingProfiler {
       }
     }
 
+    public void recordMove(String move, long nanos, boolean reachable) {
+      extraMoves.computeIfAbsent(move, ignored -> new MoveCounters()).record(nanos, reachable);
+    }
+
     public void recordLowerBoundPrune(Moves move) {
       lowerBoundPrunedByMove[move.ordinal()]++;
+    }
+
+    public void recordLowerBoundPrune(String move) {
+      extraMoves.computeIfAbsent(move, ignored -> new MoveCounters()).recordLowerBoundPrune();
     }
 
     public void finishSearchLoop(int numNodes, int numMovementsConsidered, int numEmptyChunk, int nodeMapSize, String stopReason) {
@@ -229,7 +240,7 @@ public final class PathingProfiler {
       field(json, "searchStopReason", searchStopReason).append(",\n");
       json.append("  \"phases\": {");
       inlineField(json, "searchLoopNanos", searchLoopNanos).append(", ");
-      inlineField(json, "movementEvalNanos", sum(nanosByMove)).append(", ");
+      inlineField(json, "movementEvalNanos", movementEvalNanos()).append(", ");
       inlineField(json, "heapNanos", heapNanos).append(", ");
       inlineField(json, "nodeMapNanos", nodeMapNanos).append(", ");
       inlineField(json, "postProcessNanos", postProcessNanos).append(", ");
@@ -260,6 +271,23 @@ public final class PathingProfiler {
         inlineField(json, "nanos", nanos).append(", ");
         inlineField(json, "maxNanos", maxNanosByMove[ordinal]).append(", ");
         inlineField(json, "avgNanos", String.format(Locale.ROOT, "%.1f", considered == 0 ? 0 : (double) nanos / considered), false);
+        json.append("}");
+      }
+      for (Map.Entry<String, MoveCounters> entry : extraMoves.entrySet()) {
+        if (!first) {
+          json.append(",\n");
+        }
+        first = false;
+        MoveCounters counters = entry.getValue();
+        json.append("    {");
+        inlineField(json, "name", entry.getKey()).append(", ");
+        inlineField(json, "considered", counters.considered).append(", ");
+        inlineField(json, "reachable", counters.reachable).append(", ");
+        inlineField(json, "blocked", counters.considered - counters.reachable).append(", ");
+        inlineField(json, "lowerBoundPruned", counters.lowerBoundPruned).append(", ");
+        inlineField(json, "nanos", counters.nanos).append(", ");
+        inlineField(json, "maxNanos", counters.maxNanos).append(", ");
+        inlineField(json, "avgNanos", String.format(Locale.ROOT, "%.1f", counters.considered == 0 ? 0 : (double) counters.nanos / counters.considered), false);
         json.append("}");
       }
       json.append("\n  ]\n");
@@ -303,6 +331,14 @@ public final class PathingProfiler {
       return sum;
     }
 
+    private long movementEvalNanos() {
+      long sum = sum(nanosByMove);
+      for (MoveCounters counters : extraMoves.values()) {
+        sum += counters.nanos;
+      }
+      return sum;
+    }
+
     private static String escape(String raw) {
       StringBuilder escaped = new StringBuilder(raw.length() + 16);
       for (int i = 0; i < raw.length(); i++) {
@@ -323,6 +359,29 @@ public final class PathingProfiler {
         }
       }
       return escaped.toString();
+    }
+
+    private static final class MoveCounters {
+      private long considered;
+      private long reachable;
+      private long lowerBoundPruned;
+      private long nanos;
+      private long maxNanos;
+
+      private void record(long nanos, boolean reachable) {
+        considered++;
+        if (reachable) {
+          this.reachable++;
+        }
+        this.nanos += nanos;
+        if (nanos > maxNanos) {
+          maxNanos = nanos;
+        }
+      }
+
+      private void recordLowerBoundPrune() {
+        lowerBoundPruned++;
+      }
     }
   }
 }

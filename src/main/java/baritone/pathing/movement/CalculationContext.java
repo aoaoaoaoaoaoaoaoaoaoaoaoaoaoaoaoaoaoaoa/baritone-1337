@@ -55,6 +55,7 @@ public class CalculationContext {
   public final int frostWalker;
   public final boolean allowDiagonalDescend;
   public final boolean allowDiagonalAscend;
+  public final boolean allowObliqueWalk;
   public final boolean allowDownward;
   public int minFallHeight;
   public int maxFallHeightNoWater;
@@ -110,6 +111,7 @@ public class CalculationContext {
     this.frostWalker = frostWalkerLevel;
     this.allowDiagonalDescend = Baritone.settings().allowDiagonalDescend.value;
     this.allowDiagonalAscend = Baritone.settings().allowDiagonalAscend.value;
+    this.allowObliqueWalk = Baritone.settings().allowObliqueWalk.value;
     this.allowDownward = Baritone.settings().allowDownward.value;
     this.minFallHeight = 3; // Minimum fall height used by MovementFall
     this.maxFallHeightNoWater = Baritone.settings().maxFallHeightNoWater.value;

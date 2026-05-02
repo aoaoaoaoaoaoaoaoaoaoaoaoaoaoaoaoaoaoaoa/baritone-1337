@@ -11,10 +11,15 @@ public final class MovementCatalog {
   }
 
   public static MovementCatalog legacyWalking(CalculationContext context) {
-    List<MovementPrimitive> primitives = new ArrayList<>(Moves.values().length);
+    List<MovementPrimitive> primitives = new ArrayList<>(Moves.values().length + ObliqueMovementPrimitive.STRIDES.length);
     for (Moves move : Moves.values()) {
       if (enabled(context, move)) {
         primitives.add(new LegacyMovesPrimitive(move));
+      }
+    }
+    if (context.allowObliqueWalk) {
+      for (int[] stride : ObliqueMovementPrimitive.STRIDES) {
+        primitives.add(new ObliqueMovementPrimitive(stride[0], stride[1]));
       }
     }
     return new MovementCatalog(primitives.toArray(MovementPrimitive[] ::new));

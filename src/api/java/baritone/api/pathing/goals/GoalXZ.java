@@ -81,10 +81,13 @@ public class GoalXZ implements Goal {
         //This is a combination of pythagorean and manhattan distance
         //It takes into account the fact that pathing can either walk diagonally or forwards
 
-        //It's not possible to walk forward 1 and right 2 in sqrt(5) time
-        //It's really 1+sqrt(2) because it'll walk forward 1 then diagonally 1
         double x = Math.abs(xDiff);
         double z = Math.abs(zDiff);
+        if (BaritoneAPI.getSettings().allowObliqueWalk.value) {
+            return Math.hypot(x, z) * BaritoneAPI.getSettings().costHeuristic.value;
+        }
+        //It's not possible to walk forward 1 and right 2 in sqrt(5) time without oblique primitives.
+        //It's really 1+sqrt(2) because it'll walk forward 1 then diagonally 1
         double straight;
         double diagonal;
         if (x < z) {
