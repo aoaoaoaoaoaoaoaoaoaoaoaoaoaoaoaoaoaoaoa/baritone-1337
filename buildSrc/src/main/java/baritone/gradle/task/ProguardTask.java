@@ -29,198 +29,188 @@ import java.util.zip.ZipFile;
  */
 public class ProguardTask extends BaritoneGradleTask {
 
-    private final ExecOperations execOperations;
+  private final ExecOperations execOperations;
 
-    @Inject
-    public ProguardTask(ExecOperations execOperations) {
-        this.execOperations = execOperations;
+  @Inject
+  public ProguardTask(ExecOperations execOperations) {
+    this.execOperations = execOperations;
+  }
+
+  @Input
+  private String proguardVersion;
+
+  public String getProguardVersion() { return proguardVersion; }
+
+  private List<String> requiredLibraries;
+
+  @TaskAction
+  protected void exec() throws Exception {
+    super.doFirst();
+    super.verifyArtifacts();
+
+    // "Haha brady why don't you make separate tasks"
+    downloadProguard();
+    extractProguard();
+    generateConfigs();
+    processArtifact();
+    proguardApi();
+    proguardStandalone();
+    cleanup();
+  }
+
+  UniminedExtension ext = getProject().getExtensions().getByType(UniminedExtension.class);
+  SourceSetContainer sourceSets = getProject().getExtensions().getByType(SourceSetContainer.class);
+
+  private File getMcJar() {
+    MinecraftConfig mcc = ext.getMinecrafts().get(sourceSets.getByName("main"));
+    return mcc.getMinecraft(mcc.getMcPatcher().getProdNamespace()).toFile();
+  }
+
+  private boolean isMcJar(File f) {
+    MinecraftConfig mcc = ext.getMinecrafts().get(sourceSets.getByName("main"));
+    return mcc.isMinecraftJar(f.toPath());
+  }
+
+  private void processArtifact() throws Exception {
+    if (Files.exists(this.artifactUnoptimizedPath)) {
+      Files.delete(this.artifactUnoptimizedPath);
     }
 
-    @Input
-    private String proguardVersion;
+    Determinizer.determinize(this.artifactPath.toString(), this.artifactUnoptimizedPath.toString(), List.of());
+  }
 
-    public String getProguardVersion() {
-        return proguardVersion;
+  private void downloadProguard() throws Exception {
+    Path proguardZip = getTemporaryFile(String.format(PROGUARD_ZIP, proguardVersion));
+    if (!Files.exists(proguardZip)) {
+      write(new URL(String.format("https://github.com/Guardsquare/proguard/releases/download/v%s/proguard-%s.zip", proguardVersion, proguardVersion)).openStream(), proguardZip);
+    }
+  }
+
+  private void extractProguard() throws Exception {
+    Path proguardJar = getTemporaryFile(String.format(PROGUARD_JAR, proguardVersion));
+    if (!Files.exists(proguardJar)) {
+      ZipFile zipFile = new ZipFile(getTemporaryFile(String.format(PROGUARD_ZIP, proguardVersion)).toFile());
+      ZipEntry zipJarEntry = zipFile.getEntry(String.format("proguard-%s/lib/proguard.jar", proguardVersion));
+      write(zipFile.getInputStream(zipJarEntry), proguardJar);
+      zipFile.close();
+    }
+  }
+
+  private JavaLauncher getJavaLauncherForProguard() {
+    var toolchains = getProject().getExtensions().getByType(JavaToolchainService.class);
+    var toolchain = toolchains.launcherFor((spec) -> {
+      spec.getLanguageVersion().set(JavaLanguageVersion.of(getProject().findProperty("java_toolchain_version").toString()));
+    }).getOrNull();
+
+    if (toolchain == null) {
+      throw new IllegalStateException("Java toolchain not found");
     }
 
-    private List<String> requiredLibraries;
+    return toolchain;
+  }
 
-    @TaskAction
-    protected void exec() throws Exception {
-        super.doFirst();
-        super.verifyArtifacts();
+  private void generateConfigs() throws Exception {
+    Files.copy(getRootRelativeFile(PROGUARD_CONFIG_TEMPLATE), getTemporaryFile(PROGUARD_CONFIG_DEST), StandardCopyOption.REPLACE_EXISTING);
 
-        // "Haha brady why don't you make separate tasks"
-        downloadProguard();
-        extractProguard();
-        generateConfigs();
-        processArtifact();
-        proguardApi();
-        proguardStandalone();
-        cleanup();
+    // Setup the template that will be used to derive the API and Standalone configs
+    List<String> template = Files.readAllLines(getTemporaryFile(PROGUARD_CONFIG_DEST));
+    template.add(0, "-injars '" + this.artifactPath.toString() + "'");
+    template.add(1, "-outjars '" + this.getTemporaryFile(PROGUARD_EXPORT_PATH) + "'");
+
+    template.add(2, "-libraryjars  <java.home>/jmods/java.base.jmod(!**.jar;!module-info.class)");
+    template.add(3, "-libraryjars  <java.home>/jmods/java.desktop.jmod(!**.jar;!module-info.class)");
+    template.add(4, "-libraryjars  <java.home>/jmods/jdk.unsupported.jmod(!**.jar;!module-info.class)");
+
+    {
+      final Stream<File> libraries;
+      File mcJar;
+      try {
+        mcJar = getMcJar();
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to find Minecraft jar", e);
+      }
+
+      {
+        // Discover all of the libraries that we will need to acquire from gradle
+        final Stream<File> dependencies = acquireDependencies()
+          // remove MCP mapped jar, and nashorn
+          .filter(f -> !f.toString().endsWith("-recomp.jar") && !f.getName().startsWith("nashorn") && !f.getName().startsWith("coremods"));
+
+        libraries = dependencies.map(f -> isMcJar(f) ? mcJar : f);
+      }
+      libraries.forEach(f -> {
+        template.add(2, "-libraryjars '" + f + "'");
+      });
     }
 
-    UniminedExtension ext = getProject().getExtensions().getByType(UniminedExtension.class);
-    SourceSetContainer sourceSets = getProject().getExtensions().getByType(SourceSetContainer.class);
+    Files.createDirectories(this.getRootRelativeFile(PROGUARD_MAPPING_DIR));
 
-    private File getMcJar() {
-        MinecraftConfig mcc = ext.getMinecrafts().get(sourceSets.getByName("main"));
-        return mcc.getMinecraft(mcc.getMcPatcher().getProdNamespace()).toFile();
+    List<String> api = new ArrayList<>(template);
+    api.add(2, "-printmapping " + new File(this.getRootRelativeFile(PROGUARD_MAPPING_DIR).toFile(), "mappings-" + addCompTypeFirst("api.txt")));
+
+    // API config doesn't require any changes from the changes that we made to the template
+    Files.write(getTemporaryFile(compType + PROGUARD_API_CONFIG), api);
+
+    // For the Standalone config, don't keep the API package
+    List<String> standalone = new ArrayList<>(template);
+    standalone.removeIf(s -> s.contains("# this is the keep api"));
+    standalone.add(2, "-printmapping " + new File(this.getRootRelativeFile(PROGUARD_MAPPING_DIR).toFile(), "mappings-" + addCompTypeFirst("standalone.txt")));
+    Files.write(getTemporaryFile(compType + PROGUARD_STANDALONE_CONFIG), standalone);
+  }
+
+  private Stream<File> acquireDependencies() {
+    return sourceSets.getByName("main").getCompileClasspath().getFiles().stream().filter(File::isFile);
+  }
+
+  private void proguardApi() throws Exception {
+    runProguard(getTemporaryFile(compType + PROGUARD_API_CONFIG));
+    Determinizer.determinize(this.proguardOut.toString(), this.artifactApiPath.toString(), List.of());
+  }
+
+  private void proguardStandalone() throws Exception {
+    runProguard(getTemporaryFile(compType + PROGUARD_STANDALONE_CONFIG));
+    Determinizer.determinize(this.proguardOut.toString(), this.artifactStandalonePath.toString(), List.of());
+  }
+
+  private static final class Pair<A, B> {
+    public final A a;
+    public final B b;
+
+    private Pair(final A a, final B b) {
+      this.a = a;
+      this.b = b;
     }
 
-    private boolean isMcJar(File f) {
-        MinecraftConfig mcc = ext.getMinecrafts().get(sourceSets.getByName("main"));
-        return mcc.isMinecraftJar(f.toPath());
+    @Override
+    public String toString() {
+      return "Pair{" + "a=" + this.a + ", " + "b=" + this.b + '}';
+    }
+  }
+
+  private void cleanup() {
+    try {
+      Files.delete(this.proguardOut);
+    } catch (IOException ignored) {
+    }
+  }
+
+  public void setProguardVersion(String url) { this.proguardVersion = url; }
+
+  private void runProguard(Path config) throws Exception {
+    // Delete the existing proguard output file. Proguard probably handles this already, but why not do it ourselves
+    if (Files.exists(this.proguardOut)) {
+      Files.delete(this.proguardOut);
     }
 
-    private void processArtifact() throws Exception {
-        if (Files.exists(this.artifactUnoptimizedPath)) {
-            Files.delete(this.artifactUnoptimizedPath);
-        }
+    Path workingDirectory = getTemporaryFile("");
 
-        Determinizer.determinize(this.artifactPath.toString(), this.artifactUnoptimizedPath.toString(), List.of());
-    }
+    execOperations.javaexec(spec -> {
+      spec.workingDir(workingDirectory.toFile());
+      spec.args("@" + workingDirectory.relativize(config));
+      spec.classpath(getTemporaryFile(String.format(PROGUARD_JAR, proguardVersion)));
 
-    private void downloadProguard() throws Exception {
-        Path proguardZip = getTemporaryFile(String.format(PROGUARD_ZIP, proguardVersion));
-        if (!Files.exists(proguardZip)) {
-            write(new URL(String.format("https://github.com/Guardsquare/proguard/releases/download/v%s/proguard-%s.zip", proguardVersion, proguardVersion)).openStream(), proguardZip);
-        }
-    }
-
-    private void extractProguard() throws Exception {
-        Path proguardJar = getTemporaryFile(String.format(PROGUARD_JAR, proguardVersion));
-        if (!Files.exists(proguardJar)) {
-            ZipFile zipFile = new ZipFile(getTemporaryFile(String.format(PROGUARD_ZIP, proguardVersion)).toFile());
-            ZipEntry zipJarEntry = zipFile.getEntry(String.format("proguard-%s/lib/proguard.jar", proguardVersion));
-            write(zipFile.getInputStream(zipJarEntry), proguardJar);
-            zipFile.close();
-        }
-    }
-
-    private JavaLauncher getJavaLauncherForProguard() {
-        var toolchains = getProject().getExtensions().getByType(JavaToolchainService.class);
-        var toolchain = toolchains.launcherFor((spec) -> {
-            spec.getLanguageVersion().set(JavaLanguageVersion.of(getProject().findProperty("java_toolchain_version").toString()));
-        }).getOrNull();
-
-        if (toolchain == null) {
-            throw new IllegalStateException("Java toolchain not found");
-        }
-
-        return toolchain;
-    }
-
-    private void generateConfigs() throws Exception {
-        Files.copy(getRootRelativeFile(PROGUARD_CONFIG_TEMPLATE), getTemporaryFile(PROGUARD_CONFIG_DEST), StandardCopyOption.REPLACE_EXISTING);
-
-        // Setup the template that will be used to derive the API and Standalone configs
-        List<String> template = Files.readAllLines(getTemporaryFile(PROGUARD_CONFIG_DEST));
-        template.add(0, "-injars '" + this.artifactPath.toString() + "'");
-        template.add(1, "-outjars '" + this.getTemporaryFile(PROGUARD_EXPORT_PATH) + "'");
-
-        template.add(2, "-libraryjars  <java.home>/jmods/java.base.jmod(!**.jar;!module-info.class)");
-        template.add(3, "-libraryjars  <java.home>/jmods/java.desktop.jmod(!**.jar;!module-info.class)");
-        template.add(4, "-libraryjars  <java.home>/jmods/jdk.unsupported.jmod(!**.jar;!module-info.class)");
-
-        {
-            final Stream<File> libraries;
-            File mcJar;
-            try {
-                mcJar = getMcJar();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to find Minecraft jar", e);
-            }
-
-            {
-                // Discover all of the libraries that we will need to acquire from gradle
-                final Stream<File> dependencies = acquireDependencies()
-                        // remove MCP mapped jar, and nashorn
-                        .filter(f -> !f.toString().endsWith("-recomp.jar") && !f.getName().startsWith("nashorn") && !f.getName().startsWith("coremods"));
-
-                libraries = dependencies
-                        .map(f -> isMcJar(f) ? mcJar : f);
-            }
-            libraries.forEach(f -> {
-                template.add(2, "-libraryjars '" + f + "'");
-            });
-        }
-
-        Files.createDirectories(this.getRootRelativeFile(PROGUARD_MAPPING_DIR));
-
-        List<String> api = new ArrayList<>(template);
-        api.add(2, "-printmapping " + new File(this.getRootRelativeFile(PROGUARD_MAPPING_DIR).toFile(), "mappings-" + addCompTypeFirst("api.txt")));
-
-        // API config doesn't require any changes from the changes that we made to the template
-        Files.write(getTemporaryFile(compType + PROGUARD_API_CONFIG), api);
-
-        // For the Standalone config, don't keep the API package
-        List<String> standalone = new ArrayList<>(template);
-        standalone.removeIf(s -> s.contains("# this is the keep api"));
-        standalone.add(2, "-printmapping " + new File(this.getRootRelativeFile(PROGUARD_MAPPING_DIR).toFile(), "mappings-" + addCompTypeFirst("standalone.txt")));
-        Files.write(getTemporaryFile(compType + PROGUARD_STANDALONE_CONFIG), standalone);
-    }
-
-    private Stream<File> acquireDependencies() {
-        return sourceSets.getByName("main").getCompileClasspath().getFiles()
-                .stream()
-                .filter(File::isFile);
-    }
-
-    private void proguardApi() throws Exception {
-        runProguard(getTemporaryFile(compType + PROGUARD_API_CONFIG));
-        Determinizer.determinize(this.proguardOut.toString(), this.artifactApiPath.toString(), List.of());
-    }
-
-    private void proguardStandalone() throws Exception {
-        runProguard(getTemporaryFile(compType + PROGUARD_STANDALONE_CONFIG));
-        Determinizer.determinize(this.proguardOut.toString(), this.artifactStandalonePath.toString(), List.of());
-    }
-
-    private static final class Pair<A, B> {
-        public final A a;
-        public final B b;
-
-        private Pair(final A a, final B b) {
-            this.a = a;
-            this.b = b;
-        }
-
-        @Override
-        public String toString() {
-            return "Pair{" +
-                    "a=" + this.a +
-                    ", " +
-                    "b=" + this.b +
-                    '}';
-        }
-    }
-
-    private void cleanup() {
-        try {
-            Files.delete(this.proguardOut);
-        } catch (IOException ignored) {}
-    }
-
-    public void setProguardVersion(String url) {
-        this.proguardVersion = url;
-    }
-
-    private void runProguard(Path config) throws Exception {
-        // Delete the existing proguard output file. Proguard probably handles this already, but why not do it ourselves
-        if (Files.exists(this.proguardOut)) {
-            Files.delete(this.proguardOut);
-        }
-
-        Path workingDirectory = getTemporaryFile("");
-
-        execOperations.javaexec(spec -> {
-            spec.workingDir(workingDirectory.toFile());
-            spec.args("@" + workingDirectory.relativize(config));
-            spec.classpath(getTemporaryFile(String.format(PROGUARD_JAR, proguardVersion)));
-
-            spec.executable(getJavaLauncherForProguard().getExecutablePath().getAsFile());
-        }).assertNormalExitValue().rethrowFailure();
-    }
+      spec.executable(getJavaLauncherForProguard().getExecutablePath().getAsFile());
+    }).assertNormalExitValue().rethrowFailure();
+  }
 
 }

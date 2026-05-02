@@ -22,7 +22,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.WaterFluid;
 
 public class MovementParkour extends Movement {
-  private static final BetterBlockPos[] EMPTY = new BetterBlockPos[] {};
+  private static final BetterBlockPos[] EMPTY = new BetterBlockPos[]{};
 
   private final Direction direction;
   private final int dist;
@@ -111,7 +111,7 @@ public class MovementParkour extends Movement {
       BlockState destInto = context.bsi.get0(destX, y, destZ);
       if (!MovementHelper.fullyPassable(context, destX, y, destZ, destInto)) {
         if (i <= 3 && context.movement.allowParkourAscend() && context.movement.canSprint() && MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
-            && checkOvershootSafety(context.bsi, destX + xDiff, y + 1, destZ + zDiff)) {
+          && checkOvershootSafety(context.bsi, destX + xDiff, y + 1, destZ + zDiff)) {
           res.reachable(destX, y + 1, destZ, i * SPRINT_ONE_BLOCK_COST + context.costs.jumpPenalty(), 0);
           return;
         }
@@ -123,7 +123,7 @@ public class MovementParkour extends Movement {
       // farmland needs to be canWalkOn otherwise farm can never work at all, but we want to specifically disallow ending a jump on farmland haha
       // frostwalker works here because we can't jump from possibly unfrozen water
       if ((landingOn.getBlock() != Blocks.FARMLAND && MovementHelper.canWalkOn(context, destX, y - 1, destZ, landingOn))
-          || (Math.min(16, context.movement.frostWalker() + 2) >= i && MovementHelper.canUseFrostWalker(context, landingOn))) {
+        || (Math.min(16, context.movement.frostWalker() + 2) >= i && MovementHelper.canUseFrostWalker(context, landingOn))) {
         if (checkOvershootSafety(context.bsi, destX + xDiff, y, destZ + zDiff)) {
           res.reachable(destX, y, destZ, costFromJumpDistance(i) + context.costs.jumpPenalty(), 0);
           return;
@@ -179,13 +179,13 @@ public class MovementParkour extends Movement {
 
   private static double costFromJumpDistance(int dist) {
     switch (dist) {
-      case 2:
+      case 2 :
         return WALK_ONE_BLOCK_COST * 2; // IDK LOL
-      case 3:
+      case 3 :
         return WALK_ONE_BLOCK_COST * 3;
-      case 4:
+      case 4 :
         return SPRINT_ONE_BLOCK_COST * 4;
-      default:
+      default :
         throw new IllegalStateException("LOL " + dist);
     }
   }
@@ -251,8 +251,8 @@ public class MovementParkour extends Movement {
     } else if (!ctx.playerFeet().equals(src)) {
       if (ctx.playerFeet().equals(src.relative(direction)) || ctx.player().position().y - src.y > 0.0001) {
         if (Baritone.settings().allowPlace.value // see PR #3775
-            && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway() && !MovementHelper.canWalkOn(ctx, dest.below()) && !ctx.player().onGround()
-            && MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == PlaceResult.READY_TO_PLACE) {
+          && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway() && !MovementHelper.canWalkOn(ctx, dest.below()) && !ctx.player().onGround()
+          && MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == PlaceResult.READY_TO_PLACE) {
           // go in the opposite order to check DOWN before all horizontals -- down is preferable because you don't have to look to the side while in midair, which could mess up the trajectory
           state.setInput(Input.CLICK_RIGHT, true);
         }

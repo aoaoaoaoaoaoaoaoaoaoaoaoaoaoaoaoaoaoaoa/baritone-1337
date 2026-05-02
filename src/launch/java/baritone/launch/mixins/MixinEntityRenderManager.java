@@ -7,19 +7,18 @@ import org.spongepowered.asm.mixin.Mixin;
 @Mixin(EntityRenderDispatcher.class)
 public class MixinEntityRenderManager implements IEntityRenderManager {
 
+  @Override
+  public double renderPosX() {
+    return ((EntityRenderDispatcher) (Object) this).camera.position().x;
+  }
 
-    @Override
-    public double renderPosX() {
-        return ((EntityRenderDispatcher) (Object) this).camera.position().x;
-    }
+  @Override
+  public double renderPosY() {
+    return ((EntityRenderDispatcher) (Object) this).camera.position().y;
+  }
 
-    @Override
-    public double renderPosY() {
-        return ((EntityRenderDispatcher) (Object) this).camera.position().y;
-    }
-
-    @Override
-    public double renderPosZ() {
-        return ((EntityRenderDispatcher) (Object) this).camera.position().z;
-    }
+  @Override
+  public double renderPosZ() {
+    return ((EntityRenderDispatcher) (Object) this).camera.position().z;
+  }
 }

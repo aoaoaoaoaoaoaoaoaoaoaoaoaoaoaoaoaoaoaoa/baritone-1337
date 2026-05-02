@@ -31,115 +31,110 @@ import static baritone.api.command.IBaritoneChatControl.FORCE_COMMAND_PREFIX;
 
 public class GuiClick extends Screen implements Helper {
 
-    private Matrix4f projectionViewMatrix;
+  private Matrix4f projectionViewMatrix;
 
-    private BlockPos clickStart;
-    private BlockPos currentMouseOver;
+  private BlockPos clickStart;
+  private BlockPos currentMouseOver;
 
-    public GuiClick() {
-        super(Component.literal("CLICK"));
+  public GuiClick() {
+    super(Component.literal("CLICK"));
+  }
+
+  @Override
+  public boolean isPauseScreen() { return false; }
+
+  @Override
+  public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
+    double mx = mc.mouseHandler.xpos();
+    double my = mc.mouseHandler.ypos();
+
+    my = mc.getWindow().getScreenHeight() - my;
+    my *= mc.getWindow().getHeight() / (double) mc.getWindow().getScreenHeight();
+    mx *= mc.getWindow().getWidth() / (double) mc.getWindow().getScreenWidth();
+    Vec3 near = toWorld(mx, my, 0);
+    Vec3 far = toWorld(mx, my, 1); // "Use 0.945 that's what stack overflow says" - leijurv
+
+    if (near != null && far != null) {
+      Vec3 viewerPos = new Vec3(PathRenderer.posX(), PathRenderer.posY(), PathRenderer.posZ());
+      LocalPlayer player = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().player();
+      HitResult result = player.level().clip(new ClipContext(near.add(viewerPos), far.add(viewerPos), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+      if (result != null && result.getType() == HitResult.Type.BLOCK) {
+        currentMouseOver = ((BlockHitResult) result).getBlockPos();
+      }
     }
+  }
 
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
+  @Override
+  public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
+    // Prevent default background rendering
+  }
 
-    @Override
-    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
-        double mx = mc.mouseHandler.xpos();
-        double my = mc.mouseHandler.ypos();
-
-        my = mc.getWindow().getScreenHeight() - my;
-        my *= mc.getWindow().getHeight() / (double) mc.getWindow().getScreenHeight();
-        mx *= mc.getWindow().getWidth() / (double) mc.getWindow().getScreenWidth();
-        Vec3 near = toWorld(mx, my, 0);
-        Vec3 far = toWorld(mx, my, 1); // "Use 0.945 that's what stack overflow says" - leijurv
-
-        if (near != null && far != null) {
-            Vec3 viewerPos = new Vec3(PathRenderer.posX(), PathRenderer.posY(), PathRenderer.posZ());
-            LocalPlayer player = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().player();
-            HitResult result = player.level().clip(new ClipContext(near.add(viewerPos), far.add(viewerPos), ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
-            if (result != null && result.getType() == HitResult.Type.BLOCK) {
-                currentMouseOver = ((BlockHitResult) result).getBlockPos();
-            }
+  @Override
+  public boolean mouseReleased(MouseButtonEvent event) {
+    if (currentMouseOver != null) { //Catch this, or else a click into void will result in a crash
+      if (event.button() == 0) {
+        if (clickStart != null && !clickStart.equals(currentMouseOver)) {
+          BaritoneAPI.getProvider().getPrimaryBaritone().getSelectionManager().removeAllSelections();
+          BaritoneAPI.getProvider().getPrimaryBaritone().getSelectionManager().addSelection(BetterBlockPos.from(clickStart), BetterBlockPos.from(currentMouseOver));
+          MutableComponent component = Component.literal("Selection made! For usage: " + Baritone.settings().prefix.value + "help sel");
+          component.setStyle(component.getStyle().withColor(ChatFormatting.WHITE).withClickEvent(new ClickEvent.RunCommand(FORCE_COMMAND_PREFIX + "help sel")));
+          Helper.HELPER.logDirect(component);
+          clickStart = null;
+        } else {
+          BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalBlock(currentMouseOver));
         }
+      } else if (event.button() == 1) {
+        BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalBlock(currentMouseOver.above()));
+      }
+    }
+    clickStart = null;
+    return super.mouseReleased(event);
+  }
+
+  @Override
+  public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+    clickStart = currentMouseOver;
+    return super.mouseClicked(event, doubleClick);
+  }
+
+  public void onRender(RenderContext view, Matrix4f projectionMatrix) {
+    this.projectionViewMatrix = new Matrix4f(projectionMatrix);
+    this.projectionViewMatrix.mul(view.stack().last().pose());
+    this.projectionViewMatrix.invert();
+
+    if (currentMouseOver != null) {
+      Entity e = mc.getCameraEntity();
+      // drawSingleSelectionBox WHEN?
+      PathRenderer.drawManySelectionBoxes(view, e, Collections.singletonList(currentMouseOver), Color.CYAN);
+      if (clickStart != null && !clickStart.equals(currentMouseOver)) {
+        BufferBuilder bufferBuilder = IRenderer.startLines(Color.RED);
+        BetterBlockPos a = new BetterBlockPos(currentMouseOver);
+        BetterBlockPos b = new BetterBlockPos(clickStart);
+        IRenderer.emitAABB(bufferBuilder, view, new AABB(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.min(a.z, b.z), Math.max(a.x, b.x) + 1, Math.max(a.y, b.y) + 1, Math.max(a.z, b.z) + 1),
+          Baritone.settings().pathRenderLineWidthPixels.value);
+        IRenderer.endLines(bufferBuilder, true);
+      }
+    }
+  }
+
+  private Vec3 toWorld(double x, double y, double z) {
+    if (this.projectionViewMatrix == null) {
+      return null;
     }
 
-    @Override
-    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
-        // Prevent default background rendering
+    x /= mc.getWindow().getWidth();
+    y /= mc.getWindow().getHeight();
+    x = x * 2 - 1;
+    y = y * 2 - 1;
+
+    Vector4f pos = new Vector4f((float) x, (float) y, (float) z, 1.0F);
+    projectionViewMatrix.transform(pos);
+
+    if (pos.w() == 0) {
+      return null;
     }
 
-    @Override
-    public boolean mouseReleased(MouseButtonEvent event) {
-        if (currentMouseOver != null) { //Catch this, or else a click into void will result in a crash
-            if (event.button() == 0) {
-                if (clickStart != null && !clickStart.equals(currentMouseOver)) {
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getSelectionManager().removeAllSelections();
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getSelectionManager().addSelection(BetterBlockPos.from(clickStart), BetterBlockPos.from(currentMouseOver));
-                    MutableComponent component = Component.literal("Selection made! For usage: " + Baritone.settings().prefix.value + "help sel");
-                    component.setStyle(component.getStyle()
-                            .withColor(ChatFormatting.WHITE)
-                            .withClickEvent(new ClickEvent.RunCommand(
-                                    FORCE_COMMAND_PREFIX + "help sel"
-                            )));
-                    Helper.HELPER.logDirect(component);
-                    clickStart = null;
-                } else {
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalBlock(currentMouseOver));
-                }
-            } else if (event.button() == 1) {
-                BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new GoalBlock(currentMouseOver.above()));
-            }
-        }
-        clickStart = null;
-        return super.mouseReleased(event);
-    }
-
-    @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        clickStart = currentMouseOver;
-        return super.mouseClicked(event, doubleClick);
-    }
-
-    public void onRender(RenderContext view, Matrix4f projectionMatrix) {
-        this.projectionViewMatrix = new Matrix4f(projectionMatrix);
-        this.projectionViewMatrix.mul(view.stack().last().pose());
-        this.projectionViewMatrix.invert();
-
-        if (currentMouseOver != null) {
-            Entity e = mc.getCameraEntity();
-            // drawSingleSelectionBox WHEN?
-            PathRenderer.drawManySelectionBoxes(view, e, Collections.singletonList(currentMouseOver), Color.CYAN);
-            if (clickStart != null && !clickStart.equals(currentMouseOver)) {
-                BufferBuilder bufferBuilder = IRenderer.startLines(Color.RED);
-                BetterBlockPos a = new BetterBlockPos(currentMouseOver);
-                BetterBlockPos b = new BetterBlockPos(clickStart);
-                IRenderer.emitAABB(bufferBuilder, view, new AABB(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.min(a.z, b.z), Math.max(a.x, b.x) + 1, Math.max(a.y, b.y) + 1, Math.max(a.z, b.z) + 1), Baritone.settings().pathRenderLineWidthPixels.value);
-                IRenderer.endLines(bufferBuilder, true);
-            }
-        }
-    }
-
-    private Vec3 toWorld(double x, double y, double z) {
-        if (this.projectionViewMatrix == null) {
-            return null;
-        }
-
-        x /= mc.getWindow().getWidth();
-        y /= mc.getWindow().getHeight();
-        x = x * 2 - 1;
-        y = y * 2 - 1;
-
-        Vector4f pos = new Vector4f((float) x, (float) y, (float) z, 1.0F);
-        projectionViewMatrix.transform(pos);
-
-        if (pos.w() == 0) {
-            return null;
-        }
-
-        pos.mul(1/pos.w());
-        return new Vec3(pos.x(), pos.y(), pos.z());
-    }
+    pos.mul(1 / pos.w());
+    return new Vec3(pos.x(), pos.y(), pos.z());
+  }
 }

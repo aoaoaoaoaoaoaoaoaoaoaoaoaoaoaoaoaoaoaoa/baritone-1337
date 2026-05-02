@@ -38,15 +38,11 @@ public final class GetCommand extends Command {
       String search = args.hasAny() && args.peekAsOrNull(Integer.class) == null ? args.getString() : "";
       args.requireMax(1);
       Stream<Settings.Setting<?>> source = viewModified ? SettingsUtil.modifiedSettings(Baritone.settings()).stream() : Baritone.settings().allSettings.stream();
-      List<Settings.Setting<?>> settings = source.filter(s -> !s.isJavaOnly())
-                                               .filter(s -> s.getName().toLowerCase(Locale.US).contains(search.toLowerCase(Locale.US)))
-                                               .sorted((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName()))
-                                               .collect(Collectors.toList());
+      List<Settings.Setting<?>> settings = source.filter(s -> !s.isJavaOnly()).filter(s -> s.getName().toLowerCase(Locale.US).contains(search.toLowerCase(Locale.US)))
+        .sorted((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.getName(), b.getName())).collect(Collectors.toList());
       Paginator.paginate(args, new Paginator<>(settings),
-          ()
-              -> logDirect(
-                  !search.isEmpty() ? String.format("%ssettings containing '%s':", viewModified ? "Modified " : "", search) : String.format("%ssettings:", viewModified ? "Modified " : "All ")),
-          this::renderSettingSummary, FORCE_COMMAND_PREFIX + "get " + arg + " " + search);
+        () -> logDirect(!search.isEmpty() ? String.format("%ssettings containing '%s':", viewModified ? "Modified " : "", search) : String.format("%ssettings:", viewModified ? "Modified " : "All ")),
+        this::renderSettingSummary, FORCE_COMMAND_PREFIX + "get " + arg + " " + search);
       return;
     }
 
@@ -90,13 +86,11 @@ public final class GetCommand extends Command {
   }
 
   @Override
-  public String getShortDesc() {
-    return "Read settings";
-  }
+  public String getShortDesc() { return "Read settings"; }
 
   @Override
   public List<String> getLongDesc() {
     return Arrays.asList("Read Baritone settings without mutating them.", "", "Usage:", "> get - Same as `get list`", "> get list [page] - View all settings",
-        "> get modified [page] - View modified settings", "> get <setting> - View a setting");
+      "> get modified [page] - View modified settings", "> get <setting> - View a setting");
   }
 }

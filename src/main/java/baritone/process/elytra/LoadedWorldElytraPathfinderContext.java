@@ -43,13 +43,16 @@ public final class LoadedWorldElytraPathfinderContext implements ElytraPathfinde
   }
 
   @Override
-  public void queueCacheCulling(int chunkX, int chunkZ, int maxDistanceBlocks) {}
+  public void queueCacheCulling(int chunkX, int chunkZ, int maxDistanceBlocks) {
+  }
 
   @Override
-  public void queueForPacking(LevelChunk chunk) {}
+  public void queueForPacking(LevelChunk chunk) {
+  }
 
   @Override
-  public void queueBlockUpdate(BlockChangeEvent event) {}
+  public void queueBlockUpdate(BlockChangeEvent event) {
+  }
 
   @Override
   public CompletableFuture<ElytraPathSegment> pathFindAsync(BlockPos src, BlockPos dst) {
@@ -189,10 +192,12 @@ public final class LoadedWorldElytraPathfinderContext implements ElytraPathfinde
   }
 
   @Override
-  public void cancel() {}
+  public void cancel() {
+  }
 
   @Override
-  public void destroy() {}
+  public void destroy() {
+  }
 
   private boolean loadedAlong(Vec3 start, Vec3 end) {
     double distance = start.distanceTo(end);

@@ -37,7 +37,7 @@ public class MovementDiagonal extends Movement {
   }
 
   private MovementDiagonal(IBaritone baritone, BetterBlockPos start, BetterBlockPos end, BetterBlockPos dir1, BetterBlockPos dir2) {
-    super(baritone, start, end, new BetterBlockPos[] {dir1, dir1.above(), dir2, dir2.above(), end, end.above()});
+    super(baritone, start, end, new BetterBlockPos[]{dir1, dir1.above(), dir2, dir2.above(), end, end.above()});
   }
 
   @Override
@@ -60,7 +60,7 @@ public class MovementDiagonal extends Movement {
     // we are in a likely unwalkable corner, check for a supporting block
     if (ctx.playerFeet().equals(new BetterBlockPos(src.x, src.y, dest.z)) || ctx.playerFeet().equals(new BetterBlockPos(dest.x, src.y, src.z))) {
       return (MovementHelper.canWalkOn(ctx, new BetterBlockPos(x + offset, y, z + offset)) || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x + offset, y, z - offset))
-          || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z + offset)) || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z - offset)));
+        || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z + offset)) || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z - offset)));
     }
     return true;
   }
@@ -103,7 +103,7 @@ public class MovementDiagonal extends Movement {
     if (!MovementHelper.canWalkThrough(context, destX, y, destZ, destInto)) {
       ascend = true;
       if (!context.movement.allowDiagonalAscend() || !MovementHelper.canWalkThrough(context, x, y + 2, z) || !MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
-          || !MovementHelper.canWalkThrough(context, destX, y + 2, destZ)) {
+        || !MovementHelper.canWalkThrough(context, destX, y + 2, destZ)) {
         return;
       }
       destWalkOn = destInto;
@@ -174,12 +174,12 @@ public class MovementDiagonal extends Movement {
       boolean BMid = MovementHelper.canWalkThrough(context, destX, y + 1, z);
       boolean BLow = MovementHelper.canWalkThrough(context, destX, y, z, pb2);
       if ((!(ATop && AMid && ALow) && !(BTop && BMid && BLow)) // no option
-          || MovementHelper.avoidWalkingInto(pb0) // bad
-          || MovementHelper.avoidWalkingInto(pb2) // bad
-          || (ATop && AMid && MovementHelper.canWalkOn(context, x, y, destZ, pb0)) // we could just ascend
-          || (BTop && BMid && MovementHelper.canWalkOn(context, destX, y, z, pb2)) // we could just ascend
-          || (!ATop && AMid && ALow) // head bonk A
-          || (!BTop && BMid && BLow)) { // head bonk B
+        || MovementHelper.avoidWalkingInto(pb0) // bad
+        || MovementHelper.avoidWalkingInto(pb2) // bad
+        || (ATop && AMid && MovementHelper.canWalkOn(context, x, y, destZ, pb0)) // we could just ascend
+        || (BTop && BMid && MovementHelper.canWalkOn(context, destX, y, z, pb2)) // we could just ascend
+        || (!ATop && AMid && ALow) // head bonk A
+        || (!BTop && BMid && BLow)) { // head bonk B
         return;
       }
       res.reachable(destX, y + 1, destZ, multiplier * SQRT_2 + JUMP_ONE_BLOCK_COST, 0);
@@ -256,8 +256,8 @@ public class MovementDiagonal extends Movement {
     if (sprint()) {
       state.setInput(Input.SPRINT, true);
     }
-    state.setInput(
-        Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
+    state.setInput(Input.SNEAK,
+      Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
     MovementHelper.moveTowards(ctx, state, dest);
     return state;
   }

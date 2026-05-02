@@ -15,125 +15,125 @@ import net.minecraft.world.phys.Vec3;
  */
 public interface IGameEventListener {
 
-    /**
-     * Run once per game tick before screen input is handled.
-     *
-     * @param event The event
-     * @see Minecraft#tick()
-     */
-    void onTick(TickEvent event);
+  /**
+   * Run once per game tick before screen input is handled.
+   *
+   * @param event The event
+   * @see Minecraft#tick()
+   */
+  void onTick(TickEvent event);
 
-    /**
-     * Run once per game tick after the tick is completed
-     *
-     * @param event The event
-     * @see Minecraft#runTick()
-     */
-    void onPostTick(TickEvent event);
+  /**
+   * Run once per game tick after the tick is completed
+   *
+   * @param event The event
+   * @see Minecraft#runTick()
+   */
+  void onPostTick(TickEvent event);
 
-    /**
-     * Run once per game tick from before and after the player rotation is sent to the server.
-     *
-     * @param event The event
-     * @see LocalPlayer#tick()
-     */
-    void onPlayerUpdate(PlayerUpdateEvent event);
+  /**
+   * Run once per game tick from before and after the player rotation is sent to the server.
+   *
+   * @param event The event
+   * @see LocalPlayer#tick()
+   */
+  void onPlayerUpdate(PlayerUpdateEvent event);
 
-    /**
-     * Runs whenever the client player sends a message to the server.
-     *
-     * @param event The event
-     * @see LocalPlayer#chat(String)
-     */
-    void onSendChatMessage(ChatEvent event);
+  /**
+   * Runs whenever the client player sends a message to the server.
+   *
+   * @param event The event
+   * @see LocalPlayer#chat(String)
+   */
+  void onSendChatMessage(ChatEvent event);
 
-    /**
-     * Runs whenever the client player tries to tab complete in chat.
-     *
-     * @param event The event
-     */
-    void onPreTabComplete(TabCompleteEvent event);
+  /**
+   * Runs whenever the client player tries to tab complete in chat.
+   *
+   * @param event The event
+   */
+  void onPreTabComplete(TabCompleteEvent event);
 
-    /**
-     * Runs before and after whenever a chunk is either loaded, unloaded, or populated.
-     *
-     * @param event The event
-     */
-    void onChunkEvent(ChunkEvent event);
+  /**
+   * Runs before and after whenever a chunk is either loaded, unloaded, or populated.
+   *
+   * @param event The event
+   */
+  void onChunkEvent(ChunkEvent event);
 
-    /**
-     * Runs after a single or multi block change packet is received and processed.
-     *
-     * @param event The event
-     */
-    void onBlockChange(BlockChangeEvent event);
+  /**
+   * Runs after a single or multi block change packet is received and processed.
+   *
+   * @param event The event
+   */
+  void onBlockChange(BlockChangeEvent event);
 
-    /**
-     * Runs once per world render pass.
-     *
-     * @param event The event
-     */
-    void onRenderPass(RenderEvent event);
+  /**
+   * Runs once per world render pass.
+   *
+   * @param event The event
+   */
+  void onRenderPass(RenderEvent event);
 
-    /**
-     * Runs before and after whenever a new world is loaded
-     *
-     * @param event The event
-     * @see Minecraft#setLevel(ClientLevel)
-     */
-    void onWorldEvent(WorldEvent event);
+  /**
+   * Runs before and after whenever a new world is loaded
+   *
+   * @param event The event
+   * @see Minecraft#setLevel(ClientLevel)
+   */
+  void onWorldEvent(WorldEvent event);
 
-    /**
-     * Runs before a outbound packet is sent
-     *
-     * @param event The event
-     * @see Packet
-     */
-    void onSendPacket(PacketEvent event);
+  /**
+   * Runs before a outbound packet is sent
+   *
+   * @param event The event
+   * @see Packet
+   */
+  void onSendPacket(PacketEvent event);
 
-    /**
-     * Runs before an inbound packet is processed
-     *
-     * @param event The event
-     * @see Packet
-     */
-    void onReceivePacket(PacketEvent event);
+  /**
+   * Runs before an inbound packet is processed
+   *
+   * @param event The event
+   * @see Packet
+   */
+  void onReceivePacket(PacketEvent event);
 
-    /**
-     * Run once per game tick from before and after the player's moveRelative method is called
-     * and before and after the player jumps.
-     *
-     * @param event The event
-     * @see Entity#moveRelative(float, Vec3)
-     */
-    void onPlayerRotationMove(RotationMoveEvent event);
+  /**
+   * Run once per game tick from before and after the player's moveRelative method is called
+   * and before and after the player jumps.
+   *
+   * @param event The event
+   * @see Entity#moveRelative(float, Vec3)
+   */
+  void onPlayerRotationMove(RotationMoveEvent event);
 
-    /**
-     * Called whenever the sprint keybind state is checked in {@link LocalPlayer#aiStep}
-     *
-     * @param event The event
-     * @see LocalPlayer#aiStep()
-     */
-    void onPlayerSprintState(SprintStateEvent event);
+  /**
+   * Called whenever the sprint keybind state is checked in {@link LocalPlayer#aiStep}
+   *
+   * @param event The event
+   * @see LocalPlayer#aiStep()
+   */
+  void onPlayerSprintState(SprintStateEvent event);
 
-    /**
-     * Called when the local player interacts with a block, whether it is breaking or opening/placing.
-     *
-     * @param event The event
-     */
-    void onBlockInteract(BlockInteractEvent event);
+  /**
+   * Called when the local player interacts with a block, whether it is breaking or opening/placing.
+   *
+   * @param event The event
+   */
+  void onBlockInteract(BlockInteractEvent event);
 
-    /**
-     * Called when the local player dies, as indicated by the creation of the {@link DeathScreen} screen.
-     *
-     * @see DeathScreen
-     */
-    void onPlayerDeath();
+  /**
+   * Called when the local player dies, as indicated by the creation of the {@link DeathScreen} screen.
+   *
+   * @see DeathScreen
+   */
+  void onPlayerDeath();
 
-    /**
-     * When the pathfinder's state changes
-     *
-     * @param event The event
-     */
-    void onPathEvent(PathEvent event);
+  /**
+   * When the pathfinder's state changes
+   *
+   * @param event The event
+   */
+  void onPathEvent(PathEvent event);
 }

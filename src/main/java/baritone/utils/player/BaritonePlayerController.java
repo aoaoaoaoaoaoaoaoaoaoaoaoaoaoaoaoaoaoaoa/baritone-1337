@@ -14,7 +14,6 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 
-
 /**
  * Implementation of {@link IPlayerController} that chains to the primary player controller's methods
  *
@@ -23,60 +22,58 @@ import net.minecraft.world.phys.BlockHitResult;
  */
 public final class BaritonePlayerController implements IPlayerController {
 
-    private final Minecraft mc;
+  private final Minecraft mc;
 
-    public BaritonePlayerController(Minecraft mc) {
-        this.mc = mc;
-    }
+  public BaritonePlayerController(Minecraft mc) {
+    this.mc = mc;
+  }
 
-    @Override
-    public void syncHeldItem() {
-        ((IPlayerControllerMP) mc.gameMode).callSyncCurrentPlayItem();
-    }
+  @Override
+  public void syncHeldItem() {
+    ((IPlayerControllerMP) mc.gameMode).callSyncCurrentPlayItem();
+  }
 
-    @Override
-    public boolean hasBrokenBlock() {
-        return !((IPlayerControllerMP) mc.gameMode).isHittingBlock();
-    }
+  @Override
+  public boolean hasBrokenBlock() {
+    return !((IPlayerControllerMP) mc.gameMode).isHittingBlock();
+  }
 
-    @Override
-    public boolean onPlayerDamageBlock(BlockPos pos, Direction side) {
-        return mc.gameMode.continueDestroyBlock(pos, side);
-    }
+  @Override
+  public boolean onPlayerDamageBlock(BlockPos pos, Direction side) {
+    return mc.gameMode.continueDestroyBlock(pos, side);
+  }
 
-    @Override
-    public void resetBlockRemoving() {
-        mc.gameMode.stopDestroyBlock();
-    }
+  @Override
+  public void resetBlockRemoving() {
+    mc.gameMode.stopDestroyBlock();
+  }
 
-    @Override
-    public void windowClick(int windowId, int slotId, int mouseButton, ContainerInput type, Player player) {
-        mc.gameMode.handleContainerInput(windowId, slotId, mouseButton, type, player);
-    }
+  @Override
+  public void windowClick(int windowId, int slotId, int mouseButton, ContainerInput type, Player player) {
+    mc.gameMode.handleContainerInput(windowId, slotId, mouseButton, type, player);
+  }
 
-    @Override
-    public GameType getGameType() {
-        return mc.gameMode.getPlayerMode();
-    }
+  @Override
+  public GameType getGameType() { return mc.gameMode.getPlayerMode(); }
 
-    @Override
-    public InteractionResult processRightClickBlock(LocalPlayer player, Level world, InteractionHand hand, BlockHitResult result) {
-        // primaryplayercontroller is always in a ClientWorld so this is ok
-        return mc.gameMode.useItemOn(player, hand, result);
-    }
+  @Override
+  public InteractionResult processRightClickBlock(LocalPlayer player, Level world, InteractionHand hand, BlockHitResult result) {
+    // primaryplayercontroller is always in a ClientWorld so this is ok
+    return mc.gameMode.useItemOn(player, hand, result);
+  }
 
-    @Override
-    public InteractionResult processRightClick(LocalPlayer player, Level world, InteractionHand hand) {
-        return mc.gameMode.useItem(player, hand);
-    }
+  @Override
+  public InteractionResult processRightClick(LocalPlayer player, Level world, InteractionHand hand) {
+    return mc.gameMode.useItem(player, hand);
+  }
 
-    @Override
-    public boolean clickBlock(BlockPos loc, Direction face) {
-        return mc.gameMode.startDestroyBlock(loc, face);
-    }
+  @Override
+  public boolean clickBlock(BlockPos loc, Direction face) {
+    return mc.gameMode.startDestroyBlock(loc, face);
+  }
 
-    @Override
-    public void setHittingBlock(boolean hittingBlock) {
-        ((IPlayerControllerMP) mc.gameMode).setIsHittingBlock(hittingBlock);
-    }
+  @Override
+  public void setHittingBlock(boolean hittingBlock) {
+    ((IPlayerControllerMP) mc.gameMode).setIsHittingBlock(hittingBlock);
+  }
 }

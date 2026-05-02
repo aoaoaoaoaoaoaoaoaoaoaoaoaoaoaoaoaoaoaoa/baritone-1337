@@ -73,8 +73,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     int numEmptyChunk = 0;
     boolean isFavoring = !favoring.isEmpty();
     int timeCheckInterval = 1 << 6;
-    int pathingMaxChunkBorderFetch =
-        Baritone.settings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
+    int pathingMaxChunkBorderFetch = Baritone.settings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
     double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
@@ -168,7 +167,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         double actionCost = eval.cost;
         if (actionCost <= 0 || Double.isNaN(actionCost)) {
           throw new IllegalStateException(String.format("%s from %s %s %s calculated implausible cost %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
-              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), actionCost));
+            SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), actionCost));
         }
         // check destination after verifying it's not COST_INF -- some movements return COST_INF without adjusting the destination
         if (spec.dynamicXZ() && !worldBorder.entirelyContains(eval.x, eval.z)) { // see issue #218
@@ -176,12 +175,12 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         }
         if (!spec.dynamicXZ() && (eval.x != newX || eval.z != newZ)) {
           throw new IllegalStateException(
-              String.format("%s from %s %s %s ended at x z %s %s instead of %s %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x), SettingsUtil.maybeCensor(currentNode.y),
-                  SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.x), SettingsUtil.maybeCensor(eval.z), SettingsUtil.maybeCensor(newX), SettingsUtil.maybeCensor(newZ)));
+            String.format("%s from %s %s %s ended at x z %s %s instead of %s %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x), SettingsUtil.maybeCensor(currentNode.y),
+              SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.x), SettingsUtil.maybeCensor(eval.z), SettingsUtil.maybeCensor(newX), SettingsUtil.maybeCensor(newZ)));
         }
         if (!spec.dynamicY() && eval.y != newY) {
           throw new IllegalStateException(String.format("%s from %s %s %s ended at y %s instead of %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
-              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(newY)));
+            SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(newY)));
         }
         long favoringHash = BlockKey.pack(eval.x, eval.y, eval.z);
         if (isFavoring) {
@@ -245,11 +244,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     }
     if (activeProfile != null) {
       activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(),
-          cancelRequested                                   ? "cancel"
-              : openSet.isEmpty()                           ? "open_set_empty"
-              : numEmptyChunk >= pathingMaxChunkBorderFetch ? "empty_chunk_limit"
-                                                            : "timeout",
-          System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
+        cancelRequested ? "cancel" : openSet.isEmpty() ? "open_set_empty" : numEmptyChunk >= pathingMaxChunkBorderFetch ? "empty_chunk_limit" : "timeout", System.nanoTime() - searchLoopStarted,
+        heapNanos, nodeMapNanos);
     }
     if (cancelRequested) {
       return Optional.empty();

@@ -8,19 +8,15 @@ import java.util.Locale;
 import java.util.stream.Stream;
 
 public enum ForAxis implements IDatatypeFor<Direction.Axis> {
-    INSTANCE;
+  INSTANCE;
 
-    @Override
-    public Direction.Axis get(IDatatypeContext ctx) throws CommandException {
-        return Direction.Axis.valueOf(ctx.getConsumer().getString().toUpperCase(Locale.US));
-    }
+  @Override
+  public Direction.Axis get(IDatatypeContext ctx) throws CommandException {
+    return Direction.Axis.valueOf(ctx.getConsumer().getString().toUpperCase(Locale.US));
+  }
 
-    @Override
-    public Stream<String> tabComplete(IDatatypeContext ctx) throws CommandException {
-        return new TabCompleteHelper()
-                .append(Stream.of(Direction.Axis.values())
-                        .map(Direction.Axis::getName).map(String::toLowerCase))
-                .filterPrefix(ctx.getConsumer().getString())
-                .stream();
-    }
+  @Override
+  public Stream<String> tabComplete(IDatatypeContext ctx) throws CommandException {
+    return new TabCompleteHelper().append(Stream.of(Direction.Axis.values()).map(Direction.Axis::getName).map(String::toLowerCase)).filterPrefix(ctx.getConsumer().getString()).stream();
+  }
 }

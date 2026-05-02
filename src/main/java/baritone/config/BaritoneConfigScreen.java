@@ -68,17 +68,13 @@ public final class BaritoneConfigScreen extends Screen {
     addRenderableWidget(label);
 
     if (setting.getValueClass() == Boolean.class) {
-      @SuppressWarnings("unchecked") Settings.Setting<Boolean> bool = (Settings.Setting<Boolean>) setting;
-      addRenderableWidget(Button
-              .builder(boolMessage(bool.value),
-                  b -> {
-                    bool.value = !bool.value;
-                    SettingsUtil.save(Baritone.settings());
-                    rebuildWidgets();
-                  })
-              .bounds(center - 50, y, 95, 20)
-              .tooltip(Tooltip.create(Component.literal(setting.getName())))
-              .build());
+      @SuppressWarnings("unchecked")
+      Settings.Setting<Boolean> bool = (Settings.Setting<Boolean>) setting;
+      addRenderableWidget(Button.builder(boolMessage(bool.value), b -> {
+        bool.value = !bool.value;
+        SettingsUtil.save(Baritone.settings());
+        rebuildWidgets();
+      }).bounds(center - 50, y, 95, 20).tooltip(Tooltip.create(Component.literal(setting.getName()))).build());
     } else {
       EditBox box = new EditBox(font, center - 50, y, 155, 20, Component.literal(setting.getName()));
       box.setMaxLength(256);
@@ -88,15 +84,11 @@ public final class BaritoneConfigScreen extends Screen {
       addRenderableWidget(Button.builder(Component.literal("Set"), b -> apply(setting, box)).bounds(center + 110, y, 45, 20).build());
     }
 
-    addRenderableWidget(Button
-            .builder(Component.literal("Reset"),
-                b -> {
-                  setting.reset();
-                  SettingsUtil.save(Baritone.settings());
-                  rebuildWidgets();
-                })
-            .bounds(center + 160, y, 60, 20)
-            .build());
+    addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
+      setting.reset();
+      SettingsUtil.save(Baritone.settings());
+      rebuildWidgets();
+    }).bounds(center + 160, y, 60, 20).build());
   }
 
   private static Component boolMessage(boolean value) {

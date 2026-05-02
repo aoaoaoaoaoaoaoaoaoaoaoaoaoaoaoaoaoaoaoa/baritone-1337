@@ -22,92 +22,92 @@ import java.util.stream.StreamSupport;
  */
 public interface IPlayerContext {
 
-    Minecraft minecraft();
+  Minecraft minecraft();
 
-    LocalPlayer player();
+  LocalPlayer player();
 
-    IPlayerController playerController();
+  IPlayerController playerController();
 
-    Level world();
+  Level world();
 
-    default Iterable<Entity> entities() {
-        return ((ClientLevel) world()).entitiesForRendering();
+  default Iterable<Entity> entities() {
+    return ((ClientLevel) world()).entitiesForRendering();
+  }
+
+  default Stream<Entity> entitiesStream() {
+    return StreamSupport.stream(entities().spliterator(), false);
+  }
+
+  IWorldData worldData();
+
+  HitResult objectMouseOver();
+
+  default BetterBlockPos playerFeet() {
+    // TODO find a better way to deal with soul sand!!!!!
+    BetterBlockPos feet = new BetterBlockPos(player().position().x, player().position().y + 0.1251, player().position().z);
+
+    // sometimes when calling this from another thread or while world is null, it'll throw a NullPointerException
+    // that causes the game to immediately crash
+    //
+    // so of course crashing on 2b is horribly bad due to queue times and logout spot
+    // catch the NPE and ignore it if it does happen
+    //
+    // this does not impact performance at all since we're not null checking constantly
+    // if there is an exception, the only overhead is Java generating the exception object... so we can ignore it
+    try {
+      if (world().getBlockState(feet).getBlock() instanceof SlabBlock) {
+        return feet.above();
+      }
+    } catch (NullPointerException ignored) {
     }
 
-    default Stream<Entity> entitiesStream() {
-        return StreamSupport.stream(entities().spliterator(), false);
+    return feet;
+  }
+
+  default Vec3 playerFeetAsVec() {
+    return new Vec3(player().position().x, player().position().y, player().position().z);
+  }
+
+  default Vec3 playerHead() {
+    return new Vec3(player().position().x, player().position().y + player().getEyeHeight(), player().position().z);
+  }
+
+  default Vec3 playerMotion() {
+    return player().getDeltaMovement();
+  }
+
+  BetterBlockPos viewerPos();
+
+  default Rotation playerRotations() {
+    return new Rotation(player().getYRot(), player().getXRot());
+  }
+
+  /**
+   * Returns the player's eye height, taking into account whether or not the player is sneaking.
+   *
+   * @param ifSneaking Whether or not the player is sneaking
+   * @return The player's eye height
+   * @deprecated Use entity.getEyeHeight(Pose.CROUCHING) instead
+   */
+  @Deprecated
+  static double eyeHeight(boolean ifSneaking) {
+    return ifSneaking ? 1.27 : 1.62;
+  }
+
+  /**
+   * Returns the block that the crosshair is currently placed over. Updated once per tick.
+   *
+   * @return The position of the highlighted block
+   */
+  default Optional<BlockPos> getSelectedBlock() {
+    HitResult result = objectMouseOver();
+    if (result != null && result.getType() == HitResult.Type.BLOCK) {
+      return Optional.of(((BlockHitResult) result).getBlockPos());
     }
+    return Optional.empty();
+  }
 
-
-    IWorldData worldData();
-
-    HitResult objectMouseOver();
-
-    default BetterBlockPos playerFeet() {
-        // TODO find a better way to deal with soul sand!!!!!
-        BetterBlockPos feet = new BetterBlockPos(player().position().x, player().position().y + 0.1251, player().position().z);
-
-        // sometimes when calling this from another thread or while world is null, it'll throw a NullPointerException
-        // that causes the game to immediately crash
-        //
-        // so of course crashing on 2b is horribly bad due to queue times and logout spot
-        // catch the NPE and ignore it if it does happen
-        //
-        // this does not impact performance at all since we're not null checking constantly
-        // if there is an exception, the only overhead is Java generating the exception object... so we can ignore it
-        try {
-            if (world().getBlockState(feet).getBlock() instanceof SlabBlock) {
-                return feet.above();
-            }
-        } catch (NullPointerException ignored) {}
-
-        return feet;
-    }
-
-    default Vec3 playerFeetAsVec() {
-        return new Vec3(player().position().x, player().position().y, player().position().z);
-    }
-
-    default Vec3 playerHead() {
-        return new Vec3(player().position().x, player().position().y + player().getEyeHeight(), player().position().z);
-    }
-
-    default Vec3 playerMotion() {
-        return player().getDeltaMovement();
-    }
-
-    BetterBlockPos viewerPos();
-
-    default Rotation playerRotations() {
-        return new Rotation(player().getYRot(), player().getXRot());
-    }
-
-    /**
-     * Returns the player's eye height, taking into account whether or not the player is sneaking.
-     *
-     * @param ifSneaking Whether or not the player is sneaking
-     * @return The player's eye height
-     * @deprecated Use entity.getEyeHeight(Pose.CROUCHING) instead
-     */
-    @Deprecated
-    static double eyeHeight(boolean ifSneaking) {
-        return ifSneaking ? 1.27 : 1.62;
-    }
-
-    /**
-     * Returns the block that the crosshair is currently placed over. Updated once per tick.
-     *
-     * @return The position of the highlighted block
-     */
-    default Optional<BlockPos> getSelectedBlock() {
-        HitResult result = objectMouseOver();
-        if (result != null && result.getType() == HitResult.Type.BLOCK) {
-            return Optional.of(((BlockHitResult) result).getBlockPos());
-        }
-        return Optional.empty();
-    }
-
-    default boolean isLookingAt(BlockPos pos) {
-        return getSelectedBlock().equals(Optional.of(pos));
-    }
+  default boolean isLookingAt(BlockPos pos) {
+    return getSelectedBlock().equals(Optional.of(pos));
+  }
 }

@@ -57,10 +57,8 @@ public class ExampleBaritoneControl extends Behavior implements Helper {
       String msg = command + rest;
       String toDisplay = settings.censorRanCommands.value ? command + " ..." : msg;
       MutableComponent component = Component.literal(String.format("> %s", toDisplay));
-      component.setStyle(component.getStyle()
-              .withColor(ChatFormatting.WHITE)
-              .withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to rerun command")))
-              .withClickEvent(new ClickEvent.RunCommand(FORCE_COMMAND_PREFIX + msg)));
+      component.setStyle(component.getStyle().withColor(ChatFormatting.WHITE).withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to rerun command")))
+        .withClickEvent(new ClickEvent.RunCommand(FORCE_COMMAND_PREFIX + msg)));
       logDirect(component);
     }
   }
@@ -72,7 +70,8 @@ public class ExampleBaritoneControl extends Behavior implements Helper {
     } else if (msg.trim().equalsIgnoreCase("orderpizza")) {
       try {
         Util.getPlatform().openUri("https://www.dominos.com/en/pages/order/");
-      } catch (Exception ignored) {}
+      } catch (Exception ignored) {
+      }
       return false;
     }
     if (msg.isEmpty()) {
@@ -106,7 +105,7 @@ public class ExampleBaritoneControl extends Behavior implements Helper {
     if (args.size() == 1) {
       stream = stream.map(x -> commandPrefix + x);
     }
-    event.completions = stream.toArray(String[] ::new);
+    event.completions = stream.toArray(String[]::new);
   }
 
   public Stream<String> tabComplete(String msg) {

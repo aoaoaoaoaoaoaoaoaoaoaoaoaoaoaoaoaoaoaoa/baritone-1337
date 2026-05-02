@@ -15,58 +15,50 @@ import java.util.stream.Stream;
 
 public class FarmCommand extends Command {
 
-    public FarmCommand(IBaritone baritone) {
-        super(baritone, "farm");
+  public FarmCommand(IBaritone baritone) {
+    super(baritone, "farm");
+  }
+
+  @Override
+  public void execute(String label, IArgConsumer args) throws CommandException {
+    args.requireMax(2);
+    int range = 0;
+    BetterBlockPos origin = null;
+    //range
+    if (args.has(1)) {
+      range = args.getAs(Integer.class);
+    }
+    //waypoint
+    if (args.has(1)) {
+      IWaypoint[] waypoints = args.getDatatypeFor(ForWaypoints.INSTANCE);
+      IWaypoint waypoint = null;
+      switch (waypoints.length) {
+        case 0 :
+          throw new CommandInvalidStateException("No waypoints found");
+        case 1 :
+          waypoint = waypoints[0];
+          break;
+        default :
+          throw new CommandInvalidStateException("Multiple waypoints were found");
+      }
+      origin = waypoint.getLocation();
     }
 
-    @Override
-    public void execute(String label, IArgConsumer args) throws CommandException {
-        args.requireMax(2);
-        int range = 0;
-        BetterBlockPos origin = null;
-        //range
-        if (args.has(1)) {
-            range = args.getAs(Integer.class);
-        }
-        //waypoint
-        if (args.has(1)) {
-            IWaypoint[] waypoints = args.getDatatypeFor(ForWaypoints.INSTANCE);
-            IWaypoint waypoint = null;
-            switch (waypoints.length) {
-                case 0:
-                    throw new CommandInvalidStateException("No waypoints found");
-                case 1:
-                    waypoint = waypoints[0];
-                    break;
-                default:
-                    throw new CommandInvalidStateException("Multiple waypoints were found");
-            }
-            origin = waypoint.getLocation();
-        }
+    baritone.getFarmProcess().farm(range, origin);
+    logDirect("Farming");
+  }
 
-        baritone.getFarmProcess().farm(range, origin);
-        logDirect("Farming");
-    }
+  @Override
+  public Stream<String> tabComplete(String label, IArgConsumer args) {
+    return Stream.empty();
+  }
 
-    @Override
-    public Stream<String> tabComplete(String label, IArgConsumer args) {
-        return Stream.empty();
-    }
+  @Override
+  public String getShortDesc() { return "Farm nearby crops"; }
 
-    @Override
-    public String getShortDesc() {
-        return "Farm nearby crops";
-    }
-
-    @Override
-    public List<String> getLongDesc() {
-        return Arrays.asList(
-                "The farm command starts farming nearby plants. It harvests mature crops and plants new ones.",
-                "",
-                "Usage:",
-                "> farm - farms every crop it can find.",
-                "> farm <range> - farm crops within range from the starting position.",
-                "> farm <range> <waypoint> - farm crops within range from waypoint."
-        );
-    }
+  @Override
+  public List<String> getLongDesc() {
+    return Arrays.asList("The farm command starts farming nearby plants. It harvests mature crops and plants new ones.", "", "Usage:", "> farm - farms every crop it can find.",
+      "> farm <range> - farm crops within range from the starting position.", "> farm <range> <waypoint> - farm crops within range from waypoint.");
+  }
 }

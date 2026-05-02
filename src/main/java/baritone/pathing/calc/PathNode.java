@@ -59,7 +59,7 @@ public final class PathNode {
     this.estimatedCostToGoal = goal.heuristic(x, y, z);
     if (Double.isNaN(estimatedCostToGoal)) {
       throw new IllegalStateException(
-          String.format("%s calculated implausible heuristic NaN at %s %s %s", goal, SettingsUtil.maybeCensor(x), SettingsUtil.maybeCensor(y), SettingsUtil.maybeCensor(z)));
+        String.format("%s calculated implausible heuristic NaN at %s %s %s", goal, SettingsUtil.maybeCensor(x), SettingsUtil.maybeCensor(y), SettingsUtil.maybeCensor(z)));
     }
     this.heapPosition = -1;
     this.x = x;
@@ -67,9 +67,7 @@ public final class PathNode {
     this.z = z;
   }
 
-  public boolean isOpen() {
-    return heapPosition != -1;
-  }
+  public boolean isOpen() { return heapPosition != -1; }
 
   /**
    * TODO: Possibly reimplement hashCode and equals. They are necessary for this class to function but they could be done better

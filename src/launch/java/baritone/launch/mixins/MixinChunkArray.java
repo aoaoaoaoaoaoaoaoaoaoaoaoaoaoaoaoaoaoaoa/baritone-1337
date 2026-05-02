@@ -11,70 +11,68 @@ import net.minecraft.world.level.chunk.LevelChunk;
 
 @Mixin(targets = "net.minecraft.client.multiplayer.ClientChunkCache$Storage")
 public abstract class MixinChunkArray implements IChunkArray {
-    @Final
-    @Shadow
-    AtomicReferenceArray<LevelChunk> chunks;
-    @Final
-    @Shadow
-    int chunkRadius;
+  @Final
+  @Shadow
+  AtomicReferenceArray<LevelChunk> chunks;
+  @Final
+  @Shadow
+  int chunkRadius;
 
-    @Final
-    @Shadow
-    private int viewRange;
-    @Shadow
-    int viewCenterX;
-    @Shadow
-    int viewCenterZ;
-    @Shadow
-    int chunkCount;
+  @Final
+  @Shadow
+  private int viewRange;
+  @Shadow
+  int viewCenterX;
+  @Shadow
+  int viewCenterZ;
+  @Shadow
+  int chunkCount;
 
-    @Shadow
-    abstract boolean inRange(int x, int z);
+  @Shadow
+  abstract boolean inRange(int x, int z);
 
-    @Shadow
-    abstract int getIndex(int x, int z);
+  @Shadow
+  abstract int getIndex(int x, int z);
 
-    @Shadow
-    protected abstract void replace(int index, LevelChunk chunk);
+  @Shadow
+  protected abstract void replace(int index, LevelChunk chunk);
 
-    @Override
-    public int centerX() {
-        return viewCenterX;
-    }
+  @Override
+  public int centerX() {
+    return viewCenterX;
+  }
 
-    @Override
-    public int centerZ() {
-        return viewCenterZ;
-    }
+  @Override
+  public int centerZ() {
+    return viewCenterZ;
+  }
 
-    @Override
-    public int viewDistance() {
-        return chunkRadius;
-    }
+  @Override
+  public int viewDistance() {
+    return chunkRadius;
+  }
 
-    @Override
-    public AtomicReferenceArray<LevelChunk> getChunks() {
-        return chunks;
-    }
+  @Override
+  public AtomicReferenceArray<LevelChunk> getChunks() { return chunks; }
 
-    @Override
-    public void copyFrom(IChunkArray other) {
-        viewCenterX = other.centerX();
-        viewCenterZ = other.centerZ();
+  @Override
+  public void copyFrom(IChunkArray other) {
+    viewCenterX = other.centerX();
+    viewCenterZ = other.centerZ();
 
-        AtomicReferenceArray<LevelChunk> copyingFrom = other.getChunks();
-        for (int k = 0; k < copyingFrom.length(); ++k) {
-            LevelChunk chunk = copyingFrom.get(k);
-            if (chunk != null) {
-                ChunkPos chunkpos = chunk.getPos();
-                if (inRange(chunkpos.x(), chunkpos.z())) {
-                    int index = getIndex(chunkpos.x(), chunkpos.z());
-                    if (chunks.get(index) != null) {
-                        throw new IllegalStateException("Doing this would mutate the client's REAL loaded chunks?!");
-                    }
-                    replace(index, chunk);
-                }
-            }
+    AtomicReferenceArray<LevelChunk> copyingFrom = other.getChunks();
+    for (int k = 0; k < copyingFrom.length(); ++k) {
+      LevelChunk chunk = copyingFrom.get(k);
+      if (chunk != null) {
+        ChunkPos chunkpos = chunk.getPos();
+        if (inRange(chunkpos.x(), chunkpos.z())) {
+          int index = getIndex(chunkpos.x(), chunkpos.z());
+          if (chunks.get(index) != null) {
+            throw new IllegalStateException("Doing this would mutate the client's REAL loaded chunks?!");
+          }
+          replace(index, chunk);
         }
+      }
     }
+  }
 }

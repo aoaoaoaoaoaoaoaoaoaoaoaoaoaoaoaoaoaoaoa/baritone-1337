@@ -19,19 +19,19 @@ import static baritone.api.utils.Helper.HELPER;
  */
 public interface ICommandException {
 
-    /**
-     * @return The exception details
-     * @see Exception#getMessage()
-     */
-    String getMessage();
+  /**
+   * @return The exception details
+   * @see Exception#getMessage()
+   */
+  String getMessage();
 
-    /**
-     * Called when this exception is thrown, to handle the exception.
-     *
-     * @param command The command that threw it.
-     * @param args    The arguments the command was called with.
-     */
-    default void handle(ICommand command, List<ICommandArgument> args) {
-        HELPER.logDirect(this.getMessage(), ChatFormatting.RED);
-    }
+  /**
+   * Called when this exception is thrown, to handle the exception.
+   *
+   * @param command The command that threw it.
+   * @param args    The arguments the command was called with.
+   */
+  default void handle(ICommand command, List<ICommandArgument> args) {
+    HELPER.logDirect(this.getMessage(), ChatFormatting.RED);
+  }
 }

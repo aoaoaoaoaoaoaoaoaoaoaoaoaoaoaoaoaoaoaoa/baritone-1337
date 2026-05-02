@@ -17,54 +17,54 @@ import net.minecraft.world.phys.HitResult;
  */
 public final class BaritonePlayerContext implements IPlayerContext {
 
-    private final Baritone baritone;
-    private final Minecraft mc;
-    private final IPlayerController playerController;
+  private final Baritone baritone;
+  private final Minecraft mc;
+  private final IPlayerController playerController;
 
-    public BaritonePlayerContext(Baritone baritone, Minecraft mc) {
-        this.baritone = baritone;
-        this.mc = mc;
-        this.playerController = new BaritonePlayerController(mc);
-    }
+  public BaritonePlayerContext(Baritone baritone, Minecraft mc) {
+    this.baritone = baritone;
+    this.mc = mc;
+    this.playerController = new BaritonePlayerController(mc);
+  }
 
-    @Override
-    public Minecraft minecraft() {
-        return this.mc;
-    }
+  @Override
+  public Minecraft minecraft() {
+    return this.mc;
+  }
 
-    @Override
-    public LocalPlayer player() {
-        return this.mc.player;
-    }
+  @Override
+  public LocalPlayer player() {
+    return this.mc.player;
+  }
 
-    @Override
-    public IPlayerController playerController() {
-        return this.playerController;
-    }
+  @Override
+  public IPlayerController playerController() {
+    return this.playerController;
+  }
 
-    @Override
-    public Level world() {
-        return this.mc.level;
-    }
+  @Override
+  public Level world() {
+    return this.mc.level;
+  }
 
-    @Override
-    public IWorldData worldData() {
-        return this.baritone.getWorldProvider().getCurrentWorld();
-    }
+  @Override
+  public IWorldData worldData() {
+    return this.baritone.getWorldProvider().getCurrentWorld();
+  }
 
-    @Override
-    public BetterBlockPos viewerPos() {
-        final Entity entity = this.mc.getCameraEntity();
-        return entity == null ? this.playerFeet() : BetterBlockPos.from(entity.blockPosition());
-    }
+  @Override
+  public BetterBlockPos viewerPos() {
+    final Entity entity = this.mc.getCameraEntity();
+    return entity == null ? this.playerFeet() : BetterBlockPos.from(entity.blockPosition());
+  }
 
-    @Override
-    public Rotation playerRotations() {
-        return this.baritone.getLookBehavior().getEffectiveRotation().orElseGet(IPlayerContext.super::playerRotations);
-    }
+  @Override
+  public Rotation playerRotations() {
+    return this.baritone.getLookBehavior().getEffectiveRotation().orElseGet(IPlayerContext.super::playerRotations);
+  }
 
-    @Override
-    public HitResult objectMouseOver() {
-        return RayTraceUtils.rayTraceTowards(player(), playerRotations(), playerController().getBlockReachDistance());
-    }
+  @Override
+  public HitResult objectMouseOver() {
+    return RayTraceUtils.rayTraceTowards(player(), playerRotations(), playerController().getBlockReachDistance());
+  }
 }

@@ -10,23 +10,23 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 @Mixin(MultiPlayerGameMode.class)
 public abstract class MixinPlayerController implements IPlayerControllerMP {
 
-    @Accessor("isDestroying")
-    @Override
-    public abstract void setIsHittingBlock(boolean isHittingBlock);
+  @Accessor("isDestroying")
+  @Override
+  public abstract void setIsHittingBlock(boolean isHittingBlock);
 
-    @Accessor("isDestroying")
-    @Override
-    public abstract boolean isHittingBlock();
+  @Accessor("isDestroying")
+  @Override
+  public abstract boolean isHittingBlock();
 
-    @Accessor("destroyBlockPos")
-    @Override
-    public abstract BlockPos getCurrentBlock();
+  @Accessor("destroyBlockPos")
+  @Override
+  public abstract BlockPos getCurrentBlock();
 
-    @Invoker("ensureHasSentCarriedItem")
-    @Override
-    public abstract void callSyncCurrentPlayItem();
+  @Invoker("ensureHasSentCarriedItem")
+  @Override
+  public abstract void callSyncCurrentPlayItem();
 
-    @Accessor("destroyDelay")
-    @Override
-    public abstract void setDestroyDelay(int destroyDelay);
+  @Accessor("destroyDelay")
+  @Override
+  public abstract void setDestroyDelay(int destroyDelay);
 }

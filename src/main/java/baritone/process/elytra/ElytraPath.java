@@ -32,9 +32,7 @@ public final class ElytraPath extends AbstractList<BetterBlockPos> implements Tr
   /**
    * @return The last position in the path, or {@code null} if empty
    */
-  public BetterBlockPos getLast() {
-    return isEmpty() ? null : backing.get(backing.size() - 1);
-  }
+  public BetterBlockPos getLast() { return isEmpty() ? null : backing.get(backing.size() - 1); }
 
   public Vec3 getVec(int index) {
     BetterBlockPos pos = get(index);

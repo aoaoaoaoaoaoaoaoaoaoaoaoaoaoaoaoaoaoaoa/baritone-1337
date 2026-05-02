@@ -4,13 +4,13 @@ import net.minecraft.core.BlockPos;
 
 public interface IPlayerControllerMP {
 
-    void setIsHittingBlock(boolean isHittingBlock);
+  void setIsHittingBlock(boolean isHittingBlock);
 
-    boolean isHittingBlock();
+  boolean isHittingBlock();
 
-    BlockPos getCurrentBlock();
+  BlockPos getCurrentBlock();
 
-    void callSyncCurrentPlayItem();
+  void callSyncCurrentPlayItem();
 
-    void setDestroyDelay(int destroyDelay);
+  void setDestroyDelay(int destroyDelay);
 }

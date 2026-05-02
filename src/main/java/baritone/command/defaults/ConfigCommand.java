@@ -27,12 +27,8 @@ public final class ConfigCommand extends Command {
   }
 
   @Override
-  public String getShortDesc() {
-    return "Open the config GUI";
-  }
+  public String getShortDesc() { return "Open the config GUI"; }
 
   @Override
-  public List<String> getLongDesc() {
-    return List.of("Opens the curated baritone-1337 config GUI. Expert settings remain available through get/set.");
-  }
+  public List<String> getLongDesc() { return List.of("Opens the curated baritone-1337 config GUI. Expert settings remain available through get/set."); }
 }

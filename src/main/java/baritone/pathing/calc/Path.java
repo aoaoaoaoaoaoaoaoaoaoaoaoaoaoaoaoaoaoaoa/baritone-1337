@@ -90,9 +90,7 @@ class Path extends PathBase {
   }
 
   @Override
-  public Goal getGoal() {
-    return goal;
-  }
+  public Goal getGoal() { return goal; }
 
   private boolean assembleMovements() {
     if (path.isEmpty() || !movements.isEmpty()) {
@@ -188,17 +186,11 @@ class Path extends PathBase {
   }
 
   @Override
-  public int getNumNodesConsidered() {
-    return numNodes;
-  }
+  public int getNumNodesConsidered() { return numNodes; }
 
   @Override
-  public BetterBlockPos getSrc() {
-    return start;
-  }
+  public BetterBlockPos getSrc() { return start; }
 
   @Override
-  public BetterBlockPos getDest() {
-    return end;
-  }
+  public BetterBlockPos getDest() { return end; }
 }

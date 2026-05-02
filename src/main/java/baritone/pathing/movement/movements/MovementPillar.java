@@ -23,7 +23,7 @@ import net.minecraft.world.phys.Vec3;
 
 public class MovementPillar extends Movement {
   public MovementPillar(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
-    super(baritone, start, end, new BetterBlockPos[] {start.above(2)}, start);
+    super(baritone, start, end, new BetterBlockPos[]{start.above(2)}, start);
   }
 
   @Override
@@ -49,9 +49,7 @@ public class MovementPillar extends Movement {
         return COST_INF; // can't pillar up from a bottom slab onto a non ladder
       }
     }
-    if (from == Blocks.VINE
-        && !hasAgainst(context, x, y,
-            z)) { // TODO this vine can't be climbed, but we could place a pillar still since vines are replacable, no? perhaps the pillar jump would be impossible because of the slowdown actually.
+    if (from == Blocks.VINE && !hasAgainst(context, x, y, z)) { // TODO this vine can't be climbed, but we could place a pillar still since vines are replacable, no? perhaps the pillar jump would be impossible because of the slowdown actually.
       return COST_INF;
     }
     BlockState toBreak = context.get(x, y + 2, z);
@@ -123,7 +121,7 @@ public class MovementPillar extends Movement {
 
   public static boolean hasAgainst(CalculationContext context, int x, int y, int z) {
     return MovementHelper.isBlockNormalCube(context.get(x + 1, y, z)) || MovementHelper.isBlockNormalCube(context.get(x - 1, y, z)) || MovementHelper.isBlockNormalCube(context.get(x, y, z + 1))
-        || MovementHelper.isBlockNormalCube(context.get(x, y, z - 1));
+      || MovementHelper.isBlockNormalCube(context.get(x, y, z - 1));
   }
 
   public static BlockPos getAgainst(CalculationContext context, BetterBlockPos vine) {

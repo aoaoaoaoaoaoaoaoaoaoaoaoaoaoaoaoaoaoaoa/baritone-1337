@@ -70,26 +70,24 @@ public final class ElytraPathManager {
 
   public CompletableFuture<Void> pathToDestination(BlockPos from) {
     long start = System.nanoTime();
-    return path0(from, host.destination(), UnaryOperator.identity())
-        .thenRun(() -> {
-          double distance = path.get(0).distanceTo(path.get(path.size() - 1));
-          if (completePath) {
-            host.logVerbose(String.format("Computed path (%.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
-          } else {
-            host.logVerbose(String.format("Computed segment (Next %.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
-          }
-        })
-        .whenComplete((result, ex) -> {
-          recalculating = false;
-          if (ex != null) {
-            Throwable cause = ex.getCause();
-            if (cause instanceof PathCalculationException) {
-              host.logDirect("Failed to compute path to destination");
-            } else {
-              host.logUnhandledException(cause);
-            }
-          }
-        });
+    return path0(from, host.destination(), UnaryOperator.identity()).thenRun(() -> {
+      double distance = path.get(0).distanceTo(path.get(path.size() - 1));
+      if (completePath) {
+        host.logVerbose(String.format("Computed path (%.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
+      } else {
+        host.logVerbose(String.format("Computed segment (Next %.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
+      }
+    }).whenComplete((result, ex) -> {
+      recalculating = false;
+      if (ex != null) {
+        Throwable cause = ex.getCause();
+        if (cause instanceof PathCalculationException) {
+          host.logDirect("Failed to compute path to destination");
+        } else {
+          host.logUnhandledException(cause);
+        }
+      }
+    });
   }
 
   CompletableFuture<Void> pathRecalcSegment(OptionalInt upToIncl) {
@@ -101,18 +99,18 @@ public final class ElytraPathManager {
     List<BetterBlockPos> after = upToIncl.isPresent() ? path.subList(upToIncl.getAsInt() + 1, path.size()) : Collections.emptyList();
     boolean complete = completePath;
 
-    return path0(host.ctx().playerFeet(), upToIncl.isPresent() ? path.get(upToIncl.getAsInt()) : host.destination(), segment -> segment.append(after.stream(), complete || segment.isFinished() && upToIncl.isEmpty()))
-        .whenComplete((result, ex) -> {
-          recalculating = false;
-          if (ex != null) {
-            Throwable cause = ex.getCause();
-            if (cause instanceof PathCalculationException) {
-              host.logDirect("Failed to recompute segment");
-            } else {
-              host.logUnhandledException(cause);
-            }
+    return path0(host.ctx().playerFeet(), upToIncl.isPresent() ? path.get(upToIncl.getAsInt()) : host.destination(),
+      segment -> segment.append(after.stream(), complete || segment.isFinished() && upToIncl.isEmpty())).whenComplete((result, ex) -> {
+        recalculating = false;
+        if (ex != null) {
+          Throwable cause = ex.getCause();
+          if (cause instanceof PathCalculationException) {
+            host.logDirect("Failed to recompute segment");
+          } else {
+            host.logUnhandledException(cause);
           }
-        });
+        }
+      });
   }
 
   void pathNextSegment(int afterIncl) {
@@ -125,31 +123,29 @@ public final class ElytraPathManager {
     long start = System.nanoTime();
     BetterBlockPos pathStart = path.get(afterIncl);
 
-    path0(pathStart, host.destination(), segment -> segment.prepend(before.stream()))
-        .thenRun(() -> {
-          int recompute = path.size() - before.size() - 1;
-          double distance = path.get(0).distanceTo(path.get(recompute));
-          if (completePath) {
-            host.logVerbose(String.format("Computed path (%.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
-          } else {
-            host.logVerbose(String.format("Computed segment (Next %.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
+    path0(pathStart, host.destination(), segment -> segment.prepend(before.stream())).thenRun(() -> {
+      int recompute = path.size() - before.size() - 1;
+      double distance = path.get(0).distanceTo(path.get(recompute));
+      if (completePath) {
+        host.logVerbose(String.format("Computed path (%.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
+      } else {
+        host.logVerbose(String.format("Computed segment (Next %.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
+      }
+    }).whenComplete((result, ex) -> {
+      recalculating = false;
+      if (ex != null) {
+        Throwable cause = ex.getCause();
+        if (cause instanceof PathCalculationException) {
+          host.logDirect("Failed to compute next segment");
+          if (host.ctx().player().distanceToSqr(pathStart.getCenter()) < 16 * 16) {
+            host.logVerbose("Player is near the segment start, therefore repeating this calculation is pointless. Marking as complete");
+            completePath = true;
           }
-        })
-        .whenComplete((result, ex) -> {
-          recalculating = false;
-          if (ex != null) {
-            Throwable cause = ex.getCause();
-            if (cause instanceof PathCalculationException) {
-              host.logDirect("Failed to compute next segment");
-              if (host.ctx().player().distanceToSqr(pathStart.getCenter()) < 16 * 16) {
-                host.logVerbose("Player is near the segment start, therefore repeating this calculation is pointless. Marking as complete");
-                completePath = true;
-              }
-            } else {
-              host.logUnhandledException(cause);
-            }
-          }
-        });
+        } else {
+          host.logUnhandledException(cause);
+        }
+      }
+    });
   }
 
   public void clear() {
@@ -161,13 +157,9 @@ public final class ElytraPathManager {
     maxPlayerNear = 0;
   }
 
-  public ElytraPath getPath() {
-    return path;
-  }
+  public ElytraPath getPath() { return path; }
 
-  public int getNear() {
-    return playerNear;
-  }
+  public int getNear() { return playerNear; }
 
   public void updatePlayerNear() {
     if (path.isEmpty()) {
@@ -199,15 +191,10 @@ public final class ElytraPathManager {
     playerNear = index;
   }
 
-  public boolean isComplete() {
-    return completePath;
-  }
+  public boolean isComplete() { return completePath; }
 
   private CompletableFuture<Void> path0(BlockPos src, BlockPos dst, UnaryOperator<UnpackedSegment> operator) {
-    return host.pathfinderContext().pathFindAsync(src, dst)
-        .thenApply(UnpackedSegment::from)
-        .thenApply(operator)
-        .thenAcceptAsync(this::setPath, host.ctx().minecraft()::execute);
+    return host.pathfinderContext().pathFindAsync(src, dst).thenApply(UnpackedSegment::from).thenApply(operator).thenAcceptAsync(this::setPath, host.ctx().minecraft()::execute);
   }
 
   private void setPath(UnpackedSegment segment) {
@@ -259,19 +246,13 @@ public final class ElytraPathManager {
         canSeeAny = true;
       }
       if (!host.clearView(path.getVec(i), path.getVec(i + 1), false)) {
-        OptionalInt rejoinMainPathAt = path.get(rangeEndExcl - 1).distanceSq(host.destination()) < host.ctx().playerFeet().distanceSq(host.destination())
-            ? OptionalInt.of(rangeEndExcl - 1)
-            : OptionalInt.empty();
+        OptionalInt rejoinMainPathAt =
+          path.get(rangeEndExcl - 1).distanceSq(host.destination()) < host.ctx().playerFeet().distanceSq(host.destination()) ? OptionalInt.of(rangeEndExcl - 1) : OptionalInt.empty();
         BetterBlockPos blockage = path.get(i);
         double distance = host.ctx().playerFeet().distanceTo(path.get(rejoinMainPathAt.orElse(path.size() - 1)));
         long start = System.nanoTime();
         pathRecalcSegment(rejoinMainPathAt).thenRun(() -> host.logVerbose(String.format("Recalculated segment around path blockage near %s %s %s (next %.1f blocks in %.4f seconds)",
-            SettingsUtil.maybeCensor(blockage.x),
-            SettingsUtil.maybeCensor(blockage.y),
-            SettingsUtil.maybeCensor(blockage.z),
-            distance,
-            (System.nanoTime() - start) / 1e9d
-        )));
+          SettingsUtil.maybeCensor(blockage.x), SettingsUtil.maybeCensor(blockage.y), SettingsUtil.maybeCensor(blockage.z), distance, (System.nanoTime() - start) / 1e9d)));
         return;
       }
     }

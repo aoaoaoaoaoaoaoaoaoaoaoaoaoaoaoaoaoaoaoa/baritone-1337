@@ -13,7 +13,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
 final class InteractionPlan {
-  private InteractionPlan() {}
+  private InteractionPlan() {
+  }
 
   static Optional<BlockClick> reachable(IPlayerContext ctx, BlockPos pos, Click click) {
     return RotationUtils.reachable(ctx, pos).map(rotation -> new BlockClick(pos, rotation, click));
@@ -28,8 +29,7 @@ final class InteractionPlan {
   }
 
   enum Click {
-    LEFT(Input.CLICK_LEFT),
-    RIGHT(Input.CLICK_RIGHT);
+    LEFT(Input.CLICK_LEFT), RIGHT(Input.CLICK_RIGHT);
 
     private final Input input;
 

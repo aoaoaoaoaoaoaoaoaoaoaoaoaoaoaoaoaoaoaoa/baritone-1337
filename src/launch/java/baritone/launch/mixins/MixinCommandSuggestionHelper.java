@@ -27,72 +27,66 @@ import java.util.stream.Stream;
 @Mixin(CommandSuggestions.class)
 public class MixinCommandSuggestionHelper {
 
-    @Shadow
-    @Final
-    EditBox input;
+  @Shadow
+  @Final
+  EditBox input;
 
-    @Shadow
-    @Final
-    private List<String> commandUsage;
+  @Shadow
+  @Final
+  private List<String> commandUsage;
 
-    @Shadow
-    private ParseResults currentParse;
+  @Shadow
+  private ParseResults currentParse;
 
-    @Shadow
-    private CompletableFuture<Suggestions> pendingSuggestions;
+  @Shadow
+  private CompletableFuture<Suggestions> pendingSuggestions;
 
-    @Shadow
-    private CommandSuggestions.SuggestionsList suggestions;
+  @Shadow
+  private CommandSuggestions.SuggestionsList suggestions;
 
-    @Shadow
-    boolean keepSuggestions;
+  @Shadow
+  boolean keepSuggestions;
 
-    @Inject(
-            method = "updateCommandInfo",
-            at = @At("HEAD"),
-            cancellable = true
-    )
-    private void preUpdateSuggestion(CallbackInfo ci) {
-        // Anything that is present in the input text before the cursor position
-        String prefix = this.input.getValue().substring(0, Math.min(this.input.getValue().length(), this.input.getCursorPosition()));
+  @Inject(method = "updateCommandInfo", at = @At("HEAD"), cancellable = true)
+  private void preUpdateSuggestion(CallbackInfo ci) {
+    // Anything that is present in the input text before the cursor position
+    String prefix = this.input.getValue().substring(0, Math.min(this.input.getValue().length(), this.input.getCursorPosition()));
 
-        TabCompleteEvent event = new TabCompleteEvent(prefix);
-        BaritoneAPI.getProvider().getPrimaryBaritone().getGameEventHandler().onPreTabComplete(event);
+    TabCompleteEvent event = new TabCompleteEvent(prefix);
+    BaritoneAPI.getProvider().getPrimaryBaritone().getGameEventHandler().onPreTabComplete(event);
 
-        if (event.isCancelled()) {
-            ci.cancel();
-            return;
-        }
-
-        if (event.completions != null) {
-            ci.cancel();
-
-            this.currentParse = null; // stop coloring
-
-            if (this.keepSuggestions) { // Supress suggestions update when cycling suggestions.
-                return;
-            }
-
-            this.input.setSuggestion(null); // clear old suggestions
-            this.suggestions = null;
-            // TODO: Support populating the command usage
-            this.commandUsage.clear();
-
-            if (event.completions.length == 0) {
-                this.pendingSuggestions = Suggestions.empty();
-            } else {
-                StringRange range = StringRange.between(prefix.lastIndexOf(" ") + 1, prefix.length()); // if there is no space this starts at 0
-
-                List<Suggestion> suggestionList = Stream.of(event.completions)
-                        .map(s -> new Suggestion(range, s))
-                        .collect(Collectors.toList());
-
-                Suggestions suggestions = new Suggestions(range, suggestionList);
-
-                this.pendingSuggestions = new CompletableFuture<>();
-                this.pendingSuggestions.complete(suggestions);
-            }
-            ((CommandSuggestions) (Object) this).showSuggestions(true); // actually populate the suggestions list from the suggestions future
-        }
+    if (event.isCancelled()) {
+      ci.cancel();
+      return;
     }
+
+    if (event.completions != null) {
+      ci.cancel();
+
+      this.currentParse = null; // stop coloring
+
+      if (this.keepSuggestions) { // Supress suggestions update when cycling suggestions.
+        return;
+      }
+
+      this.input.setSuggestion(null); // clear old suggestions
+      this.suggestions = null;
+      // TODO: Support populating the command usage
+      this.commandUsage.clear();
+
+      if (event.completions.length == 0) {
+        this.pendingSuggestions = Suggestions.empty();
+      } else {
+        StringRange range = StringRange.between(prefix.lastIndexOf(" ") + 1, prefix.length()); // if there is no space this starts at 0
+
+        List<Suggestion> suggestionList = Stream.of(event.completions).map(s -> new Suggestion(range, s)).collect(Collectors.toList());
+
+        Suggestions suggestions = new Suggestions(range, suggestionList);
+
+        this.pendingSuggestions = new CompletableFuture<>();
+        this.pendingSuggestions.complete(suggestions);
+      }
+      ((CommandSuggestions) (Object) this).showSuggestions(true); // actually populate the suggestions list from the suggestions future
+    }
+  }
 }

@@ -5,7 +5,6 @@ import baritone.utils.schematic.format.BlockStateCodec;
 import baritone.utils.schematic.format.SchematicVolume;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.datafix.fixes.ItemIdFix;
-import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * @author Brady

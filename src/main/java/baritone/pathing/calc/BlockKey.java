@@ -10,7 +10,8 @@ public final class BlockKey {
   private static final long Y_MASK = (1L << Y_BITS) - 1L;
   private static final long Z_MASK = (1L << Z_BITS) - 1L;
 
-  private BlockKey() {}
+  private BlockKey() {
+  }
 
   public static long pack(int x, int y, int z) {
     return ((long) x & X_MASK) << X_SHIFT | ((long) y & Y_MASK) << Y_SHIFT | ((long) z & Z_MASK);

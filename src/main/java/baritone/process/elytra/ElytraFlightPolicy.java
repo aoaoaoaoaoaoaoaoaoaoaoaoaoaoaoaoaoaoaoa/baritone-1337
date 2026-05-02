@@ -12,8 +12,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
-public record ElytraFlightPolicy(ResourceKey<Level> dimension, int minY, int maxYExclusive, int defaultTargetY, int autoLaunchY, int cruiseFloorY, int landingColumnHeight,
-                                 int landingBubbleRadius, int landingSupportRadius, ElytraFireworkPolicy fireworkPolicy, boolean preferNativeNetherBackend) {
+public record ElytraFlightPolicy(ResourceKey<Level> dimension, int minY, int maxYExclusive, int defaultTargetY, int autoLaunchY, int cruiseFloorY, int landingColumnHeight, int landingBubbleRadius,
+  int landingSupportRadius, ElytraFireworkPolicy fireworkPolicy, boolean preferNativeNetherBackend) {
   private static final int NETHER_MIN_Y = 0;
   private static final int NETHER_MAX_Y_EXCLUSIVE = 128;
   private static final int SKY_CRUISE_MARGIN = 80;

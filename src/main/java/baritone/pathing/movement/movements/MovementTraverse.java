@@ -37,7 +37,7 @@ public class MovementTraverse extends Movement {
   private boolean wasTheBridgeBlockAlwaysThere = true;
 
   public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
-    super(baritone, from, to, new BetterBlockPos[] {to.above(), to}, to.below());
+    super(baritone, from, to, new BetterBlockPos[]{to.above(), to}, to.below());
   }
 
   @Override
@@ -206,26 +206,25 @@ public class MovementTraverse extends Movement {
     boolean ladder = fd == Blocks.LADDER || fd == Blocks.VINE;
 
     // sneak may have been set to true in the PREPPING state while mining an adjacent block, but we still want it to be true if the player is about to go on magma
-    state.setInput(
-        Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
+    state.setInput(Input.SNEAK,
+      Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
 
     if (pb0.getBlock() instanceof DoorBlock || pb1.getBlock() instanceof DoorBlock) {
       boolean notPassable =
-          pb0.getBlock() instanceof DoorBlock && !MovementHelper.isDoorPassable(ctx, src, dest) || pb1.getBlock() instanceof DoorBlock && !MovementHelper.isDoorPassable(ctx, dest, src);
+        pb0.getBlock() instanceof DoorBlock && !MovementHelper.isDoorPassable(ctx, src, dest) || pb1.getBlock() instanceof DoorBlock && !MovementHelper.isDoorPassable(ctx, dest, src);
       boolean canOpen = !(Blocks.IRON_DOOR.equals(pb0.getBlock()) || Blocks.IRON_DOOR.equals(pb1.getBlock()));
 
       if (notPassable && canOpen) {
         return state
-            .setTarget(
-                new MovementState.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.calculateBlockCenter(ctx.world(), positionsToBreak[0]), ctx.playerRotations()), true))
-            .setInput(Input.CLICK_RIGHT, true);
+          .setTarget(
+            new MovementState.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.calculateBlockCenter(ctx.world(), positionsToBreak[0]), ctx.playerRotations()), true))
+          .setInput(Input.CLICK_RIGHT, true);
       }
     }
 
     if (pb0.getBlock() instanceof FenceGateBlock || pb1.getBlock() instanceof FenceGateBlock) {
-      BlockPos blocked = !MovementHelper.isGatePassable(ctx, positionsToBreak[0], src.above()) ? positionsToBreak[0]
-          : !MovementHelper.isGatePassable(ctx, positionsToBreak[1], src)                      ? positionsToBreak[1]
-                                                                                               : null;
+      BlockPos blocked =
+        !MovementHelper.isGatePassable(ctx, positionsToBreak[0], src.above()) ? positionsToBreak[0] : !MovementHelper.isGatePassable(ctx, positionsToBreak[1], src) ? positionsToBreak[1] : null;
       if (blocked != null) {
         Optional<Rotation> rotation = RotationUtils.reachable(ctx, blocked);
         if (rotation.isPresent()) {
@@ -263,7 +262,7 @@ public class MovementTraverse extends Movement {
       BlockState intoBelow = BlockStateInterface.get(ctx, into);
       BlockState intoAbove = BlockStateInterface.get(ctx, into.above());
       if (wasTheBridgeBlockAlwaysThere && (!MovementHelper.isLiquid(ctx, feet) || Baritone.settings().sprintInWater.value)
-          && (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow)) && !MovementHelper.avoidWalkingInto(intoAbove)) {
+        && (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow)) && !MovementHelper.avoidWalkingInto(intoAbove)) {
         state.setInput(Input.SPRINT, true);
       }
 
@@ -294,13 +293,13 @@ public class MovementTraverse extends Movement {
         state.setInput(Input.SNEAK, true);
       }
       switch (p) {
-        case READY_TO_PLACE: {
+        case READY_TO_PLACE : {
           if (ctx.player().isCrouching() || Baritone.settings().assumeSafeWalk.value) {
             state.setInput(Input.CLICK_RIGHT, true);
           }
           return state;
         }
-        case ATTEMPTING: {
+        case ATTEMPTING : {
           if (dist1 > 0.83) {
             // might need to go forward a bit
             float yaw = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()).getYaw();
@@ -314,7 +313,7 @@ public class MovementTraverse extends Movement {
           }
           return state;
         }
-        default:
+        default :
           break;
       }
       if (feet.equals(dest)) {

@@ -25,77 +25,50 @@ import static baritone.api.command.IBaritoneChatControl.FORCE_COMMAND_PREFIX;
 
 public class FindCommand extends Command {
 
-    public FindCommand(IBaritone baritone) {
-        super(baritone, "find");
-    }
+  public FindCommand(IBaritone baritone) {
+    super(baritone, "find");
+  }
 
-    @Override
-    public void execute(String label, IArgConsumer args) throws CommandException {
-        args.requireMin(1);
-        List<Block> toFind = new ArrayList<>();
-        while (args.hasAny()) {
-            toFind.add(args.getDatatypeFor(BlockById.INSTANCE));
-        }
-        BetterBlockPos origin = ctx.playerFeet();
-        Component[] components = toFind.stream()
-                .flatMap(block ->
-                        ctx.worldData().getCachedWorld().getLocationsOf(
-                                BuiltInRegistries.BLOCK.getKey(block).getPath(),
-                                Integer.MAX_VALUE,
-                                origin.x,
-                                origin.z,
-                                4
-                        ).stream()
-                )
-                .map(BetterBlockPos::new)
-                .map(this::positionToComponent)
-                .toArray(Component[]::new);
-        if (components.length > 0) {
-            Arrays.asList(components).forEach(this::logDirect);
-        } else {
-            logDirect("No positions known, are you sure the blocks are cached?");
-        }
+  @Override
+  public void execute(String label, IArgConsumer args) throws CommandException {
+    args.requireMin(1);
+    List<Block> toFind = new ArrayList<>();
+    while (args.hasAny()) {
+      toFind.add(args.getDatatypeFor(BlockById.INSTANCE));
     }
+    BetterBlockPos origin = ctx.playerFeet();
+    Component[] components =
+      toFind.stream().flatMap(block -> ctx.worldData().getCachedWorld().getLocationsOf(BuiltInRegistries.BLOCK.getKey(block).getPath(), Integer.MAX_VALUE, origin.x, origin.z, 4).stream())
+        .map(BetterBlockPos::new).map(this::positionToComponent).toArray(Component[]::new);
+    if (components.length > 0) {
+      Arrays.asList(components).forEach(this::logDirect);
+    } else {
+      logDirect("No positions known, are you sure the blocks are cached?");
+    }
+  }
 
-    private Component positionToComponent(BetterBlockPos pos) {
-        String positionText = String.format("%s %s %s", pos.x, pos.y, pos.z);
-        String command = String.format("%sgoal %s", FORCE_COMMAND_PREFIX, positionText);
-        MutableComponent baseComponent = Component.literal(pos.toString());
-        MutableComponent hoverComponent = Component.literal("Click to set goal to this position");
-        baseComponent.setStyle(baseComponent.getStyle()
-                .withColor(ChatFormatting.GRAY)
-                .withInsertion(positionText)
-                .withClickEvent(new ClickEvent.RunCommand(command))
-                .withHoverEvent(new HoverEvent.ShowText(hoverComponent)));
-        return baseComponent;
-    }
+  private Component positionToComponent(BetterBlockPos pos) {
+    String positionText = String.format("%s %s %s", pos.x, pos.y, pos.z);
+    String command = String.format("%sgoal %s", FORCE_COMMAND_PREFIX, positionText);
+    MutableComponent baseComponent = Component.literal(pos.toString());
+    MutableComponent hoverComponent = Component.literal("Click to set goal to this position");
+    baseComponent.setStyle(
+      baseComponent.getStyle().withColor(ChatFormatting.GRAY).withInsertion(positionText).withClickEvent(new ClickEvent.RunCommand(command)).withHoverEvent(new HoverEvent.ShowText(hoverComponent)));
+    return baseComponent;
+  }
 
-    @Override
-    public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
-        return new TabCompleteHelper()
-                .append(
-                        CachedChunk.BLOCKS_TO_KEEP_TRACK_OF.stream()
-                                .map(BuiltInRegistries.BLOCK::getKey)
-                                .map(Object::toString)
-                )
-                .filterPrefixNamespaced(args.getString())
-                .sortAlphabetically()
-                .stream();
-    }
+  @Override
+  public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
+    return new TabCompleteHelper().append(CachedChunk.BLOCKS_TO_KEEP_TRACK_OF.stream().map(BuiltInRegistries.BLOCK::getKey).map(Object::toString)).filterPrefixNamespaced(args.getString())
+      .sortAlphabetically().stream();
+  }
 
-    @Override
-    public String getShortDesc() {
-        return "Find positions of a certain block";
-    }
+  @Override
+  public String getShortDesc() { return "Find positions of a certain block"; }
 
-    @Override
-    public List<String> getLongDesc() {
-        return Arrays.asList(
-                "The find command searches through Baritone's cache and attempts to find the location of the block.",
-                "Tab completion will suggest only cached blocks and uncached blocks can not be found.",
-                "",
-                "Usage:",
-                "> find <block> [...] - Try finding the listed blocks"
-        );
-    }
+  @Override
+  public List<String> getLongDesc() {
+    return Arrays.asList("The find command searches through Baritone's cache and attempts to find the location of the block.",
+      "Tab completion will suggest only cached blocks and uncached blocks can not be found.", "", "Usage:", "> find <block> [...] - Try finding the listed blocks");
+  }
 }

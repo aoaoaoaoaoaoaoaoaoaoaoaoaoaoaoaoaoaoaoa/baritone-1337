@@ -22,13 +22,8 @@ public final class LitematicaSchematic extends CompositeSchematic implements ISt
   }
 
   private static CompoundTag[] getRegions(CompoundTag nbt) {
-    return nbt.getCompound("Regions")
-        .map(CompoundTag::values)
-        .map(r -> r.stream()
-            .filter(CompoundTag.class::isInstance)
-            .map(CompoundTag.class::cast)
-            .toArray(CompoundTag[]::new)
-        ).orElse(new CompoundTag[0]);
+    return nbt.getCompound("Regions").map(CompoundTag::values).map(r -> r.stream().filter(CompoundTag.class::isInstance).map(CompoundTag.class::cast).toArray(CompoundTag[]::new))
+      .orElse(new CompoundTag[0]);
   }
 
   private static int getMinOfSubregion(CompoundTag subReg, String s) {

@@ -19,5 +19,6 @@ public sealed interface DestinationSpec permits DestinationSpec.Static, Destinat
     }
   }
 
-  record Dynamic(BlockOffset precheckOffset, boolean dynamicXZ, boolean dynamicY) implements DestinationSpec {}
+  record Dynamic(BlockOffset precheckOffset, boolean dynamicXZ, boolean dynamicY) implements DestinationSpec {
+  }
 }

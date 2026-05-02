@@ -31,7 +31,16 @@ Fabric artifacts land in `dist/`; the standalone Fabric jar is the normal playte
 
 ## Formatting
 
-Formatting policy is 2-space indentation and 200-column width. Token efficiency beats ornamental line wrapping. `.editorconfig` and `.clang-format` are authoritative for this repository.
+Formatting policy is 2-space indentation, 200-column width, minimum gratuitous line wrapping, and no trailing whitespace. Token efficiency beats ornamental verticality.
+
+Use Spotless as the canonical formatter:
+
+```sh
+GRADLE_USER_HOME=/home/main/.cache/gradle ./gradlew spotlessApply
+GRADLE_USER_HOME=/home/main/.cache/gradle ./gradlew spotlessCheck
+```
+
+The authoritative Java formatter profile is `eclipse-compact.xml`; do not hand-format around it.
 
 ## Notes
 

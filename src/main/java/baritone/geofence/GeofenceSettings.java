@@ -9,7 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class GeofenceSettings {
-  private GeofenceSettings() {}
+  private GeofenceSettings() {
+  }
 
   public static List<GeofenceBox> boxes() {
     return Baritone.settings().modificationGeofences.value;

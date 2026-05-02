@@ -241,18 +241,12 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   }
 
   @Override
-  public final boolean isFinished() {
-    return isFinished;
-  }
+  public final boolean isFinished() { return isFinished; }
 
   @Override
-  public final Goal getGoal() {
-    return goal;
-  }
+  public final Goal getGoal() { return goal; }
 
-  public BetterBlockPos getStart() {
-    return new BetterBlockPos(startX, startY, startZ);
-  }
+  public BetterBlockPos getStart() { return new BetterBlockPos(startX, startY, startZ); }
 
   protected int mapSize() {
     return nodes.size();

@@ -16,19 +16,19 @@ import java.util.List;
  */
 public interface ISchematicFormat {
 
-    /**
-     * @return The parser for creating schematics of this format
-     */
-    IStaticSchematic parse(InputStream input) throws IOException;
+  /**
+   * @return The parser for creating schematics of this format
+   */
+  IStaticSchematic parse(InputStream input) throws IOException;
 
-    /**
-     * @param file The file to check against
-     * @return Whether or not the specified file matches this schematic format
-     */
-    boolean isFileType(File file);
+  /**
+   * @param file The file to check against
+   * @return Whether or not the specified file matches this schematic format
+   */
+  boolean isFileType(File file);
 
-    /**
-     * @return A list of file extensions used by this format
-     */
-    List<String> getFileExtensions();
+  /**
+   * @return A list of file extensions used by this format
+   */
+  List<String> getFileExtensions();
 }

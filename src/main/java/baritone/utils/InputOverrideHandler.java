@@ -22,89 +22,87 @@ import java.util.Map;
  */
 public final class InputOverrideHandler extends Behavior implements IInputOverrideHandler {
 
-    /**
-     * Maps inputs to whether or not we are forcing their state down.
-     */
-    private static final EnumSet<Input> MOVEMENT_INPUTS = EnumSet.of(Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP);
-    private final Map<Input, Boolean> inputForceStateMap = new EnumMap<>(Input.class);
+  /**
+   * Maps inputs to whether or not we are forcing their state down.
+   */
+  private static final EnumSet<Input> MOVEMENT_INPUTS = EnumSet.of(Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP);
+  private final Map<Input, Boolean> inputForceStateMap = new EnumMap<>(Input.class);
 
-    private final BlockBreakHelper blockBreakHelper;
-    private final BlockPlaceHelper blockPlaceHelper;
+  private final BlockBreakHelper blockBreakHelper;
+  private final BlockPlaceHelper blockPlaceHelper;
 
-    public InputOverrideHandler(Baritone baritone) {
-        super(baritone);
-        this.blockBreakHelper = new BlockBreakHelper(baritone.getPlayerContext());
-        this.blockPlaceHelper = new BlockPlaceHelper(baritone.getPlayerContext());
+  public InputOverrideHandler(Baritone baritone) {
+    super(baritone);
+    this.blockBreakHelper = new BlockBreakHelper(baritone.getPlayerContext());
+    this.blockPlaceHelper = new BlockPlaceHelper(baritone.getPlayerContext());
+  }
+
+  /**
+   * Returns whether or not we are forcing down the specified {@link Input}.
+   *
+   * @param input The input
+   * @return Whether or not it is being forced down
+   */
+  @Override
+  public final boolean isInputForcedDown(Input input) {
+    return input == null ? false : this.inputForceStateMap.getOrDefault(input, false);
+  }
+
+  /**
+   * Sets whether or not the specified {@link Input} is being forced down.
+   *
+   * @param input  The {@link Input}
+   * @param forced Whether or not the state is being forced
+   */
+  @Override
+  public final void setInputForceState(Input input, boolean forced) {
+    if (input == null) {
+      return;
     }
+    this.inputForceStateMap.put(input, forced);
+  }
 
-    /**
-     * Returns whether or not we are forcing down the specified {@link Input}.
-     *
-     * @param input The input
-     * @return Whether or not it is being forced down
-     */
-    @Override
-    public final boolean isInputForcedDown(Input input) {
-        return input == null ? false : this.inputForceStateMap.getOrDefault(input, false);
+  /**
+   * Clears the override state for all keys
+   */
+  @Override
+  public final void clearAllKeys() {
+    this.inputForceStateMap.clear();
+  }
+
+  @Override
+  public final void onTick(TickEvent event) {
+    if (event.getType() == TickEvent.Type.OUT) {
+      return;
     }
-
-    /**
-     * Sets whether or not the specified {@link Input} is being forced down.
-     *
-     * @param input  The {@link Input}
-     * @param forced Whether or not the state is being forced
-     */
-    @Override
-    public final void setInputForceState(Input input, boolean forced) {
-        if (input == null) {
-            return;
-        }
-        this.inputForceStateMap.put(input, forced);
+    if (isInputForcedDown(Input.CLICK_LEFT)) {
+      setInputForceState(Input.CLICK_RIGHT, false);
     }
+    blockBreakHelper.tick(isInputForcedDown(Input.CLICK_LEFT));
+    blockPlaceHelper.tick(isInputForcedDown(Input.CLICK_RIGHT));
 
-    /**
-     * Clears the override state for all keys
-     */
-    @Override
-    public final void clearAllKeys() {
-        this.inputForceStateMap.clear();
+    if (inControl()) {
+      if (ctx.player().input.getClass() != PlayerMovementInput.class) {
+        ctx.player().input = new PlayerMovementInput(this);
+      }
+    } else {
+      if (ctx.player().input.getClass() == PlayerMovementInput.class) { // allow other movement inputs that aren't this one, e.g. for a freecam
+        ctx.player().input = new KeyboardInput(ctx.minecraft().options);
+      }
     }
+    // only set it if it was previously incorrect
+    // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
+  }
 
-    @Override
-    public final void onTick(TickEvent event) {
-        if (event.getType() == TickEvent.Type.OUT) {
-            return;
-        }
-        if (isInputForcedDown(Input.CLICK_LEFT)) {
-            setInputForceState(Input.CLICK_RIGHT, false);
-        }
-        blockBreakHelper.tick(isInputForcedDown(Input.CLICK_LEFT));
-        blockPlaceHelper.tick(isInputForcedDown(Input.CLICK_RIGHT));
-
-        if (inControl()) {
-            if (ctx.player().input.getClass() != PlayerMovementInput.class) {
-                ctx.player().input = new PlayerMovementInput(this);
-            }
-        } else {
-            if (ctx.player().input.getClass() == PlayerMovementInput.class) { // allow other movement inputs that aren't this one, e.g. for a freecam
-                ctx.player().input = new KeyboardInput(ctx.minecraft().options);
-            }
-        }
-        // only set it if it was previously incorrect
-        // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
+  private boolean inControl() {
+    for (Input input : MOVEMENT_INPUTS) {
+      if (isInputForcedDown(input)) {
+        return true;
+      }
     }
+    // if we are not primary (a bot) we should set the movementinput even when idle (not pathing)
+    return baritone.getPathingBehavior().isPathing() || baritone != BaritoneAPI.getProvider().getPrimaryBaritone();
+  }
 
-    private boolean inControl() {
-        for (Input input : MOVEMENT_INPUTS) {
-            if (isInputForcedDown(input)) {
-                return true;
-            }
-        }
-        // if we are not primary (a bot) we should set the movementinput even when idle (not pathing)
-        return baritone.getPathingBehavior().isPathing() || baritone != BaritoneAPI.getProvider().getPrimaryBaritone();
-    }
-
-    public BlockBreakHelper getBlockBreakHelper() {
-        return blockBreakHelper;
-    }
+  public BlockBreakHelper getBlockBreakHelper() { return blockBreakHelper; }
 }

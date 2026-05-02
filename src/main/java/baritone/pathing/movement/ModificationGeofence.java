@@ -25,7 +25,7 @@ public final class ModificationGeofence {
   }
 
   public static ModificationGeofence snapshot(String dimension, List<GeofenceBox> boxes) {
-    GeofenceBox[] copy = boxes.stream().filter(box -> box.dimension().equals(dimension)).toArray(GeofenceBox[] ::new);
+    GeofenceBox[] copy = boxes.stream().filter(box -> box.dimension().equals(dimension)).toArray(GeofenceBox[]::new);
     if (copy.length == 0) {
       return EMPTY;
     }

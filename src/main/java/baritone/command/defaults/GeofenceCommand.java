@@ -120,14 +120,12 @@ public final class GeofenceCommand extends Command {
   }
 
   @Override
-  public String getShortDesc() {
-    return "Manage break/place geofences";
-  }
+  public String getShortDesc() { return "Manage break/place geofences"; }
 
   @Override
   public List<String> getLongDesc() {
     return List.of("Manage 3D boxes where Baritone may not break or place blocks.", "", "Usage:", "> geofence - List geofences", "> geofence gui - Open the geofence menu",
-        "> geofence add selection - Add all current selections as geofences in the current dimension", "> geofence add <x1> <y1> <z1> <x2> <y2> <z2> - Add a current-dimension geofence",
-        "> geofence remove <index> - Remove a geofence", "> geofence clear - Remove all geofences");
+      "> geofence add selection - Add all current selections as geofences in the current dimension", "> geofence add <x1> <y1> <z1> <x2> <y2> <z2> - Add a current-dimension geofence",
+      "> geofence remove <index> - Remove a geofence", "> geofence clear - Remove all geofences");
   }
 }

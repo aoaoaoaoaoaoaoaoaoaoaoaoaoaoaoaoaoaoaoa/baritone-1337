@@ -22,7 +22,7 @@ public final class MovementCatalog {
         primitives.add(new ObliqueMovementPrimitive(stride[0], stride[1]));
       }
     }
-    return new MovementCatalog(primitives.toArray(MovementPrimitive[] ::new));
+    return new MovementCatalog(primitives.toArray(MovementPrimitive[]::new));
   }
 
   public MovementPrimitive[] primitives() {

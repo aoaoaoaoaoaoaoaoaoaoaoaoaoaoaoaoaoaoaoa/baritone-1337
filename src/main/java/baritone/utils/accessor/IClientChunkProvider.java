@@ -3,7 +3,7 @@ package baritone.utils.accessor;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 
 public interface IClientChunkProvider {
-    ClientChunkCache createThreadSafeCopy();
+  ClientChunkCache createThreadSafeCopy();
 
-    IChunkArray extractReferenceArray();
+  IChunkArray extractReferenceArray();
 }

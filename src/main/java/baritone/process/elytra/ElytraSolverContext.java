@@ -36,13 +36,8 @@ final class ElytraSolverContext {
     if (!(o instanceof ElytraSolverContext other)) {
       return false;
     }
-    return path == other.path
-        && playerNear == other.playerNear
-        && ignoreLava == other.ignoreLava
-        && Objects.equals(start, other.start)
-        && Objects.equals(motion, other.motion)
-        && Objects.equals(boundingBox, other.boundingBox)
-        && Objects.equals(boost, other.boost);
+    return path == other.path && playerNear == other.playerNear && ignoreLava == other.ignoreLava && Objects.equals(start, other.start) && Objects.equals(motion, other.motion)
+      && Objects.equals(boundingBox, other.boundingBox) && Objects.equals(boost, other.boost);
   }
 
   @Override

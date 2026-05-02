@@ -8,11 +8,11 @@ import net.minecraft.world.level.block.Block;
  */
 public interface IGetToBlockProcess extends IBaritoneProcess {
 
-    void getToBlock(BlockOptionalMeta block);
+  void getToBlock(BlockOptionalMeta block);
 
-    default void getToBlock(Block block) {
-        getToBlock(new BlockOptionalMeta(block));
-    }
+  default void getToBlock(Block block) {
+    getToBlock(new BlockOptionalMeta(block));
+  }
 
-    boolean blacklistClosest();
+  boolean blacklistClosest();
 }

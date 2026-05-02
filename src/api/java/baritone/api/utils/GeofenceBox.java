@@ -34,7 +34,7 @@ public record GeofenceBox(String dimension, int minX, int minY, int minZ, int ma
       throw new IllegalArgumentException("Expected dimension@x/y/z..x/y/z geofence box, got " + raw);
     }
     return new GeofenceBox(matcher.group(1), Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)), Integer.parseInt(matcher.group(4)), Integer.parseInt(matcher.group(5)),
-        Integer.parseInt(matcher.group(6)), Integer.parseInt(matcher.group(7)));
+      Integer.parseInt(matcher.group(6)), Integer.parseInt(matcher.group(7)));
   }
 
   public static GeofenceBox parse(String raw, String defaultDimension) {
@@ -47,7 +47,7 @@ public record GeofenceBox(String dimension, int minX, int minY, int minZ, int ma
       throw new IllegalArgumentException("Expected x/y/z..x/y/z geofence box, got " + raw);
     }
     return new GeofenceBox(defaultDimension, Integer.parseInt(coordinates.group(1)), Integer.parseInt(coordinates.group(2)), Integer.parseInt(coordinates.group(3)),
-        Integer.parseInt(coordinates.group(4)), Integer.parseInt(coordinates.group(5)), Integer.parseInt(coordinates.group(6)));
+      Integer.parseInt(coordinates.group(4)), Integer.parseInt(coordinates.group(5)), Integer.parseInt(coordinates.group(6)));
   }
 
   public boolean contains(int x, int y, int z) {

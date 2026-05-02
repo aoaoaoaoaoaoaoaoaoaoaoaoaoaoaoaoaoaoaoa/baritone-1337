@@ -28,7 +28,7 @@ public class MovementDescend extends Movement {
   public boolean forceSafeMode = false;
 
   public MovementDescend(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
-    super(baritone, start, end, new BetterBlockPos[] {end.above(2), end.above(), end}, end.below());
+    super(baritone, start, end, new BetterBlockPos[]{end.above(2), end.above(), end}, end.below());
   }
 
   @Override
@@ -141,8 +141,7 @@ public class MovementDescend extends Movement {
       }
       boolean reachedMinimum = fallHeight >= context.fall.minHeight();
       BlockState ontoBlock = context.get(destX, newY, destZ);
-      int unprotectedFallHeight =
-          fallHeight - (y - effectiveStartHeight); // equal to fallHeight - y + effectiveFallHeight, which is equal to -newY + effectiveFallHeight, which is equal to effectiveFallHeight - newY
+      int unprotectedFallHeight = fallHeight - (y - effectiveStartHeight); // equal to fallHeight - y + effectiveFallHeight, which is equal to -newY + effectiveFallHeight, which is equal to effectiveFallHeight - newY
       double tentativeCost = WALK_OFF_BLOCK_COST + FALL_N_BLOCKS_COST[unprotectedFallHeight] + frontBreak + costSoFar;
       if (reachedMinimum && MovementHelper.isWater(ontoBlock)) {
         if (!MovementHelper.canWalkThrough(context, destX, newY, destZ, ontoBlock)) {
@@ -222,9 +221,9 @@ public class MovementDescend extends Movement {
       double destX = (src.getX() + 0.5) * 0.17 + (dest.getX() + 0.5) * 0.83;
       double destZ = (src.getZ() + 0.5) * 0.17 + (dest.getZ() + 0.5) * 0.83;
       state
-          .setTarget(new MovementState.MovementTarget(
-              RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3(destX, dest.getY(), destZ), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false))
-          .setInput(Input.MOVE_FORWARD, true);
+        .setTarget(new MovementState.MovementTarget(
+          RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3(destX, dest.getY(), destZ), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false))
+        .setInput(Input.MOVE_FORWARD, true);
       return state;
     }
     double diffX = ctx.player().position().x - (dest.getX() + 0.5);
@@ -268,6 +267,6 @@ public class MovementDescend extends Movement {
   public boolean skipToAscend() {
     BlockPos into = dest.subtract(src.below()).offset(dest);
     return !MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into)) && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into).above())
-        && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into).above(2));
+      && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into).above(2));
   }
 }

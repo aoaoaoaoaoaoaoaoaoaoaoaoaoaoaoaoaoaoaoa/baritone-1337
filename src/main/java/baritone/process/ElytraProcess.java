@@ -70,9 +70,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IElytraProce
   }
 
   @Override
-  public boolean isActive() {
-    return this.behavior != null;
-  }
+  public boolean isActive() { return this.behavior != null; }
 
   @Override
   public void resetState() {
@@ -85,7 +83,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IElytraProce
   }
 
   private static final String AUTO_JUMP_FAILURE_MSG =
-      "Failed to compute a walking path to a spot to jump off from. Consider starting from a higher location, near an overhang. Or, you can disable elytraAutoJump and just manually begin gliding.";
+    "Failed to compute a walking path to a spot to jump off from. Consider starting from a higher location, near an overhang. Or, you can disable elytraAutoJump and just manually begin gliding.";
 
   @Override
   public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
@@ -229,7 +227,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IElytraProce
       final IPathExecutor executor = baritone.getPathingBehavior().getCurrent();
       // TODO 1.21.5: replace `ctx.player().getDeltaMovement().y < -0.377` with `ctx.player().fallDistance > 1.0f`
       final boolean canStartFlying =
-          ctx.player().getDeltaMovement().y < -0.377 && !isSafeToCancel && executor != null && executor.getPath().movements().get(executor.getPosition()) instanceof MovementFall;
+        ctx.player().getDeltaMovement().y < -0.377 && !isSafeToCancel && executor != null && executor.getPath().movements().get(executor.getPosition()) instanceof MovementFall;
 
       if (canStartFlying) {
         this.state = State.START_FLYING;
@@ -375,22 +373,13 @@ public class ElytraProcess extends BaritoneProcessHelper implements IElytraProce
   }
 
   @Override
-  public boolean isLoaded() {
-    return true;
-  }
+  public boolean isLoaded() { return true; }
 
   @Override
-  public boolean isSafeToCancel() {
-    return !this.isActive() || !(this.state == State.FLYING || this.state == State.START_FLYING);
-  }
+  public boolean isSafeToCancel() { return !this.isActive() || !(this.state == State.FLYING || this.state == State.START_FLYING); }
 
   public enum State {
-    LOCATE_JUMP("Finding spot to jump off"),
-    PAUSE("Waiting for elytra path"),
-    GET_TO_JUMP("Walking to takeoff"),
-    START_FLYING("Begin flying"),
-    FLYING("Flying"),
-    LANDING("Landing");
+    LOCATE_JUMP("Finding spot to jump off"), PAUSE("Waiting for elytra path"), GET_TO_JUMP("Walking to takeoff"), START_FLYING("Begin flying"), FLYING("Flying"), LANDING("Landing");
 
     public final String description;
 
@@ -531,7 +520,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IElytraProce
 
   private BetterBlockPos findSafeLandingSpot(BetterBlockPos start) {
     Queue<BetterBlockPos> queue =
-        new PriorityQueue<>(Comparator.<BetterBlockPos>comparingInt(pos -> (pos.x - start.x) * (pos.x - start.x) + (pos.z - start.z) * (pos.z - start.z)).thenComparingInt(pos -> - pos.y));
+      new PriorityQueue<>(Comparator.<BetterBlockPos>comparingInt(pos -> (pos.x - start.x) * (pos.x - start.x) + (pos.z - start.z) * (pos.z - start.z)).thenComparingInt(pos -> -pos.y));
     Set<BetterBlockPos> visited = new HashSet<>();
     LongOpenHashSet checkedPositions = new LongOpenHashSet();
     queue.add(start);

@@ -17,7 +17,8 @@ public final class BlockStateCodec {
 
   private static final Pattern SPONGE = Pattern.compile("(?<id>[a-z0-9_.-]+(?::[a-z0-9_./-]+)?)(?:\\[(?<properties>[^\\]]+)])?");
 
-  private BlockStateCodec() {}
+  private BlockStateCodec() {
+  }
 
   public static BlockState parseSponge(String serialized) {
     Matcher matcher = SPONGE.matcher(serialized);

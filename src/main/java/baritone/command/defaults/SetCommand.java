@@ -112,10 +112,8 @@ public class SetCommand extends Command {
       logDirect(String.format("Successfully %s %s to %s", resetting ? "reset" : "set", setting.getName(), settingValueToString(setting)));
     }
     MutableComponent oldValueComponent = Component.literal(String.format("Old value: %s", oldValue));
-    oldValueComponent.setStyle(oldValueComponent.getStyle()
-            .withColor(ChatFormatting.GRAY)
-            .withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to set the setting back to this value")))
-            .withClickEvent(new ClickEvent.RunCommand(FORCE_COMMAND_PREFIX + String.format("set %s %s", setting.getName(), oldValue))));
+    oldValueComponent.setStyle(oldValueComponent.getStyle().withColor(ChatFormatting.GRAY).withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to set the setting back to this value")))
+      .withClickEvent(new ClickEvent.RunCommand(FORCE_COMMAND_PREFIX + String.format("set %s %s", setting.getName(), oldValue))));
     logDirect(oldValueComponent);
     if (setting.getName().equals("chatControl") && !(Boolean) setting.value && !Baritone.settings().prefixControl.value) {
       logDirect("Warning: Normal chat command entry is now disabled. Click the old value above to revert.", ChatFormatting.RED);
@@ -165,14 +163,12 @@ public class SetCommand extends Command {
   }
 
   @Override
-  public String getShortDesc() {
-    return "Change settings";
-  }
+  public String getShortDesc() { return "Change settings"; }
 
   @Override
   public List<String> getLongDesc() {
     return Arrays.asList("Using the set command, you can mutate Baritone settings. Use get for read-only inspection.", "", "Usage:", "> set <setting> <value> - Set the value of a setting",
-        "> set reset all - Reset ALL SETTINGS to their defaults", "> set reset <setting> - Reset a setting to its default", "> set toggle <setting> - Toggle a boolean setting",
-        "> set save - Save all settings (this is automatic tho)", "> set load - Load settings from settings.txt", "> set load [filename] - Load settings from another file in your minecraft/baritone");
+      "> set reset all - Reset ALL SETTINGS to their defaults", "> set reset <setting> - Reset a setting to its default", "> set toggle <setting> - Toggle a boolean setting",
+      "> set save - Save all settings (this is automatic tho)", "> set load - Load settings from settings.txt", "> set load [filename] - Load settings from another file in your minecraft/baritone");
   }
 }

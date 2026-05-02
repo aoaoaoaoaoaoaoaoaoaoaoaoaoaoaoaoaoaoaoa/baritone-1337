@@ -16,39 +16,39 @@
  */
 
 pluginManagement {
-    repositories {
-        mavenLocal()
-        maven {
-            name = 'FirstDarkDev'
-            url = 'https://maven.firstdark.dev/releases/'
-            content {
-                includeGroup "xyz.wagyourtail.unimined"
-                includeGroup "xyz.wagyourtail.unimined.mapping"
-            }
-        }
-        maven {
-            name = 'WagYourMaven'
-            url = 'https://maven.wagyourtail.xyz/snapshots'
-        }
-        maven {
-            name = 'FabricMaven'
-            url = 'https://maven.fabricmc.net/'
-        }
-        maven {
-            name = 'ForgeMaven'
-            url = 'https://maven.minecraftforge.net/'
-        }
-        maven {
-            name = 'NeoForgedMaven'
-            url = 'https://maven.neoforged.net/'
-        }
-        mavenCentral()
-        gradlePluginPortal() {
-            content {
-                excludeGroup "org.apache.logging.log4j"
-            }
-        }
+  repositories {
+    mavenLocal()
+    maven {
+      name = 'FirstDarkDev'
+      url = 'https://maven.firstdark.dev/releases/'
+      content {
+        includeGroup "xyz.wagyourtail.unimined"
+        includeGroup "xyz.wagyourtail.unimined.mapping"
+      }
     }
+    maven {
+      name = 'WagYourMaven'
+      url = 'https://maven.wagyourtail.xyz/snapshots'
+    }
+    maven {
+      name = 'FabricMaven'
+      url = 'https://maven.fabricmc.net/'
+    }
+    maven {
+      name = 'ForgeMaven'
+      url = 'https://maven.minecraftforge.net/'
+    }
+    maven {
+      name = 'NeoForgedMaven'
+      url = 'https://maven.neoforged.net/'
+    }
+    mavenCentral()
+    gradlePluginPortal() {
+      content {
+        excludeGroup "org.apache.logging.log4j"
+      }
+    }
+  }
 }
 
 rootProject.name = 'baritone-1337'

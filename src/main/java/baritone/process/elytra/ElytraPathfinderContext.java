@@ -60,6 +60,7 @@ public interface ElytraPathfinderContext extends TransportPlanner<ElytraPath> {
     public static final int NONE = 1;
     public static final int ANY = 2;
 
-    private Visibility() {}
+    private Visibility() {
+    }
   }
 }

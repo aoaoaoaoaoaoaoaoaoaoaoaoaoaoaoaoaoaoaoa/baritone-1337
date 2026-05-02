@@ -23,17 +23,17 @@ import java.util.stream.Stream;
  */
 public interface IDatatype {
 
-    /**
-     * Attempts to complete missing or partial input provided through the {@link IArgConsumer}} provided by
-     * {@link IDatatypeContext#getConsumer()} in order to aide the user in executing commands.
-     * <p>
-     * One benefit over datatypes over {@link IArgParser}s is that instead of each command trying to guess what values
-     * the datatype will accept, or simply not tab completing at all, datatypes that support tab completion can provide
-     * accurate information using the same methods used to parse arguments in the first place.
-     *
-     * @param ctx The argument consumer to tab complete
-     * @return A stream representing the strings that can be tab completed. DO NOT INCLUDE SPACES IN ANY STRINGS.
-     * @see IArgConsumer#tabCompleteDatatype(IDatatype)
-     */
-    Stream<String> tabComplete(IDatatypeContext ctx) throws CommandException;
+  /**
+   * Attempts to complete missing or partial input provided through the {@link IArgConsumer}} provided by
+   * {@link IDatatypeContext#getConsumer()} in order to aide the user in executing commands.
+   * <p>
+   * One benefit over datatypes over {@link IArgParser}s is that instead of each command trying to guess what values
+   * the datatype will accept, or simply not tab completing at all, datatypes that support tab completion can provide
+   * accurate information using the same methods used to parse arguments in the first place.
+   *
+   * @param ctx The argument consumer to tab complete
+   * @return A stream representing the strings that can be tab completed. DO NOT INCLUDE SPACES IN ANY STRINGS.
+   * @see IArgConsumer#tabCompleteDatatype(IDatatype)
+   */
+  Stream<String> tabComplete(IDatatypeContext ctx) throws CommandException;
 }

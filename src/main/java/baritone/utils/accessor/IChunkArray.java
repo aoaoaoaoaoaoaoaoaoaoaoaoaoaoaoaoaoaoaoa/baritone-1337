@@ -4,13 +4,13 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 public interface IChunkArray {
-    void copyFrom(IChunkArray other);
+  void copyFrom(IChunkArray other);
 
-    AtomicReferenceArray<LevelChunk> getChunks();
+  AtomicReferenceArray<LevelChunk> getChunks();
 
-    int centerX();
+  int centerX();
 
-    int centerZ();
+  int centerZ();
 
-    int viewDistance();
+  int viewDistance();
 }

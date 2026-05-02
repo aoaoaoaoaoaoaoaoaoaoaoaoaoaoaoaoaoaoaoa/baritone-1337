@@ -1,8 +1,5 @@
 package baritone.transport;
 
 public enum TransportKind {
-  WALK,
-  ELYTRA,
-  BOAT,
-  PORTAL
+  WALK, ELYTRA, BOAT, PORTAL
 }

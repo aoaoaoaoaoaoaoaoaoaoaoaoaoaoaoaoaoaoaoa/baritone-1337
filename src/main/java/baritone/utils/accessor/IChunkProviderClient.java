@@ -5,5 +5,5 @@ import net.minecraft.world.level.chunk.LevelChunk;
 
 public interface IChunkProviderClient {
 
-    Long2ObjectMap<LevelChunk> loadedChunks();
+  Long2ObjectMap<LevelChunk> loadedChunks();
 }

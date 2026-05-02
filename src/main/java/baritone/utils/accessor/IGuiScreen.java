@@ -4,5 +4,5 @@ import java.net.URI;
 
 public interface IGuiScreen {
 
-    void openLinkInvoker(URI url);
+  void openLinkInvoker(URI url);
 }

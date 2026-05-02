@@ -61,15 +61,10 @@ public final class GeofenceConfigScreen extends Screen {
     addRenderableWidget(Button.builder(Component.literal("< page"), b -> switchPage(-1)).bounds(center - 190, bottom, 80, 20).build()).active = page > 0;
     addRenderableWidget(new StringWidget(center - 100, bottom, 200, 20, Component.literal("page " + (page + 1) + "/" + pages), font));
     addRenderableWidget(Button.builder(Component.literal("page >"), b -> switchPage(1)).bounds(center + 110, bottom, 80, 20).build()).active = page + 1 < pages;
-    addRenderableWidget(Button
-                            .builder(Component.literal("Clear"),
-                                b -> {
-                                  GeofenceSettings.clear();
-                                  rebuildWidgets();
-                                })
-                            .bounds(center - 55, bottom, 50, 20)
-                            .build())
-        .active = !boxes.isEmpty();
+    addRenderableWidget(Button.builder(Component.literal("Clear"), b -> {
+      GeofenceSettings.clear();
+      rebuildWidgets();
+    }).bounds(center - 55, bottom, 50, 20).build()).active = !boxes.isEmpty();
     addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose()).bounds(center + 5, bottom, 80, 20).build());
   }
 
@@ -78,14 +73,10 @@ public final class GeofenceConfigScreen extends Screen {
     StringWidget label = new StringWidget(center - 260, y, 420, 20, Component.literal(text), font);
     label.setTooltip(Tooltip.create(Component.literal(box.serialized())));
     addRenderableWidget(label);
-    addRenderableWidget(Button
-            .builder(Component.literal("Remove"),
-                b -> {
-                  GeofenceSettings.remove(index);
-                  rebuildWidgets();
-                })
-            .bounds(center + 170, y, 90, 20)
-            .build());
+    addRenderableWidget(Button.builder(Component.literal("Remove"), b -> {
+      GeofenceSettings.remove(index);
+      rebuildWidgets();
+    }).bounds(center + 170, y, 90, 20).build());
   }
 
   private void addManual() {

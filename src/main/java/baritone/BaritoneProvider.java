@@ -21,54 +21,44 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class BaritoneProvider implements IBaritoneProvider {
 
-    private final List<IBaritone> all;
-    private final List<IBaritone> allView;
+  private final List<IBaritone> all;
+  private final List<IBaritone> allView;
 
-    public BaritoneProvider() {
-        this.all = new CopyOnWriteArrayList<>();
-        this.allView = Collections.unmodifiableList(this.all);
+  public BaritoneProvider() {
+    this.all = new CopyOnWriteArrayList<>();
+    this.allView = Collections.unmodifiableList(this.all);
 
-        // Setup chat control, just for the primary instance
-        final Baritone primary = (Baritone) this.createBaritone(Minecraft.getInstance());
-        primary.registerBehavior(ExampleBaritoneControl::new);
+    // Setup chat control, just for the primary instance
+    final Baritone primary = (Baritone) this.createBaritone(Minecraft.getInstance());
+    primary.registerBehavior(ExampleBaritoneControl::new);
+  }
+
+  @Override
+  public IBaritone getPrimaryBaritone() { return this.all.get(0); }
+
+  @Override
+  public List<IBaritone> getAllBaritones() { return this.allView; }
+
+  @Override
+  public synchronized IBaritone createBaritone(Minecraft minecraft) {
+    IBaritone baritone = this.getBaritoneForMinecraft(minecraft);
+    if (baritone == null) {
+      this.all.add(baritone = new Baritone(minecraft));
     }
+    return baritone;
+  }
 
-    @Override
-    public IBaritone getPrimaryBaritone() {
-        return this.all.get(0);
-    }
+  @Override
+  public synchronized boolean destroyBaritone(IBaritone baritone) {
+    return baritone != this.getPrimaryBaritone() && this.all.remove(baritone);
+  }
 
-    @Override
-    public List<IBaritone> getAllBaritones() {
-        return this.allView;
-    }
+  @Override
+  public IWorldScanner getWorldScanner() { return FasterWorldScanner.INSTANCE; }
 
-    @Override
-    public synchronized IBaritone createBaritone(Minecraft minecraft) {
-        IBaritone baritone = this.getBaritoneForMinecraft(minecraft);
-        if (baritone == null) {
-            this.all.add(baritone = new Baritone(minecraft));
-        }
-        return baritone;
-    }
+  @Override
+  public ICommandSystem getCommandSystem() { return CommandSystem.INSTANCE; }
 
-    @Override
-    public synchronized boolean destroyBaritone(IBaritone baritone) {
-        return baritone != this.getPrimaryBaritone() && this.all.remove(baritone);
-    }
-
-    @Override
-    public IWorldScanner getWorldScanner() {
-        return FasterWorldScanner.INSTANCE;
-    }
-
-    @Override
-    public ICommandSystem getCommandSystem() {
-        return CommandSystem.INSTANCE;
-    }
-
-    @Override
-    public ISchematicSystem getSchematicSystem() {
-        return SchematicSystem.INSTANCE;
-    }
+  @Override
+  public ISchematicSystem getSchematicSystem() { return SchematicSystem.INSTANCE; }
 }

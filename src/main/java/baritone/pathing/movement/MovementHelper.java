@@ -52,10 +52,10 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
     Block b = state.getBlock();
     return Baritone.settings().blocksToDisallowBreaking.value.contains(b) || b == Blocks.ICE // ice becomes water, and water can mess up the path
-        || b instanceof InfestedBlock // obvious reasons
-        // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
-        || avoidAdjacentBreaking(bsi, x, y + 1, z, true) || avoidAdjacentBreaking(bsi, x + 1, y, z, false) || avoidAdjacentBreaking(bsi, x - 1, y, z, false)
-        || avoidAdjacentBreaking(bsi, x, y, z + 1, false) || avoidAdjacentBreaking(bsi, x, y, z - 1, false);
+      || b instanceof InfestedBlock // obvious reasons
+      // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
+      || avoidAdjacentBreaking(bsi, x, y + 1, z, true) || avoidAdjacentBreaking(bsi, x + 1, y, z, false) || avoidAdjacentBreaking(bsi, x - 1, y, z, false)
+      || avoidAdjacentBreaking(bsi, x, y, z + 1, false) || avoidAdjacentBreaking(bsi, x, y, z - 1, false);
   }
 
   static boolean avoidAdjacentBreaking(BlockStateInterface bsi, int x, int y, int z, boolean directlyAbove) {
@@ -65,10 +65,10 @@ public interface MovementHelper extends ActionCosts, Helper {
     BlockState state = bsi.get0(x, y, z);
     Block block = state.getBlock();
     if (!directlyAbove // it is fine to mine a block that has a falling block directly above, this (the cost of breaking the stacked fallings) is included in cost calculations
-                       // therefore if directlyAbove is true, we will actually ignore if this is falling
-        && block instanceof FallingBlock // obviously, this check is only valid for falling blocks
-        && Baritone.settings().avoidUpdatingFallingBlocks.value // and if the setting is enabled
-        && FallingBlock.isFree(bsi.get0(x, y - 1, z))) { // and if it would fall (i.e. it's unsupported)
+      // therefore if directlyAbove is true, we will actually ignore if this is falling
+      && block instanceof FallingBlock // obviously, this check is only valid for falling blocks
+      && Baritone.settings().avoidUpdatingFallingBlocks.value // and if the setting is enabled
+      && FallingBlock.isFree(bsi.get0(x, y - 1, z))) { // and if it would fall (i.e. it's unsupported)
       return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
     }
     // only pure liquids for now
@@ -120,8 +120,8 @@ public interface MovementHelper extends ActionCosts, Helper {
       return YES;
     }
     if (block instanceof BaseFireBlock || block == Blocks.COBWEB || block == Blocks.END_PORTAL || block == Blocks.COCOA || block instanceof AbstractSkullBlock || block == Blocks.BUBBLE_COLUMN
-        || block instanceof ShulkerBoxBlock || block instanceof SlabBlock || block instanceof TrapDoorBlock || block == Blocks.HONEY_BLOCK || block == Blocks.END_ROD
-        || block == Blocks.SWEET_BERRY_BUSH || block == Blocks.POINTED_DRIPSTONE || block instanceof AmethystClusterBlock || block instanceof AzaleaBlock) {
+      || block instanceof ShulkerBoxBlock || block instanceof SlabBlock || block instanceof TrapDoorBlock || block == Blocks.HONEY_BLOCK || block == Blocks.END_ROD || block == Blocks.SWEET_BERRY_BUSH
+      || block == Blocks.POINTED_DRIPSTONE || block instanceof AmethystClusterBlock || block instanceof AzaleaBlock) {
       return NO;
     }
     if (block == Blocks.BIG_DRIPLEAF) {
@@ -215,8 +215,8 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
     // exceptions - blocks that are isPassable true, but we can't actually jump through
     if (block instanceof BaseFireBlock || block == Blocks.TRIPWIRE || block == Blocks.COBWEB || block == Blocks.VINE || block == Blocks.LADDER || block == Blocks.COCOA || block instanceof AzaleaBlock
-        || block instanceof DoorBlock || block instanceof FenceGateBlock || block instanceof SnowLayerBlock || !state.getFluidState().isEmpty() || block instanceof TrapDoorBlock
-        || block instanceof EndPortalBlock || block instanceof SkullBlock || block instanceof ShulkerBoxBlock) {
+      || block instanceof DoorBlock || block instanceof FenceGateBlock || block instanceof SnowLayerBlock || !state.getFluidState().isEmpty() || block instanceof TrapDoorBlock
+      || block instanceof EndPortalBlock || block instanceof SkullBlock || block instanceof ShulkerBoxBlock) {
       return NO;
     }
     // door, fence gate, liquid, trapdoor have been accounted for, nothing else uses the world or pos parameters
@@ -361,7 +361,7 @@ public interface MovementHelper extends ActionCosts, Helper {
   static boolean avoidWalkingInto(BlockState state) {
     Block block = state.getBlock();
     return !state.getFluidState().isEmpty() || (block == Blocks.MAGMA_BLOCK && !Baritone.settings().allowWalkOnMagmaBlocks.value) || block == Blocks.CACTUS || block == Blocks.SWEET_BERRY_BUSH
-        || block instanceof BaseFireBlock || block == Blocks.END_PORTAL || block == Blocks.COBWEB || block == Blocks.BUBBLE_COLUMN;
+      || block instanceof BaseFireBlock || block == Blocks.END_PORTAL || block == Blocks.COBWEB || block == Blocks.BUBBLE_COLUMN;
   }
 
   /**
@@ -449,8 +449,7 @@ public interface MovementHelper extends ActionCosts, Helper {
       return isWater(upState) ^ Baritone.settings().assumeWalkOnWater.value;
     }
 
-    if (MovementHelper.isLava(state) && !MovementHelper.isFlowing(x, y, z, state, bsi)
-        && Baritone.settings().assumeWalkOnLava.value) { // if we get here it means that assumeWalkOnLava must be true, so put it last
+    if (MovementHelper.isLava(state) && !MovementHelper.isFlowing(x, y, z, state, bsi) && Baritone.settings().assumeWalkOnLava.value) { // if we get here it means that assumeWalkOnLava must be true, so put it last
       return true;
     }
 
@@ -487,8 +486,7 @@ public interface MovementHelper extends ActionCosts, Helper {
 
   static boolean canUseFrostWalker(IPlayerContext ctx, BlockPos pos) {
     boolean hasFrostWalker = false;
-  OUTER:
-    for (EquipmentSlot slot : EquipmentSlot.values()) {
+    OUTER : for (EquipmentSlot slot : EquipmentSlot.values()) {
       ItemEnchantments itemEnchantments = ctx.player().getItemBySlot(slot).getEnchantments();
       for (Holder<Enchantment> enchant : itemEnchantments.keySet()) {
         if (enchant.is(Enchantments.FROST_WALKER)) {
@@ -645,14 +643,13 @@ public interface MovementHelper extends ActionCosts, Helper {
 
   static void moveTowards(IPlayerContext ctx, MovementState state, BlockPos pos) {
     state
-        .setTarget(new MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(pos), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false))
-        .setInput(Input.MOVE_FORWARD, true);
+      .setTarget(new MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(pos), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false))
+      .setInput(Input.MOVE_FORWARD, true);
   }
 
   static void moveTowardsWithoutRotation(IPlayerContext ctx, MovementState state, float idealYaw) {
     MovementOption.getOptions(Mth.sin(ctx.playerRotations().getYaw() * DEG_TO_RAD_F), Mth.cos(ctx.playerRotations().getYaw() * DEG_TO_RAD_F), Baritone.settings().allowSprint.value)
-        .min(Comparator.comparing(option -> option.distanceToSq(Mth.sin(idealYaw * DEG_TO_RAD_F), Mth.cos(idealYaw * DEG_TO_RAD_F))))
-        .ifPresent(selection -> selection.setInputs(state));
+      .min(Comparator.comparing(option -> option.distanceToSq(Mth.sin(idealYaw * DEG_TO_RAD_F), Mth.cos(idealYaw * DEG_TO_RAD_F)))).ifPresent(selection -> selection.setInputs(state));
   }
 
   static void moveTowardsWithoutRotation(IPlayerContext ctx, MovementState state, BlockPos dest) {
@@ -731,7 +728,7 @@ public interface MovementHelper extends ActionCosts, Helper {
   static boolean isBlockNormalCube(BlockState state) {
     Block block = state.getBlock();
     if (block instanceof BambooStalkBlock || block instanceof MovingPistonBlock || block instanceof ScaffoldingBlock || block instanceof ShulkerBoxBlock || block instanceof PointedDripstoneBlock
-        || block instanceof AmethystClusterBlock) {
+      || block instanceof AmethystClusterBlock) {
       return false;
     }
     try {
@@ -762,11 +759,11 @@ public interface MovementHelper extends ActionCosts, Helper {
         double faceY = (placeAt.getY() + against1.getY() + 0.5D) * 0.5D;
         double faceZ = (placeAt.getZ() + against1.getZ() + 1.0D) * 0.5D;
         Rotation place =
-            RotationUtils.calcRotationFromVec3d(wouldSneak ? RayTraceUtils.inferSneakingEyePosition(ctx.player()) : ctx.playerHead(), new Vec3(faceX, faceY, faceZ), ctx.playerRotations());
+          RotationUtils.calcRotationFromVec3d(wouldSneak ? RayTraceUtils.inferSneakingEyePosition(ctx.player()) : ctx.playerHead(), new Vec3(faceX, faceY, faceZ), ctx.playerRotations());
         Rotation actual = baritone.getLookBehavior().getAimProcessor().peekRotation(place);
         HitResult res = RayTraceUtils.rayTraceTowards(ctx.player(), actual, ctx.playerController().getBlockReachDistance(), wouldSneak);
         if (res != null && res.getType() == HitResult.Type.BLOCK && ((BlockHitResult) res).getBlockPos().equals(against1)
-            && ((BlockHitResult) res).getBlockPos().relative(((BlockHitResult) res).getDirection()).equals(placeAt)) {
+          && ((BlockHitResult) res).getBlockPos().relative(((BlockHitResult) res).getDirection()).equals(placeAt)) {
           state.setTarget(new MovementTarget(place, true));
           found = true;
 
@@ -801,9 +798,7 @@ public interface MovementHelper extends ActionCosts, Helper {
   }
 
   enum PlaceResult {
-    READY_TO_PLACE,
-    ATTEMPTING,
-    NO_OPTION;
+    READY_TO_PLACE, ATTEMPTING, NO_OPTION;
   }
 
   static boolean isTransparent(Block b) {

@@ -6,6 +6,6 @@ import net.minecraft.world.level.storage.loot.LootContext;
 
 public interface ILootTable {
 
-    ObjectArrayList<ItemStack> invokeGetRandomItems(LootContext context);
+  ObjectArrayList<ItemStack> invokeGetRandomItems(LootContext context);
 
 }

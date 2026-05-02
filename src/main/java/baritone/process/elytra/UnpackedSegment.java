@@ -47,9 +47,7 @@ public final class UnpackedSegment {
     return path;
   }
 
-  public boolean isFinished() {
-    return this.finished;
-  }
+  public boolean isFinished() { return this.finished; }
 
   public static UnpackedSegment from(ElytraPathSegment segment) {
     return new UnpackedSegment(segment.positions().stream(), segment.finished());

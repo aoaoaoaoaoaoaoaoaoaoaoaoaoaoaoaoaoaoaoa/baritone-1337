@@ -18,27 +18,25 @@ import net.minecraft.world.phys.BlockHitResult;
  */
 public interface IPlayerController {
 
-    void syncHeldItem();
+  void syncHeldItem();
 
-    boolean hasBrokenBlock();
+  boolean hasBrokenBlock();
 
-    boolean onPlayerDamageBlock(BlockPos pos, Direction side);
+  boolean onPlayerDamageBlock(BlockPos pos, Direction side);
 
-    void resetBlockRemoving();
+  void resetBlockRemoving();
 
-    void windowClick(int windowId, int slotId, int mouseButton, ContainerInput type, Player player);
+  void windowClick(int windowId, int slotId, int mouseButton, ContainerInput type, Player player);
 
-    GameType getGameType();
+  GameType getGameType();
 
-    InteractionResult processRightClickBlock(LocalPlayer player, Level world, InteractionHand hand, BlockHitResult result);
+  InteractionResult processRightClickBlock(LocalPlayer player, Level world, InteractionHand hand, BlockHitResult result);
 
-    InteractionResult processRightClick(LocalPlayer player, Level world, InteractionHand hand);
+  InteractionResult processRightClick(LocalPlayer player, Level world, InteractionHand hand);
 
-    boolean clickBlock(BlockPos loc, Direction face);
+  boolean clickBlock(BlockPos loc, Direction face);
 
-    void setHittingBlock(boolean hittingBlock);
+  void setHittingBlock(boolean hittingBlock);
 
-    default double getBlockReachDistance() {
-        return this.getGameType().isCreative() ? 5.0F : BaritoneAPI.getSettings().blockReachDistance.value;
-    }
+  default double getBlockReachDistance() { return this.getGameType().isCreative() ? 5.0F : BaritoneAPI.getSettings().blockReachDistance.value; }
 }

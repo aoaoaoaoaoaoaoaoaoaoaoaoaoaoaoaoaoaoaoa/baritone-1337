@@ -8,5 +8,5 @@ import baritone.api.command.argparser.IArgParserManager;
  */
 public interface ICommandSystem {
 
-    IArgParserManager getParserManager();
+  IArgParserManager getParserManager();
 }

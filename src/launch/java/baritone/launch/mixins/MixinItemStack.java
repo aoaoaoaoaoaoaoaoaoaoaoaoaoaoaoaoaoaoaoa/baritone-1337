@@ -13,33 +13,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ItemStack.class)
 public abstract class MixinItemStack implements IItemStack {
 
-    @Unique
-    private int baritoneHash;
+  @Unique private int baritoneHash;
 
-    @Shadow
-    public abstract Item getItem();
+  @Shadow
+  public abstract Item getItem();
 
-    @Shadow
-    public abstract int getDamageValue();
+  @Shadow
+  public abstract int getDamageValue();
 
-    private void recalculateHash() {
-        Item item = getItem();
-        baritoneHash = item == null ? -1 : item.hashCode() + getDamageValue();
-    }
+  private void recalculateHash() {
+    Item item = getItem();
+    baritoneHash = item == null ? -1 : item.hashCode() + getDamageValue();
+  }
 
-    @Inject(
-            method = "setDamageValue",
-            at = @At("TAIL")
-    )
-    private void onItemDamageSet(CallbackInfo ci) {
-        recalculateHash();
-    }
+  @Inject(method = "setDamageValue", at = @At("TAIL"))
+  private void onItemDamageSet(CallbackInfo ci) {
+    recalculateHash();
+  }
 
-    @Override
-    public int getBaritoneHash() {
-        // cannot do this in an init mixin because silentlib likes creating new
-        // items in getDamageValue, which we call in recalculateHash
-        if (baritoneHash == 0) recalculateHash();
-        return baritoneHash;
-    }
+  @Override
+  public int getBaritoneHash() {
+    // cannot do this in an init mixin because silentlib likes creating new
+    // items in getDamageValue, which we call in recalculateHash
+    if (baritoneHash == 0) recalculateHash();
+    return baritoneHash;
+  }
 }

@@ -17,67 +17,61 @@ import java.lang.reflect.Modifier;
 @Mixin(PalettedContainer.class)
 public abstract class MixinPalettedContainer<T> implements IPalettedContainer<T> {
 
-    private static final MethodHandle DATA_GETTER;
+  private static final MethodHandle DATA_GETTER;
 
-    // Mixin has no way of referring to the data field and we can't use inheritance
-    // tricks to determine its name, so we use this ugly workaround instead.
-    // Classloading is hell here and causes accessor mixins (@Mixin interfaces with
-    // only @Accessor and @Invoker methods) to break on use and proguard hates method
-    // handles and on top of that mojang decided that error messages during world
-    // load are not needed so if you want to debug this you'll probably need an extra
-    // mixin just to display the error and hard quit the game before follow up errors
-    // blow up your log file.
-    // Mumphrey, please add the shadow classes you promised 5 years ago.
-    static {
-        Field dataField = null;
-        for (Field field : PalettedContainer.class.getDeclaredFields()) {
-            Class<?> fieldType = field.getType();
-            if (IData.class.isAssignableFrom(fieldType)) {
-                if ((field.getModifiers() & (Modifier.STATIC | Modifier.FINAL)) != 0 || field.isSynthetic()) {
-                    continue;
-                }
-                if (dataField != null) {
-                    throw new IllegalStateException("PalettedContainer has more than one Data field.");
-                }
-                dataField = field;
-            }
+  // Mixin has no way of referring to the data field and we can't use inheritance
+  // tricks to determine its name, so we use this ugly workaround instead.
+  // Classloading is hell here and causes accessor mixins (@Mixin interfaces with
+  // only @Accessor and @Invoker methods) to break on use and proguard hates method
+  // handles and on top of that mojang decided that error messages during world
+  // load are not needed so if you want to debug this you'll probably need an extra
+  // mixin just to display the error and hard quit the game before follow up errors
+  // blow up your log file.
+  // Mumphrey, please add the shadow classes you promised 5 years ago.
+  static {
+    Field dataField = null;
+    for (Field field : PalettedContainer.class.getDeclaredFields()) {
+      Class<?> fieldType = field.getType();
+      if (IData.class.isAssignableFrom(fieldType)) {
+        if ((field.getModifiers() & (Modifier.STATIC | Modifier.FINAL)) != 0 || field.isSynthetic()) {
+          continue;
         }
-        if (dataField == null) {
-            throw new IllegalStateException("PalettedContainer has no Data field.");
+        if (dataField != null) {
+          throw new IllegalStateException("PalettedContainer has more than one Data field.");
         }
-        MethodHandle rawGetter;
-        try {
-            rawGetter = MethodHandles.lookup().unreflectGetter(dataField);
-        } catch (IllegalAccessException impossible) {
-            // we literally are the owning class, wtf?
-            throw new IllegalStateException("PalettedContainer may not access its own field?!", impossible);
-        }
-        MethodType getterType = MethodType.methodType(IData.class, PalettedContainer.class);
-        DATA_GETTER = MethodHandles.explicitCastArguments(rawGetter, getterType);
+        dataField = field;
+      }
     }
+    if (dataField == null) {
+      throw new IllegalStateException("PalettedContainer has no Data field.");
+    }
+    MethodHandle rawGetter;
+    try {
+      rawGetter = MethodHandles.lookup().unreflectGetter(dataField);
+    } catch (IllegalAccessException impossible) {
+      // we literally are the owning class, wtf?
+      throw new IllegalStateException("PalettedContainer may not access its own field?!", impossible);
+    }
+    MethodType getterType = MethodType.methodType(IData.class, PalettedContainer.class);
+    DATA_GETTER = MethodHandles.explicitCastArguments(rawGetter, getterType);
+  }
 
-    @Override
-    public Palette<T> getPalette() {
-        return data().getPalette();
-    }
+  @Override
+  public Palette<T> getPalette() { return data().getPalette(); }
 
-    @Override
-    public BitStorage getStorage() {
-        return data().getStorage();
-    }
+  @Override
+  public BitStorage getStorage() { return data().getStorage(); }
 
-    @Unique
-    private IData<T> data() {
-        try {
-            // cast to Object first so the method handle doesn't hide the interface usage from proguard
-            return (IData<T>) (Object) DATA_GETTER.invoke((PalettedContainer<T>) (Object) this);
-        } catch (Throwable t) {
-            throw sneaky(t, RuntimeException.class);
-        }
+  @Unique private IData<T> data() {
+    try {
+      // cast to Object first so the method handle doesn't hide the interface usage from proguard
+      return (IData<T>) (Object) DATA_GETTER.invoke((PalettedContainer<T>) (Object) this);
+    } catch (Throwable t) {
+      throw sneaky(t, RuntimeException.class);
     }
+  }
 
-    @Unique
-    private static <T extends Throwable> T sneaky(Throwable t, Class<T> as) throws T {
-        throw (T) t;
-    }
+  @Unique private static <T extends Throwable> T sneaky(Throwable t, Class<T> as) throws T {
+    throw (T) t;
+  }
 }

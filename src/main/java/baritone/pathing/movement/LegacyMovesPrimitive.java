@@ -78,8 +78,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
       case PILLAR -> new MovementPillar(ctx.getBaritone(), src, src.above());
       case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST -> new MovementTraverse(ctx.getBaritone(), src, offset(src));
       case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> new MovementAscend(ctx.getBaritone(), src, offset(src));
-      case DESCEND_NORTH, DESCEND_SOUTH, DESCEND_EAST, DESCEND_WEST ->
-        dest.y == src.y - 1 ? new MovementDescend(ctx.getBaritone(), src, dest) : new MovementFall(ctx.getBaritone(), src, dest);
+      case DESCEND_NORTH, DESCEND_SOUTH, DESCEND_EAST, DESCEND_WEST -> dest.y == src.y - 1 ? new MovementDescend(ctx.getBaritone(), src, dest) : new MovementFall(ctx.getBaritone(), src, dest);
       case DIAGONAL_NORTHEAST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.NORTH, Direction.EAST, dest.y - src.y);
       case DIAGONAL_NORTHWEST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.NORTH, Direction.WEST, dest.y - src.y);
       case DIAGONAL_SOUTHEAST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.SOUTH, Direction.EAST, dest.y - src.y);

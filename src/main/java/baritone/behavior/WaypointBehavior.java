@@ -22,53 +22,38 @@ import static baritone.api.command.IBaritoneChatControl.FORCE_COMMAND_PREFIX;
 
 public class WaypointBehavior extends Behavior {
 
+  public WaypointBehavior(Baritone baritone) {
+    super(baritone);
+  }
 
-    public WaypointBehavior(Baritone baritone) {
-        super(baritone);
-    }
-
-    @Override
-    public void onBlockInteract(BlockInteractEvent event) {
-        if (!Baritone.settings().doBedWaypoints.value)
-            return;
-        if (event.getType() == BlockInteractEvent.Type.USE) {
-            BetterBlockPos pos = BetterBlockPos.from(event.getPos());
-            BlockState state = BlockStateInterface.get(ctx, pos);
-            if (state.getBlock() instanceof BedBlock) {
-                if (state.getValue(BedBlock.PART) == BedPart.FOOT) {
-                    pos = pos.relative(state.getValue(BedBlock.FACING));
-                }
-                Set<IWaypoint> waypoints = baritone.getWorldProvider().getCurrentWorld().getWaypoints().getByTag(IWaypoint.Tag.BED);
-                boolean exists = waypoints.stream().map(IWaypoint::getLocation).filter(pos::equals).findFirst().isPresent();
-                if (!exists) {
-                    baritone.getWorldProvider().getCurrentWorld().getWaypoints().addWaypoint(new Waypoint("bed", Waypoint.Tag.BED, pos));
-                }
-            }
+  @Override
+  public void onBlockInteract(BlockInteractEvent event) {
+    if (!Baritone.settings().doBedWaypoints.value) return;
+    if (event.getType() == BlockInteractEvent.Type.USE) {
+      BetterBlockPos pos = BetterBlockPos.from(event.getPos());
+      BlockState state = BlockStateInterface.get(ctx, pos);
+      if (state.getBlock() instanceof BedBlock) {
+        if (state.getValue(BedBlock.PART) == BedPart.FOOT) {
+          pos = pos.relative(state.getValue(BedBlock.FACING));
         }
+        Set<IWaypoint> waypoints = baritone.getWorldProvider().getCurrentWorld().getWaypoints().getByTag(IWaypoint.Tag.BED);
+        boolean exists = waypoints.stream().map(IWaypoint::getLocation).filter(pos::equals).findFirst().isPresent();
+        if (!exists) {
+          baritone.getWorldProvider().getCurrentWorld().getWaypoints().addWaypoint(new Waypoint("bed", Waypoint.Tag.BED, pos));
+        }
+      }
     }
+  }
 
-    @Override
-    public void onPlayerDeath() {
-        if (!Baritone.settings().doDeathWaypoints.value)
-            return;
-        Waypoint deathWaypoint = new Waypoint("death", Waypoint.Tag.DEATH, ctx.playerFeet());
-        baritone.getWorldProvider().getCurrentWorld().getWaypoints().addWaypoint(deathWaypoint);
-        MutableComponent component = Component.literal("Death position saved.");
-        component.setStyle(component.getStyle()
-                .withColor(ChatFormatting.WHITE)
-                .withHoverEvent(new HoverEvent.ShowText(
-                        Component.literal("Click to goto death")
-                ))
-                .withClickEvent(new ClickEvent.RunCommand(
-                        String.format(
-                                "%s%s goto %s @ %d",
-                                FORCE_COMMAND_PREFIX,
-                                "wp",
-                                deathWaypoint.getTag().getName(),
-                                deathWaypoint.getCreationTimestamp()
-                        )
-                )));
-        Helper.HELPER.logDirect(component);
-    }
+  @Override
+  public void onPlayerDeath() {
+    if (!Baritone.settings().doDeathWaypoints.value) return;
+    Waypoint deathWaypoint = new Waypoint("death", Waypoint.Tag.DEATH, ctx.playerFeet());
+    baritone.getWorldProvider().getCurrentWorld().getWaypoints().addWaypoint(deathWaypoint);
+    MutableComponent component = Component.literal("Death position saved.");
+    component.setStyle(component.getStyle().withColor(ChatFormatting.WHITE).withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to goto death")))
+      .withClickEvent(new ClickEvent.RunCommand(String.format("%s%s goto %s @ %d", FORCE_COMMAND_PREFIX, "wp", deathWaypoint.getTag().getName(), deathWaypoint.getCreationTimestamp()))));
+    Helper.HELPER.logDirect(component);
+  }
 
 }

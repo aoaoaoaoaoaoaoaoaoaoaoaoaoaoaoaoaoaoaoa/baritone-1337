@@ -4,5 +4,5 @@ import net.minecraft.core.BlockPos;
 
 public interface IGoalRenderPos {
 
-    BlockPos getGoalPos();
+  BlockPos getGoalPos();
 }

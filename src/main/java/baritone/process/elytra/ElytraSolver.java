@@ -136,26 +136,10 @@ final class ElytraSolver {
     double oy = dest.y - start.y;
     double oz = dest.z - start.z;
 
-    double[] src = {
-        bb.minX, bb.minY, bb.minZ,
-        bb.minX, bb.minY, bb.maxZ,
-        bb.minX, bb.maxY, bb.minZ,
-        bb.minX, bb.maxY, bb.maxZ,
-        bb.maxX, bb.minY, bb.minZ,
-        bb.maxX, bb.minY, bb.maxZ,
-        bb.maxX, bb.maxY, bb.minZ,
-        bb.maxX, bb.maxY, bb.maxZ,
-    };
-    double[] dst = {
-        bb.minX + ox, bb.minY + oy, bb.minZ + oz,
-        bb.minX + ox, bb.minY + oy, bb.maxZ + oz,
-        bb.minX + ox, bb.maxY + oy, bb.minZ + oz,
-        bb.minX + ox, bb.maxY + oy, bb.maxZ + oz,
-        bb.maxX + ox, bb.minY + oy, bb.minZ + oz,
-        bb.maxX + ox, bb.minY + oy, bb.maxZ + oz,
-        bb.maxX + ox, bb.maxY + oy, bb.minZ + oz,
-        bb.maxX + ox, bb.maxY + oy, bb.maxZ + oz,
-    };
+    double[] src = {bb.minX, bb.minY, bb.minZ, bb.minX, bb.minY, bb.maxZ, bb.minX, bb.maxY, bb.minZ, bb.minX, bb.maxY, bb.maxZ, bb.maxX, bb.minY, bb.minZ, bb.maxX, bb.minY, bb.maxZ, bb.maxX, bb.maxY,
+      bb.minZ, bb.maxX, bb.maxY, bb.maxZ,};
+    double[] dst = {bb.minX + ox, bb.minY + oy, bb.minZ + oz, bb.minX + ox, bb.minY + oy, bb.maxZ + oz, bb.minX + ox, bb.maxY + oy, bb.minZ + oz, bb.minX + ox, bb.maxY + oy, bb.maxZ + oz,
+      bb.maxX + ox, bb.minY + oy, bb.minZ + oz, bb.maxX + ox, bb.minY + oy, bb.maxZ + oz, bb.maxX + ox, bb.maxY + oy, bb.minZ + oz, bb.maxX + ox, bb.maxY + oy, bb.maxZ + oz,};
 
     if (baritone.Baritone.settings().elytraRenderHitboxRaytraces.value) {
       boolean clear = true;
@@ -197,29 +181,22 @@ final class ElytraSolver {
     if (glidePitch != null) {
       FloatArrayList glidePitches = new FloatArrayList(1);
       glidePitches.add(glidePitch);
-      Optional<PitchResult> glide = tests.stream()
-          .map(i -> solvePitch(context, goal, relaxation, glidePitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
-          .filter(Objects::nonNull)
-          .filter(result -> advancesToward(goal.subtract(context.start), result))
-          .findFirst();
+      Optional<PitchResult> glide = tests.stream().map(i -> solvePitch(context, goal, relaxation, glidePitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
+        .filter(Objects::nonNull).filter(result -> advancesToward(goal.subtract(context.start), result)).findFirst();
       if (glide.isPresent()) {
         return new Pair<>(glide.get().pitch, false);
       }
     }
 
-    Optional<PitchResult> result = tests.stream()
-        .map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
-        .filter(Objects::nonNull)
-        .findFirst();
+    Optional<PitchResult> result =
+      tests.stream().map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode)).filter(Objects::nonNull).findFirst();
     if (result.isPresent()) {
       return new Pair<>(result.get().pitch, false);
     }
 
     if (desperate) {
       Optional<PitchResult> resultBoost = List.of(new IntTriple(ticks, 10, 3), new IntTriple(ticks, 10, 2), new IntTriple(ticks, 10, 1)).stream()
-          .map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
-          .filter(Objects::nonNull)
-          .findFirst();
+        .map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode)).filter(Objects::nonNull).findFirst();
       if (resultBoost.isPresent()) {
         return new Pair<>(resultBoost.get().pitch, true);
       }
@@ -255,8 +232,7 @@ final class ElytraSolver {
       }
     }
 
-    outer:
-    for (PitchResult result : bestResults) {
+    outer : for (PitchResult result : bestResults) {
       if (relaxation < 2) {
         for (int i = result.steps.size() - 1; i >= 1; i--) {
           if (!collision.clearView(context.start.add(result.steps.get(i)), goal, context.ignoreLava)) {
@@ -313,11 +289,8 @@ final class ElytraSolver {
       displacement.add(displacement.get(displacement.size() - 1).add(motion));
 
       if (i >= ticksBoostDelay && remainingTicksBoosted-- > 0) {
-        motion = motion.add(
-            lookDirection.x * 0.1 + (lookDirection.x * 1.5 - motion.x) * 0.5,
-            lookDirection.y * 0.1 + (lookDirection.y * 1.5 - motion.y) * 0.5,
-            lookDirection.z * 0.1 + (lookDirection.z * 1.5 - motion.z) * 0.5
-        );
+        motion = motion.add(lookDirection.x * 0.1 + (lookDirection.x * 1.5 - motion.x) * 0.5, lookDirection.y * 0.1 + (lookDirection.y * 1.5 - motion.y) * 0.5,
+          lookDirection.z * 0.1 + (lookDirection.z * 1.5 - motion.z) * 0.5);
       }
     }
 
@@ -371,7 +344,9 @@ final class ElytraSolver {
     return new Vec3(motionX * 0.99f, motionY * 0.98f, motionZ * 0.99f);
   }
 
-  private record PitchResult(float pitch, double dot, List<Vec3> steps) {}
+  private record PitchResult(float pitch, double dot, List<Vec3> steps) {
+  }
 
-  private record IntTriple(int ticks, int ticksBoosted, int ticksBoostDelay) {}
+  private record IntTriple(int ticks, int ticksBoosted, int ticksBoostDelay) {
+  }
 }

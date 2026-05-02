@@ -11,49 +11,49 @@ import net.minecraft.world.phys.AABB;
 
 public class SelectionRenderer implements IRenderer, AbstractGameEventListener {
 
-    public static final double SELECTION_BOX_EXPANSION = .005D;
+  public static final double SELECTION_BOX_EXPANSION = .005D;
 
-    private final SelectionManager manager;
+  private final SelectionManager manager;
 
-    SelectionRenderer(Baritone baritone, SelectionManager manager) {
-        this.manager = manager;
-        baritone.getGameEventHandler().registerEventListener(this);
+  SelectionRenderer(Baritone baritone, SelectionManager manager) {
+    this.manager = manager;
+    baritone.getGameEventHandler().registerEventListener(this);
+  }
+
+  public static void renderSelections(RenderContext view, ISelection[] selections) {
+    float opacity = settings.selectionOpacity.value;
+    boolean ignoreDepth = settings.renderSelectionIgnoreDepth.value;
+    float lineWidth = settings.selectionLineWidth.value;
+
+    if (!settings.renderSelection.value || selections.length == 0) {
+      return;
     }
 
-    public static void renderSelections(RenderContext view, ISelection[] selections) {
-        float opacity = settings.selectionOpacity.value;
-        boolean ignoreDepth = settings.renderSelectionIgnoreDepth.value;
-        float lineWidth = settings.selectionLineWidth.value;
+    BufferBuilder bufferBuilder = IRenderer.startLines(settings.colorSelection.value, opacity);
 
-        if (!settings.renderSelection.value || selections.length == 0) {
-            return;
-        }
-
-        BufferBuilder bufferBuilder = IRenderer.startLines(settings.colorSelection.value, opacity);
-
-        for (ISelection selection : selections) {
-            IRenderer.emitAABB(bufferBuilder, view, selection.aabb(), SELECTION_BOX_EXPANSION, lineWidth);
-        }
-
-        if (settings.renderSelectionCorners.value) {
-            IRenderer.glColor(settings.colorSelectionPos1.value, opacity);
-
-            for (ISelection selection : selections) {
-                IRenderer.emitAABB(bufferBuilder, view, new AABB(selection.pos1()), lineWidth);
-            }
-
-            IRenderer.glColor(settings.colorSelectionPos2.value, opacity);
-
-            for (ISelection selection : selections) {
-                IRenderer.emitAABB(bufferBuilder, view, new AABB(selection.pos2()), lineWidth);
-            }
-        }
-
-        IRenderer.endLines(bufferBuilder, ignoreDepth);
+    for (ISelection selection : selections) {
+      IRenderer.emitAABB(bufferBuilder, view, selection.aabb(), SELECTION_BOX_EXPANSION, lineWidth);
     }
 
-    @Override
-    public void onRenderPass(RenderEvent event) {
-        renderSelections(RenderContext.capture(event), manager.getSelections());
+    if (settings.renderSelectionCorners.value) {
+      IRenderer.glColor(settings.colorSelectionPos1.value, opacity);
+
+      for (ISelection selection : selections) {
+        IRenderer.emitAABB(bufferBuilder, view, new AABB(selection.pos1()), lineWidth);
+      }
+
+      IRenderer.glColor(settings.colorSelectionPos2.value, opacity);
+
+      for (ISelection selection : selections) {
+        IRenderer.emitAABB(bufferBuilder, view, new AABB(selection.pos2()), lineWidth);
+      }
     }
+
+    IRenderer.endLines(bufferBuilder, ignoreDepth);
+  }
+
+  @Override
+  public void onRenderPass(RenderEvent event) {
+    renderSelections(RenderContext.capture(event), manager.getSelections());
+  }
 }

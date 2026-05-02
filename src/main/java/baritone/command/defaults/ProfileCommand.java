@@ -46,15 +46,13 @@ public class ProfileCommand extends Command {
   }
 
   @Override
-  public String getShortDesc() {
-    return "Profile the next A* calculation segment";
-  }
+  public String getShortDesc() { return "Profile the next A* calculation segment"; }
 
   @Override
   public List<String> getLongDesc() {
     return Arrays.asList("The profile command arms a low-overhead profiler for the next A* calculation segment.",
-        "It records search counters and per-movement timing into .minecraft/baritone/profiles/.", "Long gotos may chain multiple segments; this command intentionally records one microprofile.", "",
-        "Usage:", "> profile - Show profiler status", "> profile next - Save a JSON profile for the next A* calculation segment", "> profile toggle - Arm or disarm the next path profile",
-        "> profile cancel - Cancel a pending profile", "> profile last - Show the last saved profile path");
+      "It records search counters and per-movement timing into .minecraft/baritone/profiles/.", "Long gotos may chain multiple segments; this command intentionally records one microprofile.", "",
+      "Usage:", "> profile - Show profiler status", "> profile next - Save a JSON profile for the next A* calculation segment", "> profile toggle - Arm or disarm the next path profile",
+      "> profile cancel - Cancel a pending profile", "> profile last - Show the last saved profile path");
   }
 }

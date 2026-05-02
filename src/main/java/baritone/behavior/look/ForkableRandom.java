@@ -14,55 +14,50 @@ import java.util.function.LongSupplier;
  */
 public final class ForkableRandom {
 
-    private static final double DOUBLE_UNIT = 0x1.0p-53;
+  private static final double DOUBLE_UNIT = 0x1.0p-53;
 
-    private final long[] s;
+  private final long[] s;
 
-    public ForkableRandom() {
-        this(System.nanoTime() ^ System.currentTimeMillis());
-    }
+  public ForkableRandom() {
+    this(System.nanoTime() ^ System.currentTimeMillis());
+  }
 
-    public ForkableRandom(long seedIn) {
-        final AtomicLong seed = new AtomicLong(seedIn);
-        final LongSupplier splitmix64 = () -> {
-            long z = seed.addAndGet(0x9e3779b97f4a7c15L);
-            z = (z ^ (z >>> 30)) * 0xbf58476d1ce4e5b9L;
-            z = (z ^ (z >>> 27)) * 0x94d049bb133111ebL;
-            return z ^ (z >>> 31);
-        };
-        this.s = new long[] {
-                splitmix64.getAsLong(),
-                splitmix64.getAsLong(),
-                splitmix64.getAsLong(),
-                splitmix64.getAsLong()
-        };
-    }
+  public ForkableRandom(long seedIn) {
+    final AtomicLong seed = new AtomicLong(seedIn);
+    final LongSupplier splitmix64 = () -> {
+      long z = seed.addAndGet(0x9e3779b97f4a7c15L);
+      z = (z ^ (z >>> 30)) * 0xbf58476d1ce4e5b9L;
+      z = (z ^ (z >>> 27)) * 0x94d049bb133111ebL;
+      return z ^ (z >>> 31);
+    };
+    this.s = new long[]{splitmix64.getAsLong(), splitmix64.getAsLong(), splitmix64.getAsLong(), splitmix64.getAsLong()};
+  }
 
-    private ForkableRandom(long[] s) {
-        this.s = s;
-    }
+  private ForkableRandom(long[] s) {
+    this.s = s;
+  }
 
-    public double nextDouble() {
-        return (this.next() >>> 11) * DOUBLE_UNIT;
-    }
+  public double nextDouble() {
+    return (this.next() >>> 11) * DOUBLE_UNIT;
+  }
 
-    public long next() {
-        final long result = rotl(this.s[0] + this.s[3], 23) + this.s[0];
-        final long t = this.s[1] << 17;
-        this.s[2] ^= this.s[0];
-        this.s[3] ^= this.s[1];
-        this.s[1] ^= this.s[2];
-        this.s[0] ^= this.s[3];
-        this.s[2] ^= t;
-        this.s[3] = rotl(this.s[3], 45);
-        return result;
-    }
+  public long next() {
+    final long result = rotl(this.s[0] + this.s[3], 23) + this.s[0];
+    final long t = this.s[1] << 17;
+    this.s[2] ^= this.s[0];
+    this.s[3] ^= this.s[1];
+    this.s[1] ^= this.s[2];
+    this.s[0] ^= this.s[3];
+    this.s[2] ^= t;
+    this.s[3] = rotl(this.s[3], 45);
+    return result;
+  }
 
-    public ForkableRandom fork() {
-        return new ForkableRandom(Arrays.copyOf(this.s, 4));
-    }
+  public ForkableRandom fork() {
+    return new ForkableRandom(Arrays.copyOf(this.s, 4));
+  }
 
-    private static long rotl(long x, int k) {
-        return (x << k) | (x >>> (64 - k));
-    }
+  private static long rotl(long x, int k) {
+    return (x << k) | (x >>> (64 - k));
+  }
 }

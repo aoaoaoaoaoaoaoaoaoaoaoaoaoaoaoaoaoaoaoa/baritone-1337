@@ -10,25 +10,21 @@ import baritone.api.utils.SettingsUtil;
  */
 public final class BaritoneAPI {
 
-    private static final IBaritoneProvider provider;
-    private static final Settings settings;
+  private static final IBaritoneProvider provider;
+  private static final Settings settings;
 
-    static {
-        settings = new Settings();
-        SettingsUtil.readAndApply(settings, SettingsUtil.SETTINGS_DEFAULT_NAME);
+  static {
+    settings = new Settings();
+    SettingsUtil.readAndApply(settings, SettingsUtil.SETTINGS_DEFAULT_NAME);
 
-        try {
-            provider = (IBaritoneProvider) Class.forName("baritone.BaritoneProvider").newInstance();
-        } catch (ReflectiveOperationException ex) {
-            throw new RuntimeException(ex);
-        }
+    try {
+      provider = (IBaritoneProvider) Class.forName("baritone.BaritoneProvider").newInstance();
+    } catch (ReflectiveOperationException ex) {
+      throw new RuntimeException(ex);
     }
+  }
 
-    public static IBaritoneProvider getProvider() {
-        return BaritoneAPI.provider;
-    }
+  public static IBaritoneProvider getProvider() { return BaritoneAPI.provider; }
 
-    public static Settings getSettings() {
-        return BaritoneAPI.settings;
-    }
+  public static Settings getSettings() { return BaritoneAPI.settings; }
 }

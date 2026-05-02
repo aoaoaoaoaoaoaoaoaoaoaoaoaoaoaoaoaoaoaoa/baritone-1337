@@ -26,83 +26,58 @@ import java.util.Optional;
 @Mixin(LivingEntity.class)
 public abstract class MixinLivingEntity extends Entity {
 
-    /**
-     * Event called to override the movement direction when jumping
-     */
-    @Unique
-    private RotationMoveEvent jumpRotationEvent;
+  /**
+   * Event called to override the movement direction when jumping
+   */
+  @Unique private RotationMoveEvent jumpRotationEvent;
 
-    @Unique
-    private RotationMoveEvent elytraRotationEvent;
+  @Unique private RotationMoveEvent elytraRotationEvent;
 
-    private MixinLivingEntity(EntityType<?> entityTypeIn, Level worldIn) {
-        super(entityTypeIn, worldIn);
+  private MixinLivingEntity(EntityType<?> entityTypeIn, Level worldIn) {
+    super(entityTypeIn, worldIn);
+  }
+
+  @Inject(method = "jumpFromGround", at = @At("HEAD"))
+  private void preMoveRelative(CallbackInfo ci) {
+    this.getBaritone().ifPresent(baritone -> {
+      this.jumpRotationEvent = new RotationMoveEvent(RotationMoveEvent.Type.JUMP, this.getYRot(), this.getXRot());
+      baritone.getGameEventHandler().onPlayerRotationMove(this.jumpRotationEvent);
+    });
+  }
+
+  @Redirect(method = "jumpFromGround", at = @At(value = "INVOKE", target = "net/minecraft/world/entity/LivingEntity.getYRot()F"))
+  private float overrideYaw(LivingEntity self) {
+    if (self instanceof LocalPlayer && BaritoneAPI.getProvider().getBaritoneForPlayer((LocalPlayer) (Object) this) != null) {
+      return this.jumpRotationEvent.getYaw();
     }
+    return self.getYRot();
+  }
 
-    @Inject(
-            method = "jumpFromGround",
-            at = @At("HEAD")
-    )
-    private void preMoveRelative(CallbackInfo ci) {
-        this.getBaritone().ifPresent(baritone -> {
-            this.jumpRotationEvent = new RotationMoveEvent(RotationMoveEvent.Type.JUMP, this.getYRot(), this.getXRot());
-            baritone.getGameEventHandler().onPlayerRotationMove(this.jumpRotationEvent);
-        });
-    }
+  @Inject(method = "updateFallFlyingMovement", at = @At(value = "INVOKE", target = "net/minecraft/world/entity/LivingEntity.getLookAngle()Lnet/minecraft/world/phys/Vec3;"))
+  private void onPreElytraMove(Vec3 direction, final CallbackInfoReturnable<Vec3> cir) {
+    this.getBaritone().ifPresent(baritone -> {
+      this.elytraRotationEvent = new RotationMoveEvent(RotationMoveEvent.Type.MOTION_UPDATE, this.getYRot(), this.getXRot());
+      baritone.getGameEventHandler().onPlayerRotationMove(this.elytraRotationEvent);
+      this.setYRot(this.elytraRotationEvent.getYaw());
+      this.setXRot(this.elytraRotationEvent.getPitch());
+    });
+  }
 
-    @Redirect(
-            method = "jumpFromGround",
-            at = @At(
-                    value = "INVOKE",
-                    target = "net/minecraft/world/entity/LivingEntity.getYRot()F"
-            )
-    )
-    private float overrideYaw(LivingEntity self) {
-        if (self instanceof LocalPlayer && BaritoneAPI.getProvider().getBaritoneForPlayer((LocalPlayer) (Object) this) != null) {
-            return this.jumpRotationEvent.getYaw();
-        }
-        return self.getYRot();
+  @Inject(method = "travelFallFlying", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;move(Lnet/minecraft/world/entity/MoverType;Lnet/minecraft/world/phys/Vec3;)V", shift = At.Shift.AFTER))
+  private void onPostElytraMove(final CallbackInfo ci) {
+    if (this.elytraRotationEvent != null) {
+      this.setYRot(this.elytraRotationEvent.getOriginal().getYaw());
+      this.setXRot(this.elytraRotationEvent.getOriginal().getPitch());
+      this.elytraRotationEvent = null;
     }
+  }
 
-    @Inject(
-            method = "updateFallFlyingMovement",
-            at = @At(
-                    value = "INVOKE",
-                    target = "net/minecraft/world/entity/LivingEntity.getLookAngle()Lnet/minecraft/world/phys/Vec3;"
-            )
-    )
-    private void onPreElytraMove(Vec3 direction, final CallbackInfoReturnable<Vec3> cir) {
-        this.getBaritone().ifPresent(baritone -> {
-            this.elytraRotationEvent = new RotationMoveEvent(RotationMoveEvent.Type.MOTION_UPDATE, this.getYRot(), this.getXRot());
-            baritone.getGameEventHandler().onPlayerRotationMove(this.elytraRotationEvent);
-            this.setYRot(this.elytraRotationEvent.getYaw());
-            this.setXRot(this.elytraRotationEvent.getPitch());
-        });
+  @Unique private Optional<IBaritone> getBaritone() {
+    // noinspection ConstantConditions
+    if (LocalPlayer.class.isInstance(this)) {
+      return Optional.ofNullable(BaritoneAPI.getProvider().getBaritoneForPlayer((LocalPlayer) (Object) this));
+    } else {
+      return Optional.empty();
     }
-
-    @Inject(
-            method = "travelFallFlying",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/world/entity/LivingEntity;move(Lnet/minecraft/world/entity/MoverType;Lnet/minecraft/world/phys/Vec3;)V",
-                    shift = At.Shift.AFTER
-            )
-    )
-    private void onPostElytraMove(final CallbackInfo ci) {
-        if (this.elytraRotationEvent != null) {
-            this.setYRot(this.elytraRotationEvent.getOriginal().getYaw());
-            this.setXRot(this.elytraRotationEvent.getOriginal().getPitch());
-            this.elytraRotationEvent = null;
-        }
-    }
-
-    @Unique
-    private Optional<IBaritone> getBaritone() {
-        // noinspection ConstantConditions
-        if (LocalPlayer.class.isInstance(this)) {
-            return Optional.ofNullable(BaritoneAPI.getProvider().getBaritoneForPlayer((LocalPlayer) (Object) this));
-        } else {
-            return Optional.empty();
-        }
-    }
+  }
 }

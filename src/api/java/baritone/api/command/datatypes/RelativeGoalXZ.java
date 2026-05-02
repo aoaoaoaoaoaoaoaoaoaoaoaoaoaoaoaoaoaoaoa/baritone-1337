@@ -8,27 +8,24 @@ import java.util.stream.Stream;
 import net.minecraft.util.Mth;
 
 public enum RelativeGoalXZ implements IDatatypePost<GoalXZ, BetterBlockPos> {
-    INSTANCE;
+  INSTANCE;
 
-    @Override
-    public GoalXZ apply(IDatatypeContext ctx, BetterBlockPos origin) throws CommandException {
-        if (origin == null) {
-            origin = BetterBlockPos.ORIGIN;
-        }
-
-        final IArgConsumer consumer = ctx.getConsumer();
-        return new GoalXZ(
-                Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.x)),
-                Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.z))
-        );
+  @Override
+  public GoalXZ apply(IDatatypeContext ctx, BetterBlockPos origin) throws CommandException {
+    if (origin == null) {
+      origin = BetterBlockPos.ORIGIN;
     }
 
-    @Override
-    public Stream<String> tabComplete(IDatatypeContext ctx) {
-        final IArgConsumer consumer = ctx.getConsumer();
-        if (consumer.hasAtMost(2)) {
-            return consumer.tabCompleteDatatype(RelativeCoordinate.INSTANCE);
-        }
-        return Stream.empty();
+    final IArgConsumer consumer = ctx.getConsumer();
+    return new GoalXZ(Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.x)), Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.z)));
+  }
+
+  @Override
+  public Stream<String> tabComplete(IDatatypeContext ctx) {
+    final IArgConsumer consumer = ctx.getConsumer();
+    if (consumer.hasAtMost(2)) {
+      return consumer.tabCompleteDatatype(RelativeCoordinate.INSTANCE);
     }
+    return Stream.empty();
+  }
 }

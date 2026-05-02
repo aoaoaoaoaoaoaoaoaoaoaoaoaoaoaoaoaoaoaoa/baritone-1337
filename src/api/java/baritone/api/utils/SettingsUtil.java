@@ -207,42 +207,32 @@ public class SettingsUtil {
   }
 
   private enum Parser implements SettingParser {
-    DOUBLE(Double.class, Double::parseDouble),
-    BOOLEAN(Boolean.class, Boolean::parseBoolean),
-    INTEGER(Integer.class, Integer::parseInt),
-    FLOAT(Float.class, Float::parseFloat),
-    LONG(Long.class, Long::parseLong),
-    STRING(String.class, String::new),
-    GEOFENCE_BOX(GeofenceBox.class, GeofenceBox::parse, GeofenceBox::serialized),
-    MIRROR(Mirror.class, Mirror::valueOf, Mirror::name),
-    ROTATION(Rotation.class, Rotation::valueOf, Rotation::name),
-    COLOR(Color.class, str -> {
-      String[] parts = str.split(",");
-      return new Color(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
-    }, color -> color.getRed() + "," + color.getGreen() + "," + color.getBlue()),
-    VEC3I(Vec3i.class, str -> {
-      String[] parts = str.split(",");
-      return new Vec3i(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
-    }, vec -> vec.getX() + "," + vec.getY() + "," + vec.getZ()),
-    BLOCK(Block.class, str -> BlockUtils.stringToBlockRequired(str.trim()), BlockUtils::blockToString),
-    ITEM(Item.class, str -> BuiltInRegistries.ITEM.get(Identifier.parse(str.trim())).map(Holder.Reference::value).orElse(null), item -> BuiltInRegistries.ITEM.getKey(item).toString()),
-    ENUM() {
-      @Override
-      @SuppressWarnings({"rawtypes", "unchecked"})
-      public Object parse(Type type, String raw) {
-        return Enum.valueOf((Class<? extends Enum>) type, raw.trim().toUpperCase(Locale.US));
-      }
+    DOUBLE(Double.class, Double::parseDouble), BOOLEAN(Boolean.class, Boolean::parseBoolean), INTEGER(Integer.class, Integer::parseInt), FLOAT(Float.class, Float::parseFloat), LONG(Long.class,
+      Long::parseLong), STRING(String.class, String::new), GEOFENCE_BOX(GeofenceBox.class, GeofenceBox::parse,
+        GeofenceBox::serialized), MIRROR(Mirror.class, Mirror::valueOf, Mirror::name), ROTATION(Rotation.class, Rotation::valueOf, Rotation::name), COLOR(Color.class, str -> {
+          String[] parts = str.split(",");
+          return new Color(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+        }, color -> color.getRed() + "," + color.getGreen() + "," + color.getBlue()), VEC3I(Vec3i.class, str -> {
+          String[] parts = str.split(",");
+          return new Vec3i(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+        }, vec -> vec.getX() + "," + vec.getY() + "," + vec.getZ()), BLOCK(Block.class, str -> BlockUtils.stringToBlockRequired(str.trim()), BlockUtils::blockToString), ITEM(Item.class,
+          str -> BuiltInRegistries.ITEM.get(Identifier.parse(str.trim())).map(Holder.Reference::value).orElse(null), item -> BuiltInRegistries.ITEM.getKey(item).toString()), ENUM() {
+            @Override
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            public Object parse(Type type, String raw) {
+              return Enum.valueOf((Class<? extends Enum>) type, raw.trim().toUpperCase(Locale.US));
+            }
 
-      @Override
-      public String toString(Type type, Object value) {
-        return ((Enum<?>) value).name();
-      }
+            @Override
+            public String toString(Type type, Object value) {
+              return ((Enum<?>) value).name();
+            }
 
-      @Override
-      public boolean accepts(Type type) {
-        return type instanceof Class<?> c && c.isEnum();
-      }
-    },
+            @Override
+            public boolean accepts(Type type) {
+              return type instanceof Class<?> c && c.isEnum();
+            }
+          },
     LIST() {
       @Override
       public Object parse(Type type, String raw) {
@@ -297,9 +287,7 @@ public class SettingsUtil {
           throw new IllegalStateException("Missing map serializer for " + type);
         }
 
-        return ((Map<?, ?>) value).entrySet().stream()
-            .map(o -> keyParser.toString(keyType, o.getKey()) + "->" + valueParser.toString(valueType, o.getValue()))
-            .collect(Collectors.joining(","));
+        return ((Map<?, ?>) value).entrySet().stream().map(o -> keyParser.toString(keyType, o.getKey()) + "->" + valueParser.toString(valueType, o.getValue())).collect(Collectors.joining(","));
       }
 
       @Override

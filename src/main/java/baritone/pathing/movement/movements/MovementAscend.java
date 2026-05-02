@@ -22,7 +22,7 @@ public class MovementAscend extends Movement {
   private int ticksWithoutPlacement = 0;
 
   public MovementAscend(IBaritone baritone, BetterBlockPos src, BetterBlockPos dest) {
-    super(baritone, src, dest, new BetterBlockPos[] {dest, src.above(2), dest.above()}, dest.below());
+    super(baritone, src, dest, new BetterBlockPos[]{dest, src.above(2), dest.above()}, dest.below());
   }
 
   @Override
@@ -76,8 +76,7 @@ public class MovementAscend extends Movement {
     }
     boolean hasFacts = facts != null && facts.matches(x, y, z);
     BlockState srcUp2 = hasFacts ? facts.srcUp2 : context.get(x, y + 2, z); // used lower down anyway
-    if (context.get(x, y + 3, z).getBlock() instanceof FallingBlock
-        && (MovementHelper.canWalkThrough(context, x, y + 1, z) || !(srcUp2.getBlock() instanceof FallingBlock))) { // it would fall on us and possibly suffocate us
+    if (context.get(x, y + 3, z).getBlock() instanceof FallingBlock && (MovementHelper.canWalkThrough(context, x, y + 1, z) || !(srcUp2.getBlock() instanceof FallingBlock))) { // it would fall on us and possibly suffocate us
       // HOWEVER, we assume that we're standing in the start position
       // that means that src and src.up(1) are both air
       // maybe they aren't now, but they will be by the time this starts

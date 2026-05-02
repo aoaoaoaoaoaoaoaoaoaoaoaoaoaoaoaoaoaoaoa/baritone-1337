@@ -24,15 +24,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(LevelRenderer.class)
 public class MixinWorldRenderer {
 
-    @Inject(
-            method = "renderLevel",
-            at = @At("RETURN")
-    )
-    private void onStartHand(final GraphicsResourceAllocator graphicsResourceAllocator, final DeltaTracker deltaTracker, final boolean bl, final CameraRenderState cameraRenderState, final Matrix4fc viewRotationMatrix, final GpuBufferSlice gpuBufferSlice, final Vector4f vector4f, final boolean bl2, final ChunkSectionsToRender chunkSectionsToRender, final CallbackInfo ci) {
-        for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
-            PoseStack poseStack = new PoseStack();
-            poseStack.last().pose().mul(viewRotationMatrix);
-            ibaritone.getGameEventHandler().onRenderPass(new RenderEvent(deltaTracker.getGameTimeDeltaPartialTick(false), poseStack, cameraRenderState.projectionMatrix));
-        }
+  @Inject(method = "renderLevel", at = @At("RETURN"))
+  private void onStartHand(final GraphicsResourceAllocator graphicsResourceAllocator, final DeltaTracker deltaTracker, final boolean bl, final CameraRenderState cameraRenderState,
+    final Matrix4fc viewRotationMatrix, final GpuBufferSlice gpuBufferSlice, final Vector4f vector4f, final boolean bl2, final ChunkSectionsToRender chunkSectionsToRender, final CallbackInfo ci) {
+    for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
+      PoseStack poseStack = new PoseStack();
+      poseStack.last().pose().mul(viewRotationMatrix);
+      ibaritone.getGameEventHandler().onRenderPass(new RenderEvent(deltaTracker.getGameTimeDeltaPartialTick(false), poseStack, cameraRenderState.projectionMatrix));
     }
+  }
 }

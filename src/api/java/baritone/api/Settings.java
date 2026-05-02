@@ -219,7 +219,7 @@ public final class Settings {
    * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
    */
   public final Setting<List<Item>> acceptableThrowawayItems =
-      new Setting<>(new ArrayList<>(Arrays.asList(Blocks.DIRT.asItem(), Blocks.COBBLESTONE.asItem(), Blocks.NETHERRACK.asItem(), Blocks.STONE.asItem())));
+    new Setting<>(new ArrayList<>(Arrays.asList(Blocks.DIRT.asItem(), Blocks.COBBLESTONE.asItem(), Blocks.NETHERRACK.asItem(), Blocks.STONE.asItem())));
 
   /**
    * Blocks that Baritone will attempt to avoid (Used in avoidance)
@@ -230,14 +230,14 @@ public final class Settings {
    * Blocks that Baritone is not allowed to break
    */
   public final Setting<List<Block>> blocksToDisallowBreaking = new Setting<>(new ArrayList<>(
-      // Leave Empty by Default
-      ));
+  // Leave Empty by Default
+  ));
 
   /**
    * blocks that baritone shouldn't break, but can if it needs to.
    */
   public final Setting<List<Block>> blocksToAvoidBreaking = new Setting<>(new ArrayList<>(Arrays.asList( // TODO can this be a HashSet or ImmutableSet?
-      Blocks.CRAFTING_TABLE, Blocks.FURNACE, Blocks.CHEST, Blocks.TRAPPED_CHEST)));
+    Blocks.CRAFTING_TABLE, Blocks.FURNACE, Blocks.CHEST, Blocks.TRAPPED_CHEST)));
 
   /**
    * this multiplies the break speed, if set above 1 it's "encourage breaking" instead
@@ -251,7 +251,7 @@ public final class Settings {
    */
   public final Setting<List<Block>> buildIgnoreBlocks = new Setting<>(new ArrayList<>(Arrays.asList(
 
-      )));
+  )));
 
   /**
    * A list of blocks to be treated as correct.
@@ -260,7 +260,7 @@ public final class Settings {
    */
   public final Setting<List<Block>> buildSkipBlocks = new Setting<>(new ArrayList<>(Arrays.asList(
 
-      )));
+  )));
 
   /**
    * A mapping of blocks to blocks treated as correct in their position
@@ -294,7 +294,7 @@ public final class Settings {
    */
   public final Setting<List<Block>> okIfAir = new Setting<>(new ArrayList<>(Arrays.asList(
 
-      )));
+  )));
 
   /**
    * If this is true, the builder will treat all non-air blocks as correct. It will only place new blocks.
@@ -1232,14 +1232,16 @@ public final class Settings {
    * via {@link Consumer#andThen(Consumer)} or it can completely be overriden via setting
    * {@link Setting#value};
    */
-  @JavaOnly public final Setting<BiConsumer<String, Boolean>> notifier = new Setting<>(NotificationHelper::notify);
+  @JavaOnly
+  public final Setting<BiConsumer<String, Boolean>> notifier = new Setting<>(NotificationHelper::notify);
 
   /**
    * The function that is called when Baritone will show a toast. This function can be added to
    * via {@link Consumer#andThen(Consumer)} or it can completely be overriden via setting
    * {@link Setting#value};
    */
-  @JavaOnly public final Setting<BiConsumer<Component, Component>> toaster = new Setting<>(BaritoneToast::addOrUpdate);
+  @JavaOnly
+  public final Setting<BiConsumer<Component, Component>> toaster = new Setting<>(BaritoneToast::addOrUpdate);
 
   /**
    * Print out ALL command exceptions as a stack trace to stdout, even simple syntax errors
@@ -1528,14 +1530,10 @@ public final class Settings {
       return value;
     }
 
-    public final String getName() {
-      return name;
-    }
+    public final String getName() { return name; }
 
     @SuppressWarnings("unchecked")
-    public Class<T> getValueClass() {
-      return (Class<T>) TypeUtils.resolveBaseClass(getType());
-    }
+    public Class<T> getValueClass() { return (Class<T>) TypeUtils.resolveBaseClass(getType()); }
 
     @Override
     public String toString() {
@@ -1549,9 +1547,7 @@ public final class Settings {
       value = defaultValue;
     }
 
-    public final Type getType() {
-      return settingTypes.get(this);
-    }
+    public final Type getType() { return settingTypes.get(this); }
 
     /**
      * This should always be the same as whether the setting can be parsed from or serialized to a string; in other
@@ -1559,9 +1555,7 @@ public final class Settings {
      *
      * @return {@code true} if the setting can not be set or read by the user
      */
-    public boolean isJavaOnly() {
-      return javaOnly;
-    }
+    public boolean isJavaOnly() { return javaOnly; }
   }
 
   /**
@@ -1569,7 +1563,8 @@ public final class Settings {
    */
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.FIELD)
-  private @interface JavaOnly {}
+  private @interface JavaOnly {
+  }
 
   // here be dragons
 

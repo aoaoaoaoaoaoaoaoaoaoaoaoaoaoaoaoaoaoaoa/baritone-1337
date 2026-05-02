@@ -12,40 +12,37 @@ import net.minecraft.world.phys.Vec3;
  */
 public final class RayTraceUtils {
 
-    private RayTraceUtils() {}
+  private RayTraceUtils() {
+  }
 
-    /**
-     * Performs a block raytrace with the specified rotations. This should only be used when
-     * any entity collisions can be ignored, because this method will not recognize if an
-     * entity is in the way or not. The local player's block reach distance will be used.
-     *
-     * @param entity             The entity representing the raytrace source
-     * @param rotation           The rotation to raytrace towards
-     * @param blockReachDistance The block reach distance of the entity
-     * @return The calculated raytrace result
-     */
-    public static HitResult rayTraceTowards(Entity entity, Rotation rotation, double blockReachDistance) {
-        return rayTraceTowards(entity, rotation, blockReachDistance, false);
+  /**
+   * Performs a block raytrace with the specified rotations. This should only be used when
+   * any entity collisions can be ignored, because this method will not recognize if an
+   * entity is in the way or not. The local player's block reach distance will be used.
+   *
+   * @param entity             The entity representing the raytrace source
+   * @param rotation           The rotation to raytrace towards
+   * @param blockReachDistance The block reach distance of the entity
+   * @return The calculated raytrace result
+   */
+  public static HitResult rayTraceTowards(Entity entity, Rotation rotation, double blockReachDistance) {
+    return rayTraceTowards(entity, rotation, blockReachDistance, false);
+  }
+
+  public static HitResult rayTraceTowards(Entity entity, Rotation rotation, double blockReachDistance, boolean wouldSneak) {
+    Vec3 start;
+    if (wouldSneak) {
+      start = inferSneakingEyePosition(entity);
+    } else {
+      start = entity.getEyePosition(1.0F); // do whatever is correct
     }
 
-    public static HitResult rayTraceTowards(Entity entity, Rotation rotation, double blockReachDistance, boolean wouldSneak) {
-        Vec3 start;
-        if (wouldSneak) {
-            start = inferSneakingEyePosition(entity);
-        } else {
-            start = entity.getEyePosition(1.0F); // do whatever is correct
-        }
-        
-        Vec3 direction = RotationUtils.calcLookDirectionFromRotation(rotation);
-        Vec3 end = start.add(
-                direction.x * blockReachDistance,
-                direction.y * blockReachDistance,
-                direction.z * blockReachDistance
-        );
-        return entity.level().clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, entity));
-    }
+    Vec3 direction = RotationUtils.calcLookDirectionFromRotation(rotation);
+    Vec3 end = start.add(direction.x * blockReachDistance, direction.y * blockReachDistance, direction.z * blockReachDistance);
+    return entity.level().clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, entity));
+  }
 
-    public static Vec3 inferSneakingEyePosition(Entity entity) {
-        return new Vec3(entity.getX(), entity.getY() + entity.getEyeHeight(Pose.CROUCHING), entity.getZ());
-    }
+  public static Vec3 inferSneakingEyePosition(Entity entity) {
+    return new Vec3(entity.getX(), entity.getY() + entity.getEyeHeight(Pose.CROUCHING), entity.getZ());
+  }
 }

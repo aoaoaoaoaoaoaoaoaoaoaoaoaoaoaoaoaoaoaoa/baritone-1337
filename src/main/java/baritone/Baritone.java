@@ -23,8 +23,6 @@ import baritone.utils.player.BaritonePlayerContext;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -81,7 +79,8 @@ public class Baritone implements IBaritone {
     if (!Files.exists(this.directory)) {
       try {
         Files.createDirectories(this.directory);
-      } catch (IOException ignored) {}
+      } catch (IOException ignored) {
+      }
     }
     this.pathingProfiler = new PathingProfiler(this.directory.resolve("profiles"));
 
@@ -132,97 +131,59 @@ public class Baritone implements IBaritone {
   }
 
   @Override
-  public PathingControlManager getPathingControlManager() {
-    return this.pathingControlManager;
-  }
+  public PathingControlManager getPathingControlManager() { return this.pathingControlManager; }
 
   @Override
-  public InputOverrideHandler getInputOverrideHandler() {
-    return this.inputOverrideHandler;
-  }
+  public InputOverrideHandler getInputOverrideHandler() { return this.inputOverrideHandler; }
 
   @Override
-  public CustomGoalProcess getCustomGoalProcess() {
-    return this.customGoalProcess;
-  }
+  public CustomGoalProcess getCustomGoalProcess() { return this.customGoalProcess; }
 
   @Override
-  public GetToBlockProcess getGetToBlockProcess() {
-    return this.getToBlockProcess;
-  }
+  public GetToBlockProcess getGetToBlockProcess() { return this.getToBlockProcess; }
 
   @Override
-  public IPlayerContext getPlayerContext() {
-    return this.playerContext;
-  }
+  public IPlayerContext getPlayerContext() { return this.playerContext; }
 
   @Override
-  public FollowProcess getFollowProcess() {
-    return this.followProcess;
-  }
+  public FollowProcess getFollowProcess() { return this.followProcess; }
 
   @Override
-  public BuilderProcess getBuilderProcess() {
-    return this.builderProcess;
-  }
+  public BuilderProcess getBuilderProcess() { return this.builderProcess; }
 
-  public InventoryBehavior getInventoryBehavior() {
-    return this.inventoryBehavior;
-  }
+  public InventoryBehavior getInventoryBehavior() { return this.inventoryBehavior; }
 
   @Override
-  public LookBehavior getLookBehavior() {
-    return this.lookBehavior;
-  }
+  public LookBehavior getLookBehavior() { return this.lookBehavior; }
 
   @Override
-  public ExploreProcess getExploreProcess() {
-    return this.exploreProcess;
-  }
+  public ExploreProcess getExploreProcess() { return this.exploreProcess; }
 
   @Override
-  public MineProcess getMineProcess() {
-    return this.mineProcess;
-  }
+  public MineProcess getMineProcess() { return this.mineProcess; }
 
   @Override
-  public FarmProcess getFarmProcess() {
-    return this.farmProcess;
-  }
+  public FarmProcess getFarmProcess() { return this.farmProcess; }
 
-  public InventoryPauserProcess getInventoryPauserProcess() {
-    return this.inventoryPauserProcess;
-  }
+  public InventoryPauserProcess getInventoryPauserProcess() { return this.inventoryPauserProcess; }
 
   @Override
-  public PathingBehavior getPathingBehavior() {
-    return this.pathingBehavior;
-  }
+  public PathingBehavior getPathingBehavior() { return this.pathingBehavior; }
 
   @Override
-  public SelectionManager getSelectionManager() {
-    return selectionManager;
-  }
+  public SelectionManager getSelectionManager() { return selectionManager; }
 
   @Override
-  public WorldProvider getWorldProvider() {
-    return this.worldProvider;
-  }
+  public WorldProvider getWorldProvider() { return this.worldProvider; }
 
   @Override
-  public IEventBus getGameEventHandler() {
-    return this.gameEventHandler;
-  }
+  public IEventBus getGameEventHandler() { return this.gameEventHandler; }
 
   @Override
-  public CommandManager getCommandManager() {
-    return this.commandManager;
-  }
+  public CommandManager getCommandManager() { return this.commandManager; }
 
   @Override
-  public IElytraProcess getElytraProcess() {
-    return this.elytraProcess;
-  }
+  public IElytraProcess getElytraProcess() { return this.elytraProcess; }
 
   @Override
   public void openClick() {
@@ -230,23 +191,18 @@ public class Baritone implements IBaritone {
       try {
         Thread.sleep(100);
         mc.execute(() -> mc.setScreen(new GuiClick()));
-      } catch (Exception ignored) {}
+      } catch (Exception ignored) {
+      }
     }).start();
   }
 
-  public Path getDirectory() {
-    return this.directory;
-  }
+  public Path getDirectory() { return this.directory; }
 
-  public PathingProfiler getPathingProfiler() {
-    return this.pathingProfiler;
-  }
+  public PathingProfiler getPathingProfiler() { return this.pathingProfiler; }
 
   public static Settings settings() {
     return BaritoneAPI.getSettings();
   }
 
-  public static Executor getExecutor() {
-    return threadPool;
-  }
+  public static Executor getExecutor() { return threadPool; }
 }

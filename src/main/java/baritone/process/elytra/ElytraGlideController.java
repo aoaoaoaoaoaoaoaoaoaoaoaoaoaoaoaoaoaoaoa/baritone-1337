@@ -69,7 +69,6 @@ final class ElytraGlideController {
   }
 
   private enum Phase {
-    DIVE,
-    CLIMB
+    DIVE, CLIMB
   }
 }

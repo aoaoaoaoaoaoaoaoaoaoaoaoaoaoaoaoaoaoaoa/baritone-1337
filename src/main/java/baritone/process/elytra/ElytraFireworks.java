@@ -9,7 +9,8 @@ import java.util.OptionalInt;
 
 public final class ElytraFireworks {
 
-  private ElytraFireworks() {}
+  private ElytraFireworks() {
+  }
 
   public static boolean isPlain(ItemStack itemStack) {
     if (itemStack.getItem() != Items.FIREWORK_ROCKET) {

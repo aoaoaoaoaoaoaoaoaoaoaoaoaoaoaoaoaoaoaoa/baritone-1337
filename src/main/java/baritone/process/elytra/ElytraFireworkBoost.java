@@ -8,9 +8,7 @@ record ElytraFireworkBoost(Integer fireworkTicksExisted, int minimumBoostTicks) 
     return minimumBoostTicks + 11;
   }
 
-  boolean isBoosted() {
-    return fireworkTicksExisted != null;
-  }
+  boolean isBoosted() { return fireworkTicksExisted != null; }
 
   int guaranteedBoostTicks() {
     return isBoosted() ? Math.max(0, minimumBoostTicks - fireworkTicksExisted) : 0;

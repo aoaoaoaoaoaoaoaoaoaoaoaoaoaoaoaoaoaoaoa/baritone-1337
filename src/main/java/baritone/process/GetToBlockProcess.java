@@ -43,9 +43,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
   }
 
   @Override
-  public boolean isActive() {
-    return gettingTo != null;
-  }
+  public boolean isActive() { return gettingTo != null; }
 
   @Override
   public synchronized PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
@@ -72,7 +70,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
       }
       return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
     }
-    Goal goal = new GoalComposite(knownLocations.stream().map(this::createGoal).toArray(Goal[] ::new));
+    Goal goal = new GoalComposite(knownLocations.stream().map(this::createGoal).toArray(Goal[]::new));
     if (calcFailed) {
       if (Baritone.settings().blacklistClosestOnFailure.value) {
         logDirect("Unable to find any path to " + gettingTo + ", blacklisting presumably unreachable closest instances...");
@@ -111,8 +109,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
   public synchronized boolean blacklistClosest() {
     List<BlockPos> newBlacklist = new ArrayList<>();
     knownLocations.stream().min(Comparator.comparingDouble(ctx.playerFeet()::distSqr)).ifPresent(newBlacklist::add);
-  outer:
-    while (true) {
+    outer : while (true) {
       for (BlockPos known : knownLocations) {
         for (BlockPos blacklist : newBlacklist) {
           if (areAdjacent(known, blacklist)) { // directly adjacent
@@ -125,7 +122,7 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
       // i can't do break; (codacy gets mad), and i can't do if(true){break}; (codacy gets mad)
       // so i will do this
       switch (newBlacklist.size()) {
-        default:
+        default :
           break outer;
       }
     }
@@ -193,13 +190,15 @@ public final class GetToBlockProcess extends BaritoneProcessHelper implements IG
       Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, ctx.playerController().getBlockReachDistance(), InteractionPlan.Click.RIGHT);
       if (plan.isPresent()) {
         if (knownLocations.contains(ctx.getSelectedBlock().orElse(null))) {
-          plan.get().pause(baritone, () -> {}, () -> true); // TODO find some way to right click even if we're in an ESC menu
+          plan.get().pause(baritone, () -> {
+          }, () -> true); // TODO find some way to right click even if we're in an ESC menu
           System.out.println(ctx.player().containerMenu);
           if (!(ctx.player().containerMenu instanceof InventoryMenu)) {
             return true;
           }
         } else {
-          plan.get().pause(baritone, () -> {}, () -> false);
+          plan.get().pause(baritone, () -> {
+          }, () -> false);
         }
         if (arrivalTickCount++ > 20) {
           logDirect("Right click timed out");
