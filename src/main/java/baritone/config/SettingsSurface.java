@@ -55,9 +55,9 @@ public final class SettingsSurface {
                 entry("Break from above", s.breakFromAbove, "Experimental builder mining mode."), entry("Map art mode", s.mapArtMode, "Only care about top block per column."),
                 entry("Builder scan radius", s.builderTickScanRadius, "Per-tick builder rescan radius."))),
         new Category("Elytra",
-            List.of(entry("Auto jump", s.elytraAutoJump, "Walk to ledges and launch automatically."), entry("Predict terrain", s.elytraPredictTerrain, "Use nether seed terrain prediction."),
-                entry("Nether seed", s.elytraNetherSeed, "Seed for nether terrain prediction."), entry("Conserve fireworks", s.elytraConserveFireworks, "Avoid fireworks while descending."),
-                entry("Firework speed", s.elytraFireworkSpeed, "Minimum speed before boosting."), entry("Auto swap elytra", s.elytraAutoSwap, "Swap damaged elytra automatically."),
+            List.of(entry("Auto jump", s.elytraAutoJump, "Walk to ledges and launch automatically."), entry("Predict Nether terrain", s.elytraPredictTerrain, "Use Nether seed terrain prediction."),
+                entry("Nether seed", s.elytraNetherSeed, "Seed for Nether terrain prediction."), entry("Firework policy", s.elytraFireworkPolicy, "GLIDE, RECOVERY, or SPEED."),
+                entry("Firework speed", s.elytraFireworkSpeed, "Minimum speed before SPEED-policy boosting."), entry("Auto swap elytra", s.elytraAutoSwap, "Swap damaged elytra automatically."),
                 entry("Minimum durability", s.elytraMinimumDurability, "Swap/land durability threshold."),
                 entry("Emergency land", s.elytraAllowEmergencyLand, "Land when durability/fireworks are low."), entry("Min fireworks", s.elytraMinFireworksBeforeLanding, "Firework safety reserve."),
                 entry("Render simulation", s.elytraRenderSimulation, "Draw best simulated flight path."))));

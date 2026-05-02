@@ -22,7 +22,7 @@ public interface IElytraProcess extends IBaritoneProcess {
     void resetState();
 
     /**
-     * @return {@code true} if the native library loaded and elytra is actually usable
+     * @return {@code true} if an elytra backend is available
      */
     boolean isLoaded();
 

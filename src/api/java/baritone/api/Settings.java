@@ -1,5 +1,6 @@
 package baritone.api;
 
+import baritone.api.utils.ElytraFireworkPolicy;
 import baritone.api.utils.GeofenceBox;
 import baritone.api.utils.Helper;
 import baritone.api.utils.NotificationHelper;
@@ -1388,6 +1389,12 @@ public final class Settings {
   public final Setting<Double> elytraFireworkSpeed = new Setting<>(1.2);
 
   /**
+   * Firework use policy for elytra flight. GLIDE is the default firework-free energy-cycling mode; RECOVERY only boosts
+   * when the solver is out of safe unboosted options; SPEED maintains the configured firework cruise speed.
+   */
+  public final Setting<ElytraFireworkPolicy> elytraFireworkPolicy = new Setting<>(ElytraFireworkPolicy.GLIDE);
+
+  /**
    * The delay after the player's position is set-back by the server that a firework may be automatically deployed.
    * Value is in ticks.
    */
@@ -1400,11 +1407,6 @@ public final class Settings {
    * to the ground.
    */
   public final Setting<Double> elytraMinimumAvoidance = new Setting<>(0.2);
-
-  /**
-   * If enabled, avoids using fireworks when descending along the flight path.
-   */
-  public final Setting<Boolean> elytraConserveFireworks = new Setting<>(false);
 
   /**
    * Renders the raytraces that are performed by the elytra fly calculation.
@@ -1428,13 +1430,13 @@ public final class Settings {
   public final Setting<Boolean> elytraAutoJump = new Setting<>(false);
 
   /**
-   * The seed used to generate chunks for long distance elytra path-finding in the nether.
+   * The seed used to generate chunks for long-distance elytra path-finding in the Nether native backend.
    * Defaults to 2b2t's nether seed.
    */
   public final Setting<Long> elytraNetherSeed = new Setting<>(146008555100680L);
 
   /**
-   * Whether nether-pathfinder should generate terrain based on {@link #elytraNetherSeed}.
+   * Whether the Nether native backend should generate terrain based on {@link #elytraNetherSeed}.
    * If false all chunks that haven't been loaded are assumed to be air.
    */
   public final Setting<Boolean> elytraPredictTerrain = new Setting<>(false);
@@ -1445,9 +1447,9 @@ public final class Settings {
   public final Setting<Boolean> elytraAutoSwap = new Setting<>(true);
 
   /**
-   * The minimum durability an elytra can have before being swapped
+   * The minimum durability an elytra can have before being swapped or forcing a safety landing.
    */
-  public final Setting<Integer> elytraMinimumDurability = new Setting<>(5);
+  public final Setting<Integer> elytraMinimumDurability = new Setting<>(80);
 
   /**
    * The minimum fireworks before landing early for safety

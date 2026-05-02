@@ -20,7 +20,7 @@ public final class ElytraPathManager {
   interface Host extends Helper {
     IPlayerContext ctx();
 
-    NetherPathfinderContext pathfinderContext();
+    ElytraPathfinderContext pathfinderContext();
 
     BetterBlockPos destination();
 
@@ -37,7 +37,7 @@ public final class ElytraPathManager {
 
   private final Host host;
 
-  public NetherPath path;
+  public ElytraPath path;
   private boolean completePath;
   private boolean recalculating;
   private int maxPlayerNear;
@@ -153,7 +153,7 @@ public final class ElytraPathManager {
   }
 
   public void clear() {
-    path = NetherPath.emptyPath();
+    path = ElytraPath.emptyPath();
     completePath = true;
     recalculating = false;
     playerNear = 0;
@@ -161,7 +161,7 @@ public final class ElytraPathManager {
     maxPlayerNear = 0;
   }
 
-  public NetherPath getPath() {
+  public ElytraPath getPath() {
     return path;
   }
 
@@ -222,7 +222,7 @@ public final class ElytraPathManager {
         host.process().landingSpotIsBad(new BetterBlockPos(host.destination()));
       }
     }
-    path = new NetherPath(positions);
+    path = new ElytraPath(positions, segment.isFinished());
     completePath = segment.isFinished();
     playerNear = 0;
     ticksNearUnchanged = 0;

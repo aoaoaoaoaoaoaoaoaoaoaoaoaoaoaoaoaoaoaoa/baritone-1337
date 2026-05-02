@@ -25,8 +25,7 @@ import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.movements.MovementFall;
 import baritone.process.elytra.ElytraBehavior;
 import baritone.process.elytra.ElytraFireworks;
-import baritone.process.elytra.NetherPathfinderContext;
-import baritone.process.elytra.NullElytraProcess;
+import baritone.process.elytra.ElytraFlightPolicy;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.PathingCommandContext;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -38,14 +37,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.AirBlock;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
-public class ElytraProcess extends BaritoneProcessHelper implements IBaritoneProcess, IElytraProcess, AbstractGameEventListener {
+public class ElytraProcess extends BaritoneProcessHelper implements IElytraProcess, AbstractGameEventListener {
   public State state;
   private boolean goingToLandingSpot;
   private BetterBlockPos landingSpot;
@@ -70,7 +66,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
   }
 
   public static IElytraProcess create(final Baritone baritone) {
-    return NetherPathfinderContext.isSupported() ? new ElytraProcess(baritone) : new NullElytraProcess(baritone);
+    return new ElytraProcess(baritone);
   }
 
   @Override
@@ -94,11 +90,11 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
   @Override
   public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
     final long seedSetting = Baritone.settings().elytraNetherSeed.value;
-    if (seedSetting != this.behavior.context.getSeed()) {
+    if (this.behavior.context.usesTerrainSeed() && seedSetting != this.behavior.context.seed()) {
       logDirect("Nether seed changed, recalculating path");
       this.resetState();
     }
-    if (predictingTerrain != Baritone.settings().elytraPredictTerrain.value) {
+    if (this.behavior.policy().supportsTerrainPrediction() && predictingTerrain != Baritone.settings().elytraPredictTerrain.value) {
       logDirect("elytraPredictTerrain setting changed, recalculating path");
       predictingTerrain = Baritone.settings().elytraPredictTerrain.value;
       this.resetState();
@@ -164,7 +160,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
         Rotation rotation = RotationUtils.calcRotationFromVec3d(from, to, ctx.playerRotations());
         baritone.getLookBehavior().updateTarget(new Rotation(rotation.getYaw(), 0), false); // this will be overwritten, probably, by behavior tick
 
-        if (ctx.player().position().y < endPos.y - LANDING_COLUMN_HEIGHT) {
+        if (ctx.player().position().y < endPos.y - behavior.policy().landingColumnHeight()) {
           logDirect("bad landing spot, trying again...");
           landingSpotIsBad(endPos);
         }
@@ -200,7 +196,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
         return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
       }
       if (this.goal == null) {
-        this.goal = new GoalYLevel(31);
+        this.goal = new GoalYLevel(behavior.policy().autoLaunchY());
       }
       final IPathExecutor executor = baritone.getPathingBehavior().getCurrent();
       if (executor != null && executor.getPath().getGoal() == this.goal) {
@@ -225,7 +221,6 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
       return new PathingCommandContext(this.goal, PathingCommandType.SET_GOAL_AND_PAUSE, new WalkOffCalculationContext(baritone));
     }
 
-    // yucky
     if (this.state == State.PAUSE) {
       return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
@@ -300,7 +295,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
   }
 
   private void pathTo0(BlockPos destination, boolean appendDestination) {
-    if (ctx.player() == null || ctx.player().level().dimension() != Level.NETHER) {
+    if (ctx.player() == null || ctx.world() == null) {
       return;
     }
     this.onLostControl();
@@ -319,8 +314,9 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
     final int z;
     if (iGoal instanceof GoalXZ) {
       GoalXZ goal = (GoalXZ) iGoal;
+      ElytraFlightPolicy policy = ElytraFlightPolicy.capture(ctx.world());
       x = goal.getX();
-      y = 64;
+      y = policy.defaultTargetY();
       z = goal.getZ();
     } else if (iGoal instanceof GoalBlock) {
       GoalBlock goal = (GoalBlock) iGoal;
@@ -330,19 +326,26 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
     } else {
       throw new IllegalArgumentException("The goal must be a GoalXZ or GoalBlock");
     }
-    if (y <= 0 || y >= 128) {
-      throw new IllegalArgumentException("The y of the goal is not between 0 and 128");
+    ElytraFlightPolicy policy = ElytraFlightPolicy.capture(ctx.world());
+    if (!policy.validGoalY(y)) {
+      throw new IllegalArgumentException("The y of the goal is not in this dimension's elytra flight bounds [" + policy.minY() + ", " + policy.maxYExclusive() + ")");
     }
     this.pathTo(new BlockPos(x, y, z));
   }
 
   private boolean shouldLandForSafety() {
     ItemStack chest = ctx.player().getItemBySlot(EquipmentSlot.CHEST);
-    if (chest.getItem() != Items.ELYTRA || chest.getMaxDamage() - chest.getDamageValue() < Baritone.settings().elytraMinimumDurability.value) {
-      // elytrabehavior replaces when durability <= minimumDurability, so if durability < minimumDurability then we can reasonably assume that the elytra will soon be broken without replacement
+    int minimumDurability = Baritone.settings().elytraMinimumDurability.value;
+    if (chest.getItem() != Items.ELYTRA) {
+      return true;
+    }
+    if (remainingDurability(chest) <= minimumDurability && (!Baritone.settings().elytraAutoSwap.value || !hasSpareElytra(minimumDurability))) {
       return true;
     }
 
+    if (behavior == null || !behavior.policy().fireworkPolicy().fireworkReserveMatters()) {
+      return false;
+    }
     NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
     int qty = 0;
     for (int i = 0; i < 36; i++) {
@@ -354,6 +357,21 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
       return true;
     }
     return false;
+  }
+
+  private boolean hasSpareElytra(int minimumDurability) {
+    NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+    for (int i = 0; i < 36; i++) {
+      ItemStack stack = inv.get(i);
+      if (stack.getItem() == Items.ELYTRA && remainingDurability(stack) > minimumDurability) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static int remainingDurability(ItemStack stack) {
+    return stack.getMaxDamage() - stack.getDamageValue();
   }
 
   @Override
@@ -440,23 +458,8 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
     }
   }
 
-  private static boolean isInBounds(BlockPos pos) {
-    return pos.getY() >= 0 && pos.getY() < 128;
-  }
-
-  private boolean isSafeBlock(Block block) {
-    return block == Blocks.NETHERRACK || block == Blocks.GRAVEL || (block == Blocks.NETHER_BRICKS && Baritone.settings().elytraAllowLandOnNetherFortress.value);
-  }
-
-  private boolean isSafeBlock(BlockPos pos) {
-    return isSafeBlock(ctx.world().getBlockState(pos).getBlock());
-  }
-
-  private boolean isAtEdge(BlockPos pos) {
-    return !isSafeBlock(pos.north()) || !isSafeBlock(pos.south()) || !isSafeBlock(pos.east())
-        || !isSafeBlock(pos.west())
-        // corners
-        || !isSafeBlock(pos.north().west()) || !isSafeBlock(pos.north().east()) || !isSafeBlock(pos.south().west()) || !isSafeBlock(pos.south().east());
+  private boolean isInBounds(BlockPos pos) {
+    return behavior.policy().inBounds(pos);
   }
 
   private boolean isColumnAir(BlockPos landingSpot, int minHeight) {
@@ -464,7 +467,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
     final int maxY = mut.getY() + minHeight;
     for (int y = mut.getY() + 1; y <= maxY; y++) {
       mut.set(mut.getX(), y, mut.getZ());
-      if (!(ctx.world().getBlockState(mut).getBlock() instanceof AirBlock)) {
+      if (!isInBounds(mut) || !isAir(mut)) {
         return false;
       }
     }
@@ -472,13 +475,13 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
   }
 
   private boolean hasAirBubble(BlockPos pos) {
-    final int radius = 4; // Half of the full width, rounded down, as we're counting blocks in each direction from the center
+    final int radius = behavior.policy().landingBubbleRadius();
     BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
     for (int x = -radius; x <= radius; x++) {
       for (int y = -radius; y <= radius; y++) {
         for (int z = -radius; z <= radius; z++) {
           mut.set(pos.getX() + x, pos.getY() + y, pos.getZ() + z);
-          if (!(ctx.world().getBlockState(mut).getBlock() instanceof AirBlock)) {
+          if (!isInBounds(mut) || !isAir(mut)) {
             return false;
           }
         }
@@ -488,21 +491,35 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
     return true;
   }
 
+  private boolean isLandingPad(BlockPos pos) {
+    int radius = behavior.policy().landingSupportRadius();
+    BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
+    for (int x = -radius; x <= radius; x++) {
+      for (int z = -radius; z <= radius; z++) {
+        mut.set(pos.getX() + x, pos.getY(), pos.getZ() + z);
+        if (!behavior.policy().safeLandingBlock(ctx, mut) || !isAir(mut.above()) || !isAir(mut.above(2))) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private boolean isAir(BlockPos pos) {
+    return ctx.world().getBlockState(pos).getBlock() instanceof AirBlock;
+  }
+
   private BetterBlockPos checkLandingSpot(BlockPos pos, LongOpenHashSet checkedSpots) {
     BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos(pos.getX(), pos.getY(), pos.getZ());
-    while (mut.getY() >= 0) {
+    while (mut.getY() >= behavior.policy().minY()) {
       if (checkedSpots.contains(mut.asLong())) {
         return null;
       }
       checkedSpots.add(mut.asLong());
-      Block block = ctx.world().getBlockState(mut).getBlock();
 
-      if (isSafeBlock(block)) {
-        if (!isAtEdge(mut)) {
-          return new BetterBlockPos(mut);
-        }
-        return null;
-      } else if (block != Blocks.AIR) {
+      if (behavior.policy().safeLandingBlock(ctx, mut)) {
+        return isLandingPad(mut) ? new BetterBlockPos(mut) : null;
+      } else if (!isAir(mut)) {
         return null;
       }
       mut.set(mut.getX(), mut.getY() - 1, mut.getZ());
@@ -510,7 +527,6 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
     return null; // void
   }
 
-  private static final int LANDING_COLUMN_HEIGHT = 15;
   private Set<BetterBlockPos> badLandingSpots = new HashSet<>();
 
   private BetterBlockPos findSafeLandingSpot(BetterBlockPos start) {
@@ -522,11 +538,12 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
 
     while (!queue.isEmpty()) {
       BetterBlockPos pos = queue.poll();
-      if (ctx.world().isLoaded(pos) && isInBounds(pos) && ctx.world().getBlockState(pos).getBlock() == Blocks.AIR) {
+      if (ctx.world().isLoaded(pos) && isInBounds(pos) && isAir(pos)) {
         BetterBlockPos actualLandingSpot = checkLandingSpot(pos, checkedPositions);
-        if (actualLandingSpot != null && isColumnAir(actualLandingSpot, LANDING_COLUMN_HEIGHT) && hasAirBubble(actualLandingSpot.above(LANDING_COLUMN_HEIGHT))
-            && !badLandingSpots.contains(actualLandingSpot.above(LANDING_COLUMN_HEIGHT))) {
-          return actualLandingSpot.above(LANDING_COLUMN_HEIGHT);
+        int columnHeight = behavior.policy().landingColumnHeight();
+        BetterBlockPos approach = actualLandingSpot == null ? null : actualLandingSpot.above(columnHeight);
+        if (actualLandingSpot != null && isColumnAir(actualLandingSpot, columnHeight) && hasAirBubble(approach) && !badLandingSpots.contains(approach)) {
+          return approach;
         }
         if (visited.add(pos.north())) queue.add(pos.north());
         if (visited.add(pos.east())) queue.add(pos.east());

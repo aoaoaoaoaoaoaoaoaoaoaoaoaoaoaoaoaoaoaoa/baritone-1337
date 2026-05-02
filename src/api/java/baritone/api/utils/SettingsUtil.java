@@ -226,6 +226,23 @@ public class SettingsUtil {
     }, vec -> vec.getX() + "," + vec.getY() + "," + vec.getZ()),
     BLOCK(Block.class, str -> BlockUtils.stringToBlockRequired(str.trim()), BlockUtils::blockToString),
     ITEM(Item.class, str -> BuiltInRegistries.ITEM.get(Identifier.parse(str.trim())).map(Holder.Reference::value).orElse(null), item -> BuiltInRegistries.ITEM.getKey(item).toString()),
+    ENUM() {
+      @Override
+      @SuppressWarnings({"rawtypes", "unchecked"})
+      public Object parse(Type type, String raw) {
+        return Enum.valueOf((Class<? extends Enum>) type, raw.trim().toUpperCase(Locale.US));
+      }
+
+      @Override
+      public String toString(Type type, Object value) {
+        return ((Enum<?>) value).name();
+      }
+
+      @Override
+      public boolean accepts(Type type) {
+        return type instanceof Class<?> c && c.isEnum();
+      }
+    },
     LIST() {
       @Override
       public Object parse(Type type, String raw) {

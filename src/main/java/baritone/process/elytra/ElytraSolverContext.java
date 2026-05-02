@@ -8,7 +8,7 @@ import java.util.Objects;
 
 final class ElytraSolverContext {
 
-  final NetherPath path;
+  final ElytraPath path;
   final int playerNear;
   final Vec3 start;
   final Vec3 motion;
@@ -17,7 +17,7 @@ final class ElytraSolverContext {
   final ElytraFireworkBoost boost;
   final ITickableAimProcessor aimProcessor;
 
-  ElytraSolverContext(NetherPath path, int playerNear, Vec3 start, Vec3 motion, AABB boundingBox, boolean ignoreLava, ElytraFireworkBoost boost, ITickableAimProcessor aimProcessor) {
+  ElytraSolverContext(ElytraPath path, int playerNear, Vec3 start, Vec3 motion, AABB boundingBox, boolean ignoreLava, ElytraFireworkBoost boost, ITickableAimProcessor aimProcessor) {
     this.path = path;
     this.playerNear = playerNear;
     this.start = start;

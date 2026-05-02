@@ -8,10 +8,8 @@ import baritone.api.event.events.PacketEvent;
 import baritone.api.event.events.RenderEvent;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.BetterBlockPos;
-import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.input.Input;
-import baritone.pathing.movement.MovementHelper;
 import baritone.process.ElytraProcess;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.accessor.IFireworkRocketEntity;
@@ -25,8 +23,6 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.block.AirBlock;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkSource;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.HitResult;
@@ -42,13 +38,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-public final class ElytraBehavior implements Helper, ElytraPathManager.Host, ElytraSolver.CollisionProbe {
+public final class ElytraBehavior implements ElytraPathManager.Host, ElytraSolver.CollisionProbe {
     private final Baritone baritone;
     private final IPlayerContext ctx;
 
-    public final NetherPathfinderContext context;
+    public final ElytraPathfinderContext context;
     public final ElytraPathManager pathManager;
     private final ElytraProcess process;
+    private final ElytraFlightPolicy policy;
     private final ElytraRenderer renderer;
     private final ElytraSolver angleSolver;
 
@@ -75,7 +72,6 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
     private final int[] nextTickBoostCounter;
 
     private BlockStateInterface bsi;
-    private final BlockStateOctreeInterface boi;
     public final BetterBlockPos destination;
     private final boolean appendDestination;
 
@@ -100,10 +96,10 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
         this.solverExecutor = Executors.newSingleThreadExecutor();
         this.nextTickBoostCounter = new int[2];
 
-        this.context = new NetherPathfinderContext(Baritone.settings().elytraNetherSeed.value);
-        this.boi = new BlockStateOctreeInterface(context);
+        this.policy = ElytraFlightPolicy.capture(ctx.world());
+        this.context = policy.createPathfinderContext(ctx);
         this.pathManager = new ElytraPathManager(this);
-        this.angleSolver = new ElytraSolver(ctx, context, renderer, this);
+        this.angleSolver = new ElytraSolver(ctx, context, policy, renderer, this);
     }
 
     public void onRenderPass(RenderEvent event) {
@@ -149,6 +145,9 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
     }
 
     public void repackChunks() {
+        if (!context.usesPackedChunks()) {
+            return;
+        }
         ChunkSource chunkProvider = ctx.world().getChunkSource();
 
         BetterBlockPos playerPos = ctx.playerFeet();
@@ -173,12 +172,12 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
     }
 
     public void onTick() {
-        synchronized (this.context.cullingLock) {
+        synchronized (this.context.lock()) {
             this.onTick0();
         }
         final long now = System.currentTimeMillis();
         if ((now - this.timeLastCacheCull) / 1000 > Baritone.settings().elytraTimeBetweenCacheCullSecs.value) {
-            this.context.queueCacheCulling(ctx.player().chunkPosition().x(), ctx.player().chunkPosition().z(), Baritone.settings().elytraCacheCullDistance.value, this.boi);
+            this.context.queueCacheCulling(ctx.player().chunkPosition().x(), ctx.player().chunkPosition().z(), Baritone.settings().elytraCacheCullDistance.value);
             this.timeLastCacheCull = now;
         }
     }
@@ -198,7 +197,6 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
 
         tickInventoryTransactions();
 
-        // Certified mojang employee incident
         if (this.remainingFireworkTicks > 0) {
             this.remainingFireworkTicks--;
         }
@@ -219,7 +217,6 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
             return;
         }
 
-        // ctx AND context???? :DDD
         this.bsi = new BlockStateInterface(ctx);
         this.pathManager.tick();
 
@@ -276,7 +273,7 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
         baritone.getLookBehavior().updateTarget(solution.rotation(), false);
 
         if (!solution.solvedPitch()) {
-            logVerbose("no pitch solution, probably gonna crash in a few ticks LOL!!!");
+            logVerbose("no safe pitch solution");
             return;
         } else {
             this.renderer.aim(solution.goingTo());
@@ -292,6 +289,10 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
 
     public void onPostTick(TickEvent event) {
         if (event.getType() == TickEvent.Type.IN && this.solveNextTick) {
+            if (!context.usesPackedChunks()) {
+                this.solveNextTick = false;
+                return;
+            }
             // We're at the end of the tick, the player's position likely updated and the closest path node could've
             // changed. Updating it now will avoid unnecessary recalculation on the main thread.
             this.pathManager.updatePlayerNear();
@@ -334,7 +335,10 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
         if (this.landingMode) {
             return;
         }
-        final boolean useOnDescend = !Baritone.settings().elytraConserveFireworks.value || ctx.player().position().y < goingTo.y + 5;
+        final boolean allowed = forceUseFirework ? policy.fireworkPolicy().forcedBoosts() : policy.fireworkPolicy().routineBoosts();
+        if (!allowed) {
+            return;
+        }
         final double currentSpeed = new Vec3(
                 ctx.player().getDeltaMovement().x,
                 // ignore y component if we are BOTH below where we want to be AND descending
@@ -344,8 +348,7 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
 
         final double elytraFireworkSpeed = Baritone.settings().elytraFireworkSpeed.value;
         if (this.remainingFireworkTicks <= 0 && (forceUseFirework || (!isBoosted
-                && useOnDescend
-                && (ctx.player().position().y < goingTo.y - 5 || start.distanceTo(new Vec3(goingTo.x + 0.5, ctx.player().position().y, goingTo.z + 0.5)) > 5) // UGH!!!!!!!
+                && (ctx.player().position().y < goingTo.y - 5 || start.distanceTo(new Vec3(goingTo.x + 0.5, ctx.player().position().y, goingTo.z + 0.5)) > 5)
                 && currentSpeed < elytraFireworkSpeed * elytraFireworkSpeed))
         ) {
             // Prioritize boosting fireworks over regular ones
@@ -377,8 +380,12 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
     }
 
     @Override
-    public NetherPathfinderContext pathfinderContext() {
+    public ElytraPathfinderContext pathfinderContext() {
         return context;
+    }
+
+    public ElytraFlightPolicy policy() {
+        return policy;
     }
 
     @Override
@@ -413,12 +420,7 @@ public final class ElytraBehavior implements Helper, ElytraPathManager.Host, Ely
 
     @Override
     public boolean passable(int x, int y, int z, boolean ignoreLava) {
-        if (ignoreLava) {
-            final BlockState state = this.bsi.get0(x, y, z);
-            return state.getBlock() instanceof AirBlock || MovementHelper.isLava(state);
-        } else {
-            return !this.boi.get0(x, y, z);
-        }
+        return context.passable(bsi, x, y, z, ignoreLava);
     }
 
     private void tickInventoryTransactions() {

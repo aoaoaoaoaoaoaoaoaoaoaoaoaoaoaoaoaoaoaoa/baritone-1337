@@ -2,6 +2,8 @@ package baritone.process.elytra;
 
 import baritone.Baritone;
 import baritone.api.event.events.BlockChangeEvent;
+import baritone.pathing.movement.MovementHelper;
+import baritone.utils.BlockStateInterface;
 import baritone.utils.accessor.IPalettedContainer;
 import dev.babbaj.pathfinder.NetherPathfinder;
 import dev.babbaj.pathfinder.Octree;
@@ -9,6 +11,7 @@ import dev.babbaj.pathfinder.PathSegment;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.BitStorage;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.AirBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -26,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * @author Brady
  */
-public final class NetherPathfinderContext {
+public final class NetherPathfinderContext implements ElytraPathfinderContext {
 
     private static final BlockState AIR_BLOCK_STATE = Blocks.AIR.defaultBlockState();
     // This lock must be held while there are active pointers to chunks in java,
@@ -37,26 +40,36 @@ public final class NetherPathfinderContext {
     final long context;
     private final long seed;
     private final ExecutorService executor;
+    private final BlockStateOctreeInterface blockAccess;
 
     public NetherPathfinderContext(long seed) {
         this.context = NetherPathfinder.newContext(seed);
         this.seed = seed;
         this.executor = Executors.newSingleThreadExecutor();
+        this.blockAccess = new BlockStateOctreeInterface(this);
     }
 
+    @Override
+    public Object lock() {
+        return cullingLock;
+    }
+
+    @Override
     public boolean hasChunk(ChunkPos pos) {
         return NetherPathfinder.hasChunkFromJava(this.context, pos.x(), pos.z());
     }
 
-    public void queueCacheCulling(int chunkX, int chunkZ, int maxDistanceBlocks, BlockStateOctreeInterface boi) {
+    @Override
+    public void queueCacheCulling(int chunkX, int chunkZ, int maxDistanceBlocks) {
         this.executor.execute(() -> {
             synchronized (this.cullingLock) {
-                boi.chunkPtr = 0L;
+                blockAccess.chunkPtr = 0L;
                 NetherPathfinder.cullFarChunks(this.context, chunkX, chunkZ, maxDistanceBlocks);
             }
         });
     }
 
+    @Override
     public void queueForPacking(final LevelChunk chunkIn) {
         final SoftReference<LevelChunk> ref = new SoftReference<>(chunkIn);
         this.executor.execute(() -> {
@@ -70,6 +83,7 @@ public final class NetherPathfinderContext {
         });
     }
 
+    @Override
     public void queueBlockUpdate(BlockChangeEvent event) {
         this.executor.execute(() -> {
             ChunkPos chunkPos = event.getChunkPos();
@@ -84,7 +98,8 @@ public final class NetherPathfinderContext {
         });
     }
 
-    public CompletableFuture<PathSegment> pathFindAsync(final BlockPos src, final BlockPos dst) {
+    @Override
+    public CompletableFuture<ElytraPathSegment> pathFindAsync(final BlockPos src, final BlockPos dst) {
         return CompletableFuture.supplyAsync(() -> {
             final PathSegment segment = NetherPathfinder.pathFind(
                     this.context,
@@ -98,7 +113,7 @@ public final class NetherPathfinderContext {
             if (segment == null) {
                 throw new PathCalculationException("Path calculation failed");
             }
-            return segment;
+            return ElytraPathSegment.from(segment);
         }, this.executor);
     }
 
@@ -114,6 +129,7 @@ public final class NetherPathfinderContext {
      * @param endZ   The end Z coordinate
      * @return {@code true} if there is visibility between the points
      */
+    @Override
     public boolean raytrace(final double startX, final double startY, final double startZ,
                             final double endX, final double endY, final double endZ) {
         return NetherPathfinder.isVisible(this.context, NetherPathfinder.CACHE_MISS_SOLID, startX, startY, startZ, endX, endY, endZ);
@@ -127,31 +143,60 @@ public final class NetherPathfinderContext {
      * @param end   The ending point
      * @return {@code true} if there is visibility between the points
      */
+    @Override
     public boolean raytrace(final Vec3 start, final Vec3 end) {
         return NetherPathfinder.isVisible(this.context, NetherPathfinder.CACHE_MISS_SOLID, start.x, start.y, start.z, end.x, end.y, end.z);
     }
 
+    @Override
     public boolean raytrace(final int count, final double[] src, final double[] dst, final int visibility) {
         switch (visibility) {
-            case Visibility.ALL:
+            case ElytraPathfinderContext.Visibility.ALL:
                 return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, false) == -1;
-            case Visibility.NONE:
+            case ElytraPathfinderContext.Visibility.NONE:
                 return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, true) == -1;
-            case Visibility.ANY:
+            case ElytraPathfinderContext.Visibility.ANY:
                 return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, true) != -1;
             default:
-                throw new IllegalArgumentException("lol");
+                throw new IllegalArgumentException("Unknown visibility mode " + visibility);
         }
     }
 
+    @Override
     public void raytrace(final int count, final double[] src, final double[] dst, final boolean[] hitsOut, final double[] hitPosOut) {
         NetherPathfinder.raytrace(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, hitsOut, hitPosOut);
     }
 
+    @Override
+    public boolean passable(BlockStateInterface bsi, int x, int y, int z, boolean ignoreLava) {
+        if (!ignoreLava) {
+            return !blockAccess.get0(x, y, z);
+        }
+        BlockState state = bsi.get0(x, y, z);
+        return state.getBlock() instanceof AirBlock || MovementHelper.isLava(state);
+    }
+
+    @Override
+    public boolean usesPackedChunks() {
+        return true;
+    }
+
+    @Override
+    public boolean usesTerrainSeed() {
+        return true;
+    }
+
+    @Override
+    public long seed() {
+        return seed;
+    }
+
+    @Override
     public void cancel() {
         NetherPathfinder.cancel(this.context);
     }
 
+    @Override
     public void destroy() {
         this.cancel();
         // Ignore anything that was queued up, just shutdown the executor
@@ -164,10 +209,6 @@ public final class NetherPathfinderContext {
         }
 
         NetherPathfinder.freeContext(this.context);
-    }
-
-    public long getSeed() {
-        return this.seed;
     }
 
     private static void writeChunkData(LevelChunk chunk, long ptr) {
@@ -209,15 +250,6 @@ public final class NetherPathfinderContext {
             e.printStackTrace();
             throw new RuntimeException(e);
         }
-    }
-
-    public static final class Visibility {
-
-        public static final int ALL = 0;
-        public static final int NONE = 1;
-        public static final int ANY = 2;
-
-        private Visibility() {}
     }
 
     public static boolean isSupported() {

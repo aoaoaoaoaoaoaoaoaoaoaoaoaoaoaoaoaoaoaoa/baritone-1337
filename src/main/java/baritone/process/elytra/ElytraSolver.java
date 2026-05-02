@@ -30,19 +30,22 @@ final class ElytraSolver {
   }
 
   private final IPlayerContext ctx;
-  private final NetherPathfinderContext nativeContext;
+  private final ElytraPathfinderContext pathfinder;
+  private final ElytraFlightPolicy policy;
+  private final ElytraGlideController glideController = new ElytraGlideController();
   private final ElytraRenderer renderer;
   private final CollisionProbe collision;
 
-  ElytraSolver(IPlayerContext ctx, NetherPathfinderContext nativeContext, ElytraRenderer renderer, CollisionProbe collision) {
+  ElytraSolver(IPlayerContext ctx, ElytraPathfinderContext pathfinder, ElytraFlightPolicy policy, ElytraRenderer renderer, CollisionProbe collision) {
     this.ctx = ctx;
-    this.nativeContext = nativeContext;
+    this.pathfinder = pathfinder;
+    this.policy = policy;
     this.renderer = renderer;
     this.collision = collision;
   }
 
   ElytraSolution solve(ElytraSolverContext context, boolean landingMode) {
-    NetherPath path = context.path;
+    ElytraPath path = context.path;
     int playerNear = landingMode ? path.size() - 1 : context.playerNear;
     Vec3 start = context.start;
     ElytraSolution solution = null;
@@ -85,7 +88,7 @@ final class ElytraSolver {
     return solution;
   }
 
-  private List<Pair<Vec3, Integer>> candidates(NetherPath path, int i, int minStep, int[] heights, int relaxation) {
+  private List<Pair<Vec3, Integer>> candidates(ElytraPath path, int i, int minStep, int[] heights, int relaxation) {
     List<Pair<Vec3, Integer>> candidates = new ArrayList<>();
     for (int dy : heights) {
       if (relaxation == 0 || i == minStep) {
@@ -109,7 +112,7 @@ final class ElytraSolver {
     return candidates;
   }
 
-  private boolean canAugment(Vec3 start, NetherPath path, Vec3 dest, int i, int lookahead, int augment) {
+  private boolean canAugment(Vec3 start, ElytraPath path, Vec3 dest, int i, int lookahead, int augment) {
     if (i + lookahead >= path.size()) {
       return false;
     }
@@ -166,7 +169,7 @@ final class ElytraSolver {
       return clear;
     }
 
-    return nativeContext.raytrace(8, src, dst, NetherPathfinderContext.Visibility.ALL);
+    return pathfinder.raytrace(8, src, dst, ElytraPathfinderContext.Visibility.ALL);
   }
 
   private Pair<Float, Boolean> solvePitch(ElytraSolverContext context, Vec3 goal, int relaxation, boolean landingMode) {
@@ -190,6 +193,20 @@ final class ElytraSolver {
     int ticks = desperate ? 3 : context.boost.isBoosted() ? Math.max(5, context.boost.guaranteedBoostTicks()) : settings.elytraSimulationTicks.value;
     tests.add(new IntTriple(ticks, context.boost.isBoosted() ? ticks : 0, 0));
 
+    Float glidePitch = glideController.pitch(policy, context, landingMode);
+    if (glidePitch != null) {
+      FloatArrayList glidePitches = new FloatArrayList(1);
+      glidePitches.add(glidePitch);
+      Optional<PitchResult> glide = tests.stream()
+          .map(i -> solvePitch(context, goal, relaxation, glidePitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
+          .filter(Objects::nonNull)
+          .filter(result -> advancesToward(goal.subtract(context.start), result))
+          .findFirst();
+      if (glide.isPresent()) {
+        return new Pair<>(glide.get().pitch, false);
+      }
+    }
+
     Optional<PitchResult> result = tests.stream()
         .map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
         .filter(Objects::nonNull)
@@ -209,6 +226,11 @@ final class ElytraSolver {
     }
 
     return null;
+  }
+
+  private static boolean advancesToward(Vec3 goalDelta, PitchResult result) {
+    Vec3 displacement = result.steps.get(result.steps.size() - 1);
+    return displacement.lengthSqr() > 0.01 && goalDelta.normalize().dot(displacement.normalize()) > 0.55;
   }
 
   private PitchResult solvePitch(ElytraSolverContext context, Vec3 goal, int relaxation, FloatIterator pitches, int ticks, int ticksBoosted, int ticksBoostDelay, boolean landingMode) {
