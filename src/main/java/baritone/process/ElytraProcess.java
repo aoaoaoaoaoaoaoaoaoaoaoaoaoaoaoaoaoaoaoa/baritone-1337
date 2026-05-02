@@ -22,6 +22,7 @@ import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.movements.MovementFall;
 import baritone.process.elytra.ElytraBehavior;
+import baritone.process.elytra.ElytraFireworks;
 import baritone.process.elytra.NetherPathfinderContext;
 import baritone.process.elytra.NullElytraProcess;
 import baritone.utils.BaritoneProcessHelper;
@@ -357,7 +358,7 @@ public class ElytraProcess extends BaritoneProcessHelper implements IBaritonePro
         NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
         int qty = 0;
         for (int i = 0; i < 36; i++) {
-            if (ElytraBehavior.isFireworks(inv.get(i))) {
+            if (ElytraFireworks.isPlain(inv.get(i))) {
                 qty += inv.get(i).getCount();
             }
         }
