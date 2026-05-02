@@ -119,9 +119,16 @@ class Path extends PathBase {
 
     MovementPrimitive primitive = movementCatalog.primitive(next.previousPrimitiveIndex);
     Movement move = primitive.instantiate(context, src, dest, next.previousEdgePayload);
-    if (primitive.revalidatesDestinationDuringAssembly() && !move.getDest().equals(dest)) {
-      Helper.HELPER.logDebug("Dynamic movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+    if (move == null) {
+      Helper.HELPER.logDebug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
       return null;
+    }
+    if (!move.getDest().equals(dest)) {
+      if (primitive.revalidatesDestinationDuringAssembly()) {
+        Helper.HELPER.logDebug("Dynamic movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+        return null;
+      }
+      throw new IllegalStateException("Static primitive " + primitive.debugName() + " produced " + move.getDest() + " instead of searched edge " + dest);
     }
     overrideCost(move, next.previousEdgeCost);
     return move;
@@ -130,7 +137,7 @@ class Path extends PathBase {
   private Movement resolveSyntheticStartEdge(BetterBlockPos src, BetterBlockPos dest, double cost) {
     for (MovementPrimitive primitive : movementCatalog.primitives()) {
       Movement move = primitive.instantiate(context, src, dest, 0);
-      if (move.getDest().equals(dest)) {
+      if (move != null && move.getDest().equals(dest)) {
         overrideCost(move, cost);
         return move;
       }

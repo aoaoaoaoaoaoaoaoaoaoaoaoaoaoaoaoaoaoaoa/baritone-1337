@@ -6,10 +6,10 @@ import baritone.pathing.movement.movements.MovementAscend;
 import baritone.pathing.movement.movements.MovementDescend;
 import baritone.pathing.movement.movements.MovementDiagonal;
 import baritone.pathing.movement.movements.MovementDownward;
+import baritone.pathing.movement.movements.MovementFall;
 import baritone.pathing.movement.movements.MovementParkour;
 import baritone.pathing.movement.movements.MovementPillar;
 import baritone.pathing.movement.movements.MovementTraverse;
-import baritone.utils.pathing.MutableMoveResult;
 import net.minecraft.core.Direction;
 
 public final class LegacyMovesPrimitive implements MovementPrimitive {
@@ -47,12 +47,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
       out.reachable(x + move.xOffset, y + move.yOffset, z + move.zOffset, cost, 0);
       return;
     }
-    MutableMoveResult legacy = out.legacy();
-    dynamicApply(ctx, x, y, z, out.nodeFacts, legacy);
-    if (legacy.cost >= ActionCosts.COST_INF) {
-      return;
-    }
-    out.reachable(legacy.x, legacy.y, legacy.z, legacy.cost, 0);
+    dynamicApply(ctx, x, y, z, out.nodeFacts, out);
   }
 
   @Override
@@ -70,7 +65,34 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public Movement instantiate(CalculationContext ctx, BetterBlockPos src, BetterBlockPos dest, int payload) {
-    return move.apply0(ctx, src);
+    if (move.dynamicXZ || move.dynamicY) {
+      EdgeEvalScratch eval = new EdgeEvalScratch();
+      evaluate(ctx, src.x, src.y, src.z, eval);
+      if (eval.status != EdgeEvalStatus.REACHABLE) {
+        return null;
+      }
+      dest = new BetterBlockPos(eval.x, eval.y, eval.z);
+    }
+    return switch (move) {
+      case DOWNWARD -> new MovementDownward(ctx.getBaritone(), src, src.below());
+      case PILLAR -> new MovementPillar(ctx.getBaritone(), src, src.above());
+      case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST -> new MovementTraverse(ctx.getBaritone(), src, offset(src));
+      case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> new MovementAscend(ctx.getBaritone(), src, offset(src));
+      case DESCEND_NORTH, DESCEND_SOUTH, DESCEND_EAST, DESCEND_WEST ->
+        dest.y == src.y - 1 ? new MovementDescend(ctx.getBaritone(), src, dest) : new MovementFall(ctx.getBaritone(), src, dest);
+      case DIAGONAL_NORTHEAST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.NORTH, Direction.EAST, dest.y - src.y);
+      case DIAGONAL_NORTHWEST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.NORTH, Direction.WEST, dest.y - src.y);
+      case DIAGONAL_SOUTHEAST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.SOUTH, Direction.EAST, dest.y - src.y);
+      case DIAGONAL_SOUTHWEST -> new MovementDiagonal(ctx.getBaritone(), src, Direction.SOUTH, Direction.WEST, dest.y - src.y);
+      case PARKOUR_NORTH -> MovementParkour.fromDestination(ctx.getBaritone(), src, dest, Direction.NORTH);
+      case PARKOUR_SOUTH -> MovementParkour.fromDestination(ctx.getBaritone(), src, dest, Direction.SOUTH);
+      case PARKOUR_EAST -> MovementParkour.fromDestination(ctx.getBaritone(), src, dest, Direction.EAST);
+      case PARKOUR_WEST -> MovementParkour.fromDestination(ctx.getBaritone(), src, dest, Direction.WEST);
+    };
+  }
+
+  private BetterBlockPos offset(BetterBlockPos src) {
+    return new BetterBlockPos(src.x + move.xOffset, src.y + move.yOffset, src.z + move.zOffset);
   }
 
   @Override
@@ -94,7 +116,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
     };
   }
 
-  private void dynamicApply(CalculationContext ctx, int x, int y, int z, NodeTerrainFacts facts, MutableMoveResult result) {
+  private void dynamicApply(CalculationContext ctx, int x, int y, int z, NodeTerrainFacts facts, EdgeEvalScratch result) {
     switch (move) {
       case DESCEND_EAST -> MovementDescend.cost(ctx, facts, x, y, z, x + 1, z, result);
       case DESCEND_WEST -> MovementDescend.cost(ctx, facts, x, y, z, x - 1, z, result);

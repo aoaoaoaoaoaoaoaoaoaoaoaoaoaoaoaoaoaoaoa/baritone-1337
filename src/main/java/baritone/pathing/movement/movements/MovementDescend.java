@@ -7,12 +7,13 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.RotationUtils;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
+import baritone.pathing.movement.EdgeEvalScratch;
+import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
 import baritone.pathing.movement.NodeTerrainFacts;
 import baritone.utils.BlockStateInterface;
-import baritone.utils.pathing.MutableMoveResult;
 import com.google.common.collect.ImmutableSet;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -46,9 +47,9 @@ public class MovementDescend extends Movement {
 
   @Override
   public double calculateCost(CalculationContext context) {
-    MutableMoveResult result = new MutableMoveResult();
+    EdgeEvalScratch result = new EdgeEvalScratch();
     cost(context, src.x, src.y, src.z, dest.x, dest.z, result);
-    if (result.y != dest.y) {
+    if (result.status != EdgeEvalStatus.REACHABLE || result.y != dest.y) {
       return COST_INF; // doesn't apply to us, this position is a fall not a descend
     }
     return result.cost;
@@ -59,11 +60,12 @@ public class MovementDescend extends Movement {
     return ImmutableSet.of(src, dest.above(), dest);
   }
 
-  public static void cost(CalculationContext context, int x, int y, int z, int destX, int destZ, MutableMoveResult res) {
+  public static void cost(CalculationContext context, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
     cost(context, null, x, y, z, destX, destZ, res);
   }
 
-  public static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, MutableMoveResult res) {
+  public static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
+    res.blocked();
     double totalCost = 0;
     BlockState destDown = context.get(destX, y - 1, destZ);
     totalCost += MovementHelper.getMiningDurationTicks(context, destX, y - 1, destZ, destDown, false);
@@ -115,13 +117,10 @@ public class MovementDescend extends Movement {
       walk *= WALK_ONE_OVER_SOUL_SAND_COST / WALK_ONE_BLOCK_COST;
     }
     totalCost += walk + Math.max(FALL_N_BLOCKS_COST[1], CENTER_AFTER_FALL_COST);
-    res.x = destX;
-    res.y = y - 1;
-    res.z = destZ;
-    res.cost = totalCost;
+    res.reachable(destX, y - 1, destZ, totalCost, 0);
   }
 
-  public static boolean dynamicFallCost(CalculationContext context, int x, int y, int z, int destX, int destZ, double frontBreak, BlockState below, MutableMoveResult res) {
+  public static boolean dynamicFallCost(CalculationContext context, int x, int y, int z, int destX, int destZ, double frontBreak, BlockState below, EdgeEvalScratch res) {
     if (frontBreak != 0 && context.get(destX, y + 2, destZ).getBlock() instanceof FallingBlock) {
       // if frontBreak is 0 we can actually get through this without updating the falling block and making it actually fall
       // but if frontBreak is nonzero, we're breaking blocks in front, so don't let anything fall through this column,
@@ -160,18 +159,12 @@ public class MovementDescend extends Movement {
           return false;
         }
         // found a fall into water
-        res.x = destX;
-        res.y = newY;
-        res.z = destZ;
-        res.cost = tentativeCost; // TODO incorporate water swim up cost?
+        res.reachable(destX, newY, destZ, tentativeCost, 0); // TODO incorporate water swim up cost?
         return false;
       }
       if (reachedMinimum && context.allowFallIntoLava && MovementHelper.isLava(ontoBlock)) {
         // found a fall into lava
-        res.x = destX;
-        res.y = newY;
-        res.z = destZ;
-        res.cost = tentativeCost;
+        res.reachable(destX, newY, destZ, tentativeCost, 0);
         return false;
       }
       if (unprotectedFallHeight <= 11 && (ontoBlock.getBlock() == Blocks.VINE || ontoBlock.getBlock() == Blocks.LADDER)) {
@@ -193,17 +186,11 @@ public class MovementDescend extends Movement {
       }
       if (reachedMinimum && unprotectedFallHeight <= context.maxFallHeightNoWater + 1) {
         // fallHeight = 4 means onto.up() is 3 blocks down, which is the max
-        res.x = destX;
-        res.y = newY + 1;
-        res.z = destZ;
-        res.cost = tentativeCost;
+        res.reachable(destX, newY + 1, destZ, tentativeCost, 0);
         return false;
       }
       if (reachedMinimum && context.hasWaterBucket && unprotectedFallHeight <= context.maxFallHeightBucket + 1) {
-        res.x = destX;
-        res.y = newY + 1; // this is the block we're falling onto, so dest is +1
-        res.z = destZ;
-        res.cost = tentativeCost + context.placeBucketCost();
+        res.reachable(destX, newY + 1, destZ, tentativeCost + context.placeBucketCost(), 0); // this is the block we're falling onto, so dest is +1
         return true;
       } else {
         return false;

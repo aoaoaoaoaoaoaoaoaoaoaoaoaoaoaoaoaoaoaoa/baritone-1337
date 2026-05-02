@@ -6,11 +6,12 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
+import baritone.pathing.movement.EdgeEvalScratch;
+import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
 import baritone.utils.BlockStateInterface;
-import baritone.utils.pathing.MutableMoveResult;
 import com.google.common.collect.ImmutableSet;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,9 +67,9 @@ public class MovementDiagonal extends Movement {
 
   @Override
   public double calculateCost(CalculationContext context) {
-    MutableMoveResult result = new MutableMoveResult();
+    EdgeEvalScratch result = new EdgeEvalScratch();
     cost(context, src.x, src.y, src.z, dest.x, dest.z, result);
-    if (result.y != dest.y) {
+    if (result.status != EdgeEvalStatus.REACHABLE || result.y != dest.y) {
       return COST_INF; // doesn't apply to us, this position is incorrect
     }
     return result.cost;
@@ -87,7 +88,8 @@ public class MovementDiagonal extends Movement {
     return ImmutableSet.of(src, dest, diagA, diagB);
   }
 
-  public static void cost(CalculationContext context, int x, int y, int z, int destX, int destZ, MutableMoveResult res) {
+  public static void cost(CalculationContext context, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
+    res.blocked();
     if (!MovementHelper.canWalkThrough(context, destX, y + 1, destZ)) {
       return;
     }
@@ -180,10 +182,7 @@ public class MovementDiagonal extends Movement {
           || (!BTop && BMid && BLow)) { // head bonk B
         return;
       }
-      res.cost = multiplier * SQRT_2 + JUMP_ONE_BLOCK_COST;
-      res.x = destX;
-      res.z = destZ;
-      res.y = y + 1;
+      res.reachable(destX, y + 1, destZ, multiplier * SQRT_2 + JUMP_ONE_BLOCK_COST, 0);
       return;
     }
     double optionA = MovementHelper.getMiningDurationTicks(context, x, y, destZ, pb0, false);
@@ -228,15 +227,15 @@ public class MovementDiagonal extends Movement {
         multiplier *= SPRINT_MULTIPLIER;
       }
     }
-    res.cost = multiplier * SQRT_2;
+    double cost = multiplier * SQRT_2;
+    int resultY;
     if (descend) {
-      res.cost += Math.max(FALL_N_BLOCKS_COST[1], CENTER_AFTER_FALL_COST);
-      res.y = y - 1;
+      cost += Math.max(FALL_N_BLOCKS_COST[1], CENTER_AFTER_FALL_COST);
+      resultY = y - 1;
     } else {
-      res.y = y;
+      resultY = y;
     }
-    res.x = destX;
-    res.z = destZ;
+    res.reachable(destX, resultY, destZ, cost, 0);
   }
 
   @Override

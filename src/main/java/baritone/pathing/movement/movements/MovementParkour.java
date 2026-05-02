@@ -6,11 +6,12 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
+import baritone.pathing.movement.EdgeEvalScratch;
+import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
 import baritone.utils.BlockStateInterface;
-import baritone.utils.pathing.MutableMoveResult;
 import java.util.HashSet;
 import java.util.Set;
 import net.minecraft.core.Direction;
@@ -34,14 +35,13 @@ public class MovementParkour extends Movement {
     this.ascend = ascend;
   }
 
-  public static MovementParkour cost(CalculationContext context, BetterBlockPos src, Direction direction) {
-    MutableMoveResult res = new MutableMoveResult();
-    cost(context, src.x, src.y, src.z, direction, res);
-    int dist = Math.abs(res.x - src.x) + Math.abs(res.z - src.z);
-    return new MovementParkour(context.getBaritone(), src, dist, direction, res.y > src.y);
+  public static MovementParkour fromDestination(IBaritone baritone, BetterBlockPos src, BetterBlockPos dest, Direction direction) {
+    int dist = Math.abs(dest.x - src.x) + Math.abs(dest.z - src.z);
+    return new MovementParkour(baritone, src, dist, direction, dest.y > src.y);
   }
 
-  public static void cost(CalculationContext context, int x, int y, int z, Direction dir, MutableMoveResult res) {
+  public static void cost(CalculationContext context, int x, int y, int z, Direction dir, EdgeEvalScratch res) {
+    res.blocked();
     if (!context.allowParkour) {
       return;
     }
@@ -112,10 +112,7 @@ public class MovementParkour extends Movement {
       if (!MovementHelper.fullyPassable(context, destX, y, destZ, destInto)) {
         if (i <= 3 && context.allowParkourAscend && context.canSprint && MovementHelper.canWalkOn(context, destX, y, destZ, destInto)
             && checkOvershootSafety(context.bsi, destX + xDiff, y + 1, destZ + zDiff)) {
-          res.x = destX;
-          res.y = y + 1;
-          res.z = destZ;
-          res.cost = i * SPRINT_ONE_BLOCK_COST + context.jumpPenalty;
+          res.reachable(destX, y + 1, destZ, i * SPRINT_ONE_BLOCK_COST + context.jumpPenalty, 0);
           return;
         }
         break;
@@ -128,10 +125,7 @@ public class MovementParkour extends Movement {
       if ((landingOn.getBlock() != Blocks.FARMLAND && MovementHelper.canWalkOn(context, destX, y - 1, destZ, landingOn))
           || (Math.min(16, context.frostWalker + 2) >= i && MovementHelper.canUseFrostWalker(context, landingOn))) {
         if (checkOvershootSafety(context.bsi, destX + xDiff, y, destZ + zDiff)) {
-          res.x = destX;
-          res.y = y;
-          res.z = destZ;
-          res.cost = costFromJumpDistance(i) + context.jumpPenalty;
+          res.reachable(destX, y, destZ, costFromJumpDistance(i) + context.jumpPenalty, 0);
           return;
         }
         break;
@@ -171,10 +165,7 @@ public class MovementParkour extends Movement {
           continue;
         }
         if (MovementHelper.canPlaceAgainst(context, againstX, againstY, againstZ)) {
-          res.x = destX;
-          res.y = y;
-          res.z = destZ;
-          res.cost = costFromJumpDistance(i) + placeCost + context.jumpPenalty;
+          res.reachable(destX, y, destZ, costFromJumpDistance(i) + placeCost + context.jumpPenalty, 0);
           return;
         }
       }
@@ -201,9 +192,9 @@ public class MovementParkour extends Movement {
 
   @Override
   public double calculateCost(CalculationContext context) {
-    MutableMoveResult res = new MutableMoveResult();
+    EdgeEvalScratch res = new EdgeEvalScratch();
     cost(context, src.x, src.y, src.z, direction, res);
-    if (res.x != dest.x || res.y != dest.y || res.z != dest.z) {
+    if (res.status != EdgeEvalStatus.REACHABLE || res.x != dest.x || res.y != dest.y || res.z != dest.z) {
       return COST_INF;
     }
     return res.cost;

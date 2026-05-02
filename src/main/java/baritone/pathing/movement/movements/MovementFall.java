@@ -8,11 +8,12 @@ import baritone.api.utils.RotationUtils;
 import baritone.api.utils.VecUtils;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
+import baritone.pathing.movement.EdgeEvalScratch;
+import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
 import baritone.pathing.movement.MovementState.MovementTarget;
-import baritone.utils.pathing.MutableMoveResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -20,7 +21,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LadderBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -42,9 +42,9 @@ public class MovementFall extends Movement {
 
     @Override
     public double calculateCost(CalculationContext context) {
-        MutableMoveResult result = new MutableMoveResult();
+        EdgeEvalScratch result = new EdgeEvalScratch();
         MovementDescend.cost(context, src.x, src.y, src.z, dest.x, dest.z, result);
-        if (result.y != dest.y) {
+        if (result.status != EdgeEvalStatus.REACHABLE || result.y != dest.y) {
             return COST_INF; // doesn't apply to us, this position is a descend not a fall
         }
         return result.cost;
@@ -62,7 +62,7 @@ public class MovementFall extends Movement {
 
     private boolean willPlaceBucket() {
         CalculationContext context = new CalculationContext(baritone);
-        MutableMoveResult result = new MutableMoveResult();
+        EdgeEvalScratch result = new EdgeEvalScratch();
         return MovementDescend.dynamicFallCost(context, src.x, src.y, src.z, dest.x, dest.z, 0, context.get(dest.x, src.y - 2, dest.z), result);
     }
 
@@ -77,7 +77,6 @@ public class MovementFall extends Movement {
         Rotation toDest = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations());
         Rotation targetRotation = null;
         BlockState destState = ctx.world().getBlockState(dest);
-        Block destBlock = destState.getBlock();
 
         if (ctx.world().getBlockState(dest.below()).is(Blocks.MAGMA_BLOCK) && MovementHelper.steppingOnBlocks(ctx).stream().allMatch(block -> MovementHelper.canWalkThrough(ctx, block))) {
             state.setInput(Input.SNEAK, true);
