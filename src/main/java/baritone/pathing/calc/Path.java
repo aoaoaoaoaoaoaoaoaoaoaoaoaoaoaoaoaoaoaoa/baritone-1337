@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.pathing.calc;
 
 import baritone.api.pathing.calc.IPath;
@@ -24,14 +7,14 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
-import baritone.pathing.movement.Moves;
+import baritone.pathing.movement.MovementCatalog;
+import baritone.pathing.movement.MovementPrimitive;
 import baritone.pathing.path.CutoffPath;
 import baritone.utils.pathing.PathBase;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -67,6 +50,8 @@ class Path extends PathBase {
 
     private final CalculationContext context;
 
+    private final MovementCatalog movementCatalog;
+
     private volatile boolean verified;
 
     Path(BetterBlockPos realStart, PathNode start, PathNode end, int numNodes, Goal goal, CalculationContext context) {
@@ -75,6 +60,7 @@ class Path extends PathBase {
         this.movements = new ArrayList<>();
         this.goal = goal;
         this.context = context;
+        this.movementCatalog = context.movementCatalog;
 
         PathNode current = end;
         List<BetterBlockPos> tempPath = new ArrayList<>();
@@ -115,8 +101,7 @@ class Path extends PathBase {
             throw new IllegalStateException("Path must not be empty");
         }
         for (int i = 0; i < path.size() - 1; i++) {
-            double cost = nodes.get(i + 1).cost - nodes.get(i).cost;
-            Movement move = runBackwards(path.get(i), path.get(i + 1), cost);
+            Movement move = instantiateEdge(i);
             if (move == null) {
                 return true;
             } else {
@@ -126,20 +111,40 @@ class Path extends PathBase {
         return false;
     }
 
-    private Movement runBackwards(BetterBlockPos src, BetterBlockPos dest, double cost) {
-        for (Moves moves : Moves.values()) {
-            Movement move = moves.apply0(context, src);
+    private Movement instantiateEdge(int pathIndex) {
+        BetterBlockPos src = path.get(pathIndex);
+        BetterBlockPos dest = path.get(pathIndex + 1);
+        PathNode next = nodes.get(pathIndex + 1);
+        if (next.previousPrimitiveIndex < 0) {
+            return resolveSyntheticStartEdge(src, dest, next.cost - nodes.get(pathIndex).cost);
+        }
+
+        MovementPrimitive primitive = movementCatalog.primitive(next.previousPrimitiveIndex);
+        Movement move = primitive.instantiate(context, src, dest, next.previousEdgePayload);
+        if (primitive.revalidatesDestinationDuringAssembly() && !move.getDest().equals(dest)) {
+            Helper.HELPER.logDebug("Dynamic movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+            return null;
+        }
+        overrideCost(move, next.previousEdgeCost);
+        return move;
+    }
+
+    private Movement resolveSyntheticStartEdge(BetterBlockPos src, BetterBlockPos dest, double cost) {
+        for (MovementPrimitive primitive : movementCatalog.primitives()) {
+            Movement move = primitive.instantiate(context, src, dest, 0);
             if (move.getDest().equals(dest)) {
-                // have to calculate the cost at calculation time so we can accurately judge whether a cost increase happened between cached calculation and real execution
-                // however, taking into account possible favoring that could skew the node cost, we really want the stricter limit of the two
-                // so we take the minimum of the path node cost difference, and the calculated cost
-                move.override(Math.min(move.calculateCost(context), cost));
+                overrideCost(move, cost);
                 return move;
             }
         }
-        // this is no longer called from bestPathSoFar, now it's in postprocessing
-        Helper.HELPER.logDebug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+        Helper.HELPER.logDebug("Synthetic start movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
         return null;
+    }
+
+    private void overrideCost(Movement move, double cost) {
+        // Calculate now to detect cost increases between cached calculation and execution. Favoring can skew the cached edge,
+        // so retain the stricter of current movement cost and the predecessor edge cost actually used by A*.
+        move.override(Math.min(move.calculateCost(context), cost));
     }
 
     @Override

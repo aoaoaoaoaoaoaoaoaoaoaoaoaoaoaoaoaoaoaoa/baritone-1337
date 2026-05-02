@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.pathing.calc;
 
 import baritone.Baritone;
@@ -55,6 +38,8 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     protected PathNode mostRecentConsidered;
 
     protected final PathNode[] bestSoFar = new PathNode[COEFFICIENTS.length];
+
+    protected PathingProfiler.Active profile;
 
     private volatile boolean isFinished;
 
@@ -102,13 +87,17 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
             throw new IllegalStateException("Path finder cannot be reused!");
         }
         cancelRequested = false;
+        PathCalculationResult result = null;
+        profile = context.pathingProfiler.begin(realStart, startX, startY, startZ, goal, primaryTimeout, failureTimeout);
         try {
             IPath path = calculate0(primaryTimeout, failureTimeout).map(IPath::postProcess).orElse(null);
             if (cancelRequested) {
-                return new PathCalculationResult(PathCalculationResult.Type.CANCELLATION);
+                result = new PathCalculationResult(PathCalculationResult.Type.CANCELLATION);
+                return result;
             }
             if (path == null) {
-                return new PathCalculationResult(PathCalculationResult.Type.FAILURE);
+                result = new PathCalculationResult(PathCalculationResult.Type.FAILURE);
+                return result;
             }
             int previousLength = path.length();
             path = path.cutoffAtLoadedChunks(context.bsi);
@@ -124,21 +113,32 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
                 Helper.HELPER.logDebug("Static cutoff " + previousLength + " to " + path.length());
             }
             if (goal.isInGoal(path.getDest())) {
-                return new PathCalculationResult(PathCalculationResult.Type.SUCCESS_TO_GOAL, path);
+                result = new PathCalculationResult(PathCalculationResult.Type.SUCCESS_TO_GOAL, path);
+                return result;
             } else {
-                return new PathCalculationResult(PathCalculationResult.Type.SUCCESS_SEGMENT, path);
+                result = new PathCalculationResult(PathCalculationResult.Type.SUCCESS_SEGMENT, path);
+                return result;
             }
         } catch (Exception e) {
             Helper.HELPER.logDirect("Pathing exception: " + e);
             e.printStackTrace();
-            return new PathCalculationResult(PathCalculationResult.Type.EXCEPTION);
+            result = new PathCalculationResult(PathCalculationResult.Type.EXCEPTION);
+            return result;
         } finally {
+            if (profile != null && result != null) {
+                profile.finish(result);
+                profile = null;
+            }
             // this is run regardless of what exception may or may not be raised by calculate0
             isFinished = true;
         }
     }
 
     protected abstract Optional<IPath> calculate0(long primaryTimeout, long failureTimeout);
+
+    protected int nodeMapSize() {
+        return map.size();
+    }
 
     /**
      * Determines the distance squared from the specified node to the start
@@ -163,16 +163,16 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
      * @param x        The x position of the node
      * @param y        The y position of the node
      * @param z        The z position of the node
-     * @param hashCode The hash code of the node, provided by {@link BetterBlockPos#longHash(int, int, int)}
+     * @param blockKey The exact packed coordinate key of the node.
      * @return The associated node
      * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue #107</a>
      */
 
-    protected PathNode getNodeAtPosition(int x, int y, int z, long hashCode) {
-        PathNode node = map.get(hashCode);
+    protected PathNode getNodeAtPosition(int x, int y, int z, long blockKey) {
+        PathNode node = map.get(blockKey);
         if (node == null) {
             node = new PathNode(x, y, z, goal);
-            map.put(hashCode, node);
+            map.put(blockKey, node);
         }
         return node;
     }

@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone;
 
 import baritone.api.BaritoneAPI;
@@ -29,6 +12,7 @@ import baritone.behavior.*;
 import baritone.cache.WorldProvider;
 import baritone.command.manager.CommandManager;
 import baritone.event.GameEventHandler;
+import baritone.pathing.calc.PathingProfiler;
 import baritone.process.*;
 import baritone.selection.SelectionManager;
 import baritone.utils.BlockStateInterface;
@@ -84,6 +68,7 @@ public class Baritone implements IBaritone {
     private final PathingControlManager pathingControlManager;
     private final SelectionManager selectionManager;
     private final CommandManager commandManager;
+    private final PathingProfiler pathingProfiler;
 
     private final IPlayerContext playerContext;
     private final WorldProvider worldProvider;
@@ -100,6 +85,7 @@ public class Baritone implements IBaritone {
                 Files.createDirectories(this.directory);
             } catch (IOException ignored) {}
         }
+        this.pathingProfiler = new PathingProfiler(this.directory.resolve("profiles"));
 
         // Define this before behaviors try and get it, or else it will be null and the builds will fail!
         this.playerContext = new BaritonePlayerContext(this, mc);
@@ -252,6 +238,10 @@ public class Baritone implements IBaritone {
 
     public Path getDirectory() {
         return this.directory;
+    }
+
+    public PathingProfiler getPathingProfiler() {
+        return this.pathingProfiler;
     }
 
     public static Settings settings() {

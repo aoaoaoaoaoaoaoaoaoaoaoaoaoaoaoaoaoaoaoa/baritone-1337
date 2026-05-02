@@ -1,34 +1,21 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.pathing.calc;
 
 import baritone.Baritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
-import baritone.api.pathing.movement.ActionCosts;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.SettingsUtil;
 import baritone.pathing.calc.openset.BinaryHeapOpenSet;
+import baritone.pathing.movement.BlockOffset;
 import baritone.pathing.movement.CalculationContext;
-import baritone.pathing.movement.Moves;
+import baritone.pathing.movement.DestinationSpec;
+import baritone.pathing.movement.EdgeEvalScratch;
+import baritone.pathing.movement.EdgeEvalStatus;
+import baritone.pathing.movement.LegacyMovesPrimitive;
+import baritone.pathing.movement.MovementCatalog;
+import baritone.pathing.movement.MovementPrimitive;
 import baritone.utils.pathing.BetterWorldBorder;
 import baritone.utils.pathing.Favoring;
-import baritone.utils.pathing.MutableMoveResult;
 
 import java.util.Optional;
 
@@ -52,7 +39,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     protected Optional<IPath> calculate0(long primaryTimeout, long failureTimeout) {
         int minY = calcContext.world.dimensionType().minY();
         int height = calcContext.world.dimensionType().height();
-        startNode = getNodeAtPosition(startX, startY, startZ, BetterBlockPos.longHash(startX, startY, startZ));
+        startNode = getNodeAtPosition(startX, startY, startZ, BlockKey.pack(startX, startY, startZ));
         startNode.cost = 0;
         startNode.combinedCost = startNode.estimatedCostToGoal;
         BinaryHeapOpenSet openSet = new BinaryHeapOpenSet();
@@ -62,7 +49,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
             bestHeuristicSoFar[i] = startNode.estimatedCostToGoal;
             bestSoFar[i] = startNode;
         }
-        MutableMoveResult res = new MutableMoveResult();
+        EdgeEvalScratch eval = new EdgeEvalScratch();
         BetterWorldBorder worldBorder = new BetterWorldBorder(calcContext.world.getWorldBorder());
         long startTime = System.currentTimeMillis();
         boolean slowPath = Baritone.settings().slowPath.value;
@@ -79,7 +66,9 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         int timeCheckInterval = 1 << 6;
         int pathingMaxChunkBorderFetch = Baritone.settings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
         double minimumImprovement = Baritone.settings().minimumImprovementRepropagation.value ? MIN_IMPROVEMENT : 0;
-        Moves[] allMoves = Moves.values();
+        MovementCatalog catalog = calcContext.movementCatalog;
+        MovementPrimitive[] allMoves = catalog.primitives();
+        PathingProfiler.Active activeProfile = profile;
         while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
             if ((numNodes & (timeCheckInterval - 1)) == 0) { // only call this once every 64 nodes (about half a millisecond)
                 long now = System.currentTimeMillis(); // since nanoTime is slow on windows (takes many microseconds)
@@ -97,75 +86,92 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
             numNodes++;
             if (goal.isInGoal(currentNode.x, currentNode.y, currentNode.z)) {
                 logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
+                if (activeProfile != null) {
+                    activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "goal");
+                }
                 return Optional.of(new Path(realStart, startNode, currentNode, numNodes, goal, calcContext));
             }
-            for (Moves moves : allMoves) {
-                int newX = currentNode.x + moves.xOffset;
-                int newZ = currentNode.z + moves.zOffset;
+            for (int primitiveIndex = 0; primitiveIndex < allMoves.length; primitiveIndex++) {
+                MovementPrimitive primitive = allMoves[primitiveIndex];
+                DestinationSpec spec = primitive.destinationSpec();
+                BlockOffset probe = spec.precheckOffset();
+                int newX = currentNode.x + probe.dx();
+                int newZ = currentNode.z + probe.dz();
                 if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.isLoaded(newX, newZ)) {
                     // only need to check if the destination is a loaded chunk if it's in a different chunk than the start of the movement
-                    if (!moves.dynamicXZ) { // only increment the counter if the movement would have gone out of bounds guaranteed
+                    if (!spec.dynamicXZ()) { // only increment the counter if the movement would have gone out of bounds guaranteed
                         numEmptyChunk++;
                     }
                     continue;
                 }
-                if (!moves.dynamicXZ && !worldBorder.entirelyContains(newX, newZ)) {
+                if (!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) {
                     continue;
                 }
-                if (currentNode.y + moves.yOffset > height || currentNode.y + moves.yOffset < minY) {
+                if (currentNode.y + probe.dy() > height || currentNode.y + probe.dy() < minY) {
                     continue;
                 }
-                res.reset();
-                moves.apply(calcContext, currentNode.x, currentNode.y, currentNode.z, res);
+                eval.blocked();
+                if (activeProfile == null) {
+                    primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
+                } else {
+                    long moveStart = System.nanoTime();
+                    primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
+                    if (primitive instanceof LegacyMovesPrimitive legacy) {
+                        activeProfile.recordMove(legacy.move(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
+                    }
+                }
                 numMovementsConsidered++;
-                double actionCost = res.cost;
-                if (actionCost >= ActionCosts.COST_INF) {
+                if (eval.status != EdgeEvalStatus.REACHABLE) {
                     continue;
                 }
+                double actionCost = eval.cost;
                 if (actionCost <= 0 || Double.isNaN(actionCost)) {
                     throw new IllegalStateException(String.format(
                             "%s from %s %s %s calculated implausible cost %s",
-                            moves,
+                            primitive.debugName(),
                             SettingsUtil.maybeCensor(currentNode.x),
                             SettingsUtil.maybeCensor(currentNode.y),
                             SettingsUtil.maybeCensor(currentNode.z),
                             actionCost));
                 }
                 // check destination after verifying it's not COST_INF -- some movements return COST_INF without adjusting the destination
-                if (moves.dynamicXZ && !worldBorder.entirelyContains(res.x, res.z)) { // see issue #218
+                if (spec.dynamicXZ() && !worldBorder.entirelyContains(eval.x, eval.z)) { // see issue #218
                     continue;
                 }
-                if (!moves.dynamicXZ && (res.x != newX || res.z != newZ)) {
+                if (!spec.dynamicXZ() && (eval.x != newX || eval.z != newZ)) {
                     throw new IllegalStateException(String.format(
                             "%s from %s %s %s ended at x z %s %s instead of %s %s",
-                            moves,
+                            primitive.debugName(),
                             SettingsUtil.maybeCensor(currentNode.x),
                             SettingsUtil.maybeCensor(currentNode.y),
                             SettingsUtil.maybeCensor(currentNode.z),
-                            SettingsUtil.maybeCensor(res.x),
-                            SettingsUtil.maybeCensor(res.z),
+                            SettingsUtil.maybeCensor(eval.x),
+                            SettingsUtil.maybeCensor(eval.z),
                             SettingsUtil.maybeCensor(newX),
                             SettingsUtil.maybeCensor(newZ)));
                 }
-                if (!moves.dynamicY && res.y != currentNode.y + moves.yOffset) {
+                if (!spec.dynamicY() && eval.y != currentNode.y + probe.dy()) {
                     throw new IllegalStateException(String.format(
                             "%s from %s %s %s ended at y %s instead of %s",
-                            moves,
+                            primitive.debugName(),
                             SettingsUtil.maybeCensor(currentNode.x),
                             SettingsUtil.maybeCensor(currentNode.y),
                             SettingsUtil.maybeCensor(currentNode.z),
-                            SettingsUtil.maybeCensor(res.y),
-                            SettingsUtil.maybeCensor(currentNode.y + moves.yOffset)));
+                            SettingsUtil.maybeCensor(eval.y),
+                            SettingsUtil.maybeCensor(currentNode.y + probe.dy())));
                 }
-                long hashCode = BetterBlockPos.longHash(res.x, res.y, res.z);
+                long favoringHash = BetterBlockPos.longHash(eval.x, eval.y, eval.z);
                 if (isFavoring) {
                     // see issue #18
-                    actionCost *= favoring.calculate(hashCode);
+                    actionCost *= favoring.calculate(favoringHash);
                 }
-                PathNode neighbor = getNodeAtPosition(res.x, res.y, res.z, hashCode);
+                PathNode neighbor = getNodeAtPosition(eval.x, eval.y, eval.z, BlockKey.pack(eval.x, eval.y, eval.z));
                 double tentativeCost = currentNode.cost + actionCost;
                 if (neighbor.cost - tentativeCost > minimumImprovement) {
                     neighbor.previous = currentNode;
+                    neighbor.previousPrimitiveIndex = (short) primitiveIndex;
+                    neighbor.previousEdgePayload = eval.payload;
+                    neighbor.previousEdgeCost = actionCost;
                     neighbor.cost = tentativeCost;
                     neighbor.combinedCost = tentativeCost + neighbor.estimatedCostToGoal;
                     if (neighbor.isOpen()) {
@@ -185,6 +191,15 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                     }
                 }
             }
+        }
+        if (activeProfile != null) {
+            activeProfile.finishSearchLoop(
+                    numNodes,
+                    numMovementsConsidered,
+                    numEmptyChunk,
+                    nodeMapSize(),
+                    cancelRequested ? "cancel" : openSet.isEmpty() ? "open_set_empty" : numEmptyChunk >= pathingMaxChunkBorderFetch ? "empty_chunk_limit" : "timeout"
+            );
         }
         if (cancelRequested) {
             return Optional.empty();

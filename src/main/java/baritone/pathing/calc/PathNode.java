@@ -1,20 +1,3 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.pathing.calc;
 
 import baritone.api.pathing.goals.Goal;
@@ -59,6 +42,12 @@ public final class PathNode {
      */
     public PathNode previous;
 
+    public short previousPrimitiveIndex;
+
+    public int previousEdgePayload;
+
+    public double previousEdgeCost;
+
     /**
      * Where is this node in the array flattenization of the binary heap? Needed for decrease-key operations.
      */
@@ -66,6 +55,7 @@ public final class PathNode {
 
     public PathNode(int x, int y, int z, Goal goal) {
         this.previous = null;
+        this.previousPrimitiveIndex = -1;
         this.cost = ActionCosts.COST_INF;
         this.estimatedCostToGoal = goal.heuristic(x, y, z);
         if (Double.isNaN(estimatedCostToGoal)) {
@@ -98,16 +88,9 @@ public final class PathNode {
 
     @Override
     public boolean equals(Object obj) {
-        // GOTTA GO FAST
-        // ALL THESE CHECKS ARE FOR PEOPLE WHO WANT SLOW CODE
-        // SKRT SKRT
-        //if (obj == null || !(obj instanceof PathNode)) {
-        //    return false;
-        //}
-
-        final PathNode other = (PathNode) obj;
-        //return Objects.equals(this.pos, other.pos) && Objects.equals(this.goal, other.goal);
-
+        if (!(obj instanceof PathNode other)) {
+            return false;
+        }
         return x == other.x && y == other.y && z == other.z;
     }
 }

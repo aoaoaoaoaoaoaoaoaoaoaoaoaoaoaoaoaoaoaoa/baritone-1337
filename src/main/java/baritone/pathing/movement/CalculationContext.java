@@ -1,26 +1,10 @@
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 package baritone.pathing.movement;
 
 import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.cache.WorldData;
+import baritone.pathing.calc.PathingProfiler;
 import baritone.pathing.precompute.PrecomputedData;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
@@ -86,6 +70,8 @@ public class CalculationContext {
     public final BetterWorldBorder worldBorder;
 
     public final PrecomputedData precomputedData;
+    public final PathingProfiler pathingProfiler;
+    public final MovementCatalog movementCatalog;
 
     public CalculationContext(IBaritone baritone) {
         this(baritone, false);
@@ -159,6 +145,8 @@ public class CalculationContext {
         // because if some movements are calculated one way and others are calculated another way,
         // then you get a wildly inconsistent path that isn't optimal for either scenario.
         this.worldBorder = new BetterWorldBorder(world.getWorldBorder());
+        this.pathingProfiler = ((Baritone) baritone).getPathingProfiler();
+        this.movementCatalog = MovementCatalog.legacyWalking();
     }
 
     public final IBaritone getBaritone() {
