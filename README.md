@@ -21,5 +21,6 @@ Fabric artifacts are written to `dist/`. Use the standalone Fabric jar for norma
 - Overworld elytra transport.
 - Sprint-swimming path support.
 - Better speculative/background pathing.
+- Read-only Xaero waypoint routing via `#xwp`.
 
 License: LGPL-3.0. Original project: https://github.com/cabaletta/baritone
