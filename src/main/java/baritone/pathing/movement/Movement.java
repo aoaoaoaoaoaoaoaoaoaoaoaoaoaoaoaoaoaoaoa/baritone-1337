@@ -18,6 +18,13 @@ import net.minecraft.world.phys.AABB;
 public abstract class Movement implements IMovement, MovementHelper {
 
   public static final Direction[] HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP = {Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.DOWN};
+  private static final double SWIM_SURFACE_EPSILON = 0.025D;
+  private static final double SWIM_SURFACE_BAND = 0.65D;
+  private static final double SWIM_SURFACE_DEADBAND = 0.015D;
+  private static final float SWIM_SURFACE_MAX_PITCH = 28F;
+  private static final float SWIM_SURFACE_MIN_PITCH = 2F;
+  private static final float SWIM_DIVE_PITCH = 30F;
+  private static final float SWIM_ASCEND_PITCH = -24F;
 
   protected final IBaritone baritone;
   protected final IPlayerContext ctx;
@@ -140,32 +147,63 @@ public abstract class Movement implements IMovement, MovementHelper {
     }
     boolean forward = state.getInputStates().getOrDefault(Input.MOVE_FORWARD, false);
     boolean descending = dest.y < src.y;
-    boolean surfacing = !descending && ctx.player().isEyeInFluid(FluidTags.WATER);
+    boolean deepWater = MovementHelper.isDeepWater(ctx, feet);
+    if (!deepWater) {
+      state.setInput(Input.SPRINT, false);
+      state.setInput(Input.SNEAK, false);
+      if (dest.y > src.y && ctx.player().position().y < dest.y + 0.6) {
+        state.setInput(Input.JUMP, true);
+      }
+      if (forward && !state.getTarget().hasToForceRotations()) {
+        Rotation rotation = state.getTarget().getRotation().orElseGet(() -> RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()));
+        state.setTarget(new MovementState.MovementTarget(new Rotation(rotation.getYaw(), 0F), false));
+      }
+      return;
+    }
     if (forward && Baritone.settings().sprintInWater.value) {
       state.setInput(Input.SPRINT, true);
     }
-    if (surfacing || dest.y > src.y && ctx.player().position().y < dest.y + 0.6) {
-      state.setInput(Input.JUMP, true);
-      state.setInput(Input.SNEAK, false);
-    } else if (descending) {
+    if (descending) {
       state.setInput(Input.SNEAK, true);
-    } else if (forward && MovementHelper.isWater(ctx, dest)) {
+    } else {
       state.setInput(Input.SNEAK, false);
+      if (!forward && dest.y > src.y && ctx.player().position().y < dest.y + 0.6) {
+        state.setInput(Input.JUMP, true);
+      }
     }
     if (forward && !state.getTarget().hasToForceRotations()) {
       Rotation rotation = state.getTarget().getRotation().orElseGet(() -> RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()));
-      state.setTarget(new MovementState.MovementTarget(new Rotation(rotation.getYaw(), swimPitch(state)), false));
+      state.setTarget(new MovementState.MovementTarget(new Rotation(rotation.getYaw(), swimPitch(feet, descending)), false));
     }
   }
 
-  private float swimPitch(MovementState state) {
-    if (state.getInputStates().getOrDefault(Input.JUMP, false) || dest.y > src.y) {
-      return -35F;
+  private float swimPitch(BlockPos feet, boolean descending) {
+    if (descending) {
+      return SWIM_DIVE_PITCH;
     }
-    if (state.getInputStates().getOrDefault(Input.SNEAK, false) || dest.y < src.y) {
-      return 35F;
+    if (dest.y > src.y) {
+      return SWIM_ASCEND_PITCH;
     }
-    return 0F;
+    if (!ctx.player().isSwimming() && !ctx.player().isEyeInFluid(FluidTags.WATER)) {
+      return 0F;
+    }
+    double error = SWIM_SURFACE_EPSILON - (ctx.player().getEyeY() - waterSurfaceY(feet));
+    if (Math.abs(error) <= SWIM_SURFACE_DEADBAND) {
+      return 0F;
+    }
+    if (error > 0D) {
+      return -Math.max(SWIM_SURFACE_MIN_PITCH, (float) (SWIM_SURFACE_MAX_PITCH * Math.tanh(error / SWIM_SURFACE_BAND)));
+    }
+    return (float) Math.min(16F, 45F * Math.tanh((-error - SWIM_SURFACE_DEADBAND) / SWIM_SURFACE_BAND));
+  }
+
+  private double waterSurfaceY(BlockPos feet) {
+    BlockPos.MutableBlockPos scan = new BlockPos.MutableBlockPos(feet.getX(), feet.getY(), feet.getZ());
+    int maxY = ctx.world().getMaxY();
+    while (scan.getY() < maxY && MovementHelper.isWater(ctx, scan)) {
+      scan.move(Direction.UP);
+    }
+    return scan.getY();
   }
 
   protected boolean prepared(MovementState state) {

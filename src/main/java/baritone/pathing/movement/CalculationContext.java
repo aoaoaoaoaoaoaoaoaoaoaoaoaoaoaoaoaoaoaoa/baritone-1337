@@ -83,7 +83,7 @@ public class CalculationContext {
       new FallPolicy(Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
         false, 3, Baritone.settings().maxFallHeightNoWater.value, Baritone.settings().maxFallHeightBucket.value);
     this.costs = new CostPolicy(Baritone.settings().blockBreakAdditionalPenalty.value, Baritone.settings().backtrackCostFavoringCoefficient.value, Baritone.settings().jumpPenalty.value,
-      Baritone.settings().walkOnWaterOnePenalty.value, waterMoveCost);
+      Baritone.settings().walkOnWaterOnePenalty.value, ActionCosts.WALK_ONE_IN_WATER_COST, waterMoveCost);
     // why cache these things here, why not let the movements just get directly from settings?
     // because if some movements are calculated one way and others are calculated another way,
     // then you get a wildly inconsistent path that isn't optimal for either scenario.

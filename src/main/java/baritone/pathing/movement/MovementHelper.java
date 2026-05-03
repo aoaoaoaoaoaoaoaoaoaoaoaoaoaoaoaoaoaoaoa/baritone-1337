@@ -689,6 +689,18 @@ public interface MovementHelper extends ActionCosts, Helper {
     return isWater(BlockStateInterface.get(ctx, bp));
   }
 
+  static boolean isDeepWater(IPlayerContext ctx, BlockPos bp) {
+    return isWater(ctx, bp) && (isWater(ctx, bp.below()) || isWater(ctx, bp.above()));
+  }
+
+  static boolean isDeepWater(CalculationContext context, int x, int y, int z) {
+    return isWater(context.get(x, y, z)) && (isWater(context.get(x, y - 1, z)) || isWater(context.get(x, y + 1, z)));
+  }
+
+  static boolean isDeepWater(BlockState feet, BlockState floor, BlockState head) {
+    return isWater(feet) && (isWater(floor) || isWater(head));
+  }
+
   static boolean isLava(BlockState state) {
     Fluid f = state.getFluidState().getType();
     return f == Fluids.LAVA || f == Fluids.FLOWING_LAVA;

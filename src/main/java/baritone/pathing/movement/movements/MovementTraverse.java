@@ -74,7 +74,7 @@ public class MovementTraverse extends Movement {
       boolean water = false;
       boolean sneaking = false;
       if (MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1)) {
-        WC = context.costs.waterMoveCost();
+        WC = context.costs.waterCost(MovementHelper.isDeepWater(pb1, destOn, pb0));
         water = true;
       } else {
         if (destOn.getBlock() == Blocks.SOUL_SAND) {
@@ -129,7 +129,7 @@ public class MovementTraverse extends Movement {
           return COST_INF;
         }
         double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
-        double WC = throughWater ? context.costs.waterMoveCost() : WALK_ONE_BLOCK_COST;
+        double WC = throughWater ? context.costs.waterCost(MovementHelper.isDeepWater(pb1, destOn, pb0)) : WALK_ONE_BLOCK_COST;
         for (int i = 0; i < 5; i++) {
           int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepX();
           int againstY = y - 1 + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepY();

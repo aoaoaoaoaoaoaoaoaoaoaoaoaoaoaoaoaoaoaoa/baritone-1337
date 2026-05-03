@@ -44,7 +44,8 @@ public final class MovementOblique extends Movement {
     if (!isObliqueStride(dx, dz)) {
       return COST_INF;
     }
-    boolean water = false;
+    boolean shallowWater = false;
+    boolean deepWater = false;
     int minX = minOffsetX(dx);
     int maxX = maxOffsetX(dx);
     int minZ = minOffsetZ(dz);
@@ -56,11 +57,12 @@ public final class MovementOblique extends Movement {
           if (cell == FlatCell.BLOCKED) {
             return COST_INF;
           }
-          water |= cell == FlatCell.WATER;
+          shallowWater |= cell == FlatCell.SHALLOW_WATER;
+          deepWater |= cell == FlatCell.DEEP_WATER;
         }
       }
     }
-    return SQRT_5 * (water ? context.costs.waterMoveCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
+    return SQRT_5 * (deepWater ? context.costs.waterMoveCost() : shallowWater ? context.costs.waterWalkCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
   }
 
   @Override
@@ -110,11 +112,16 @@ public final class MovementOblique extends Movement {
     BlockState feet = context.get(x, y, z);
     BlockState head = context.get(x, y + 1, z);
     BlockState support = context.get(x, y - 1, z);
-    if (MovementHelper.avoidWalkingInto(feet) || MovementHelper.avoidWalkingInto(head)) {
+    boolean feetWater = MovementHelper.isWater(feet);
+    boolean headWater = MovementHelper.isWater(head);
+    if (MovementHelper.avoidWalkingInto(feet) && !feetWater || MovementHelper.avoidWalkingInto(head) && !headWater) {
       return FlatCell.BLOCKED;
     }
-    if (MovementHelper.isWater(feet) && MovementHelper.canWalkThrough(context, x, y, z, feet) && MovementHelper.canWalkThrough(context, x, y + 1, z, head)) {
-      return FlatCell.WATER;
+    if (feetWater) {
+      if (!MovementHelper.canWalkThrough(context, x, y, z, feet) || !MovementHelper.canWalkThrough(context, x, y + 1, z, head)) {
+        return FlatCell.BLOCKED;
+      }
+      return MovementHelper.isWater(support) || headWater ? FlatCell.DEEP_WATER : FlatCell.SHALLOW_WATER;
     }
     if (!MovementHelper.fullyPassable(context, x, y, z, feet) || !MovementHelper.fullyPassable(context, x, y + 1, z, head)) {
       return FlatCell.BLOCKED;
@@ -126,7 +133,7 @@ public final class MovementOblique extends Movement {
   }
 
   private enum FlatCell {
-    BLOCKED, LAND, WATER
+    BLOCKED, LAND, SHALLOW_WATER, DEEP_WATER
   }
 
   private static void forEachSweptCell(int x, int z, int dx, int dz, CellConsumer consumer) {
