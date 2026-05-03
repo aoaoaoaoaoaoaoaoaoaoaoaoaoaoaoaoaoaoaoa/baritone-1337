@@ -11,6 +11,7 @@ import baritone.utils.BlockStateInterface;
 import java.util.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.phys.AABB;
 
@@ -104,9 +105,7 @@ public abstract class Movement implements IMovement, MovementHelper {
   public MovementStatus update() {
     ctx.player().getAbilities().flying = false;
     currentState = updateState(currentState);
-    if (MovementHelper.isLiquid(ctx, ctx.playerFeet()) && ctx.player().position().y < dest.y + 0.6) {
-      currentState.setInput(Input.JUMP, true);
-    }
+    applyLiquidLocomotion(currentState);
     if (ctx.player().isInWall()) {
       ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, pos)));
       currentState.setInput(Input.CLICK_LEFT, true);
@@ -126,6 +125,47 @@ public abstract class Movement implements IMovement, MovementHelper {
     }
 
     return currentState.getStatus();
+  }
+
+  private void applyLiquidLocomotion(MovementState state) {
+    BlockPos feet = ctx.playerFeet();
+    if (!MovementHelper.isLiquid(ctx, feet)) {
+      return;
+    }
+    if (!MovementHelper.isWater(ctx, feet)) {
+      if (dest.y > src.y && ctx.player().position().y < dest.y + 0.6) {
+        state.setInput(Input.JUMP, true);
+      }
+      return;
+    }
+    boolean forward = state.getInputStates().getOrDefault(Input.MOVE_FORWARD, false);
+    boolean descending = dest.y < src.y;
+    boolean surfacing = !descending && ctx.player().isEyeInFluid(FluidTags.WATER);
+    if (forward && Baritone.settings().sprintInWater.value) {
+      state.setInput(Input.SPRINT, true);
+    }
+    if (surfacing || dest.y > src.y && ctx.player().position().y < dest.y + 0.6) {
+      state.setInput(Input.JUMP, true);
+      state.setInput(Input.SNEAK, false);
+    } else if (descending) {
+      state.setInput(Input.SNEAK, true);
+    } else if (forward && MovementHelper.isWater(ctx, dest)) {
+      state.setInput(Input.SNEAK, false);
+    }
+    if (forward && !state.getTarget().hasToForceRotations()) {
+      Rotation rotation = state.getTarget().getRotation().orElseGet(() -> RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()));
+      state.setTarget(new MovementState.MovementTarget(new Rotation(rotation.getYaw(), swimPitch(state)), false));
+    }
+  }
+
+  private float swimPitch(MovementState state) {
+    if (state.getInputStates().getOrDefault(Input.JUMP, false) || dest.y > src.y) {
+      return -35F;
+    }
+    if (state.getInputStates().getOrDefault(Input.SNEAK, false) || dest.y < src.y) {
+      return 35F;
+    }
+    return 0F;
   }
 
   protected boolean prepared(MovementState state) {

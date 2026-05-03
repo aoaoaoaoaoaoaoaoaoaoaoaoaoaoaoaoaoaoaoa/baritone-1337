@@ -44,18 +44,23 @@ public final class MovementOblique extends Movement {
     if (!isObliqueStride(dx, dz)) {
       return COST_INF;
     }
+    boolean water = false;
     int minX = minOffsetX(dx);
     int maxX = maxOffsetX(dx);
     int minZ = minOffsetZ(dz);
     int maxZ = maxOffsetZ(dz);
     for (int ox = minX; ox <= maxX; ox++) {
       for (int oz = minZ; oz <= maxZ; oz++) {
-        if (segmentIntersectsExpandedCell(ox, oz, dx, dz) && !clearFlatCell(context, x + ox, y, z + oz)) {
-          return COST_INF;
+        if (segmentIntersectsExpandedCell(ox, oz, dx, dz)) {
+          FlatCell cell = clearFlatCell(context, x + ox, y, z + oz);
+          if (cell == FlatCell.BLOCKED) {
+            return COST_INF;
+          }
+          water |= cell == FlatCell.WATER;
         }
       }
     }
-    return SQRT_5 * (context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
+    return SQRT_5 * (water ? context.costs.waterMoveCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
   }
 
   @Override
@@ -70,7 +75,7 @@ public final class MovementOblique extends Movement {
     if (!playerInValidPosition()) {
       return state.setStatus(MovementStatus.UNREACHABLE);
     }
-    if (Baritone.settings().allowSprint.value && !MovementHelper.isLiquid(ctx, ctx.playerFeet())) {
+    if (Baritone.settings().allowSprint.value && (!MovementHelper.isLiquid(ctx, ctx.playerFeet()) || Baritone.settings().sprintInWater.value)) {
       state.setInput(Input.SPRINT, true);
     }
     MovementHelper.moveTowards(ctx, state, dest);
@@ -98,23 +103,30 @@ public final class MovementOblique extends Movement {
     return lateralSq <= 0.42D * 0.42D;
   }
 
-  private static boolean clearFlatCell(CalculationContext context, int x, int y, int z) {
+  private static FlatCell clearFlatCell(CalculationContext context, int x, int y, int z) {
     if (!context.isLoaded(x, z) || !context.worldBorder.entirelyContains(x, z)) {
-      return false;
+      return FlatCell.BLOCKED;
     }
     BlockState feet = context.get(x, y, z);
     BlockState head = context.get(x, y + 1, z);
     BlockState support = context.get(x, y - 1, z);
-    if (!MovementHelper.fullyPassable(context, x, y, z, feet) || !MovementHelper.fullyPassable(context, x, y + 1, z, head)) {
-      return false;
-    }
     if (MovementHelper.avoidWalkingInto(feet) || MovementHelper.avoidWalkingInto(head)) {
-      return false;
+      return FlatCell.BLOCKED;
+    }
+    if (MovementHelper.isWater(feet) && MovementHelper.canWalkThrough(context, x, y, z, feet) && MovementHelper.canWalkThrough(context, x, y + 1, z, head)) {
+      return FlatCell.WATER;
+    }
+    if (!MovementHelper.fullyPassable(context, x, y, z, feet) || !MovementHelper.fullyPassable(context, x, y + 1, z, head)) {
+      return FlatCell.BLOCKED;
     }
     if (!support.getFluidState().isEmpty() || support.is(Blocks.MAGMA_BLOCK) || MovementHelper.isLava(support)) {
-      return false;
+      return FlatCell.BLOCKED;
     }
-    return MovementHelper.canWalkOn(context, x, y - 1, z, support) && (MovementHelper.isBlockNormalCube(support) || MovementHelper.isGlassLike(support));
+    return MovementHelper.canWalkOn(context, x, y - 1, z, support) && (MovementHelper.isBlockNormalCube(support) || MovementHelper.isGlassLike(support)) ? FlatCell.LAND : FlatCell.BLOCKED;
+  }
+
+  private enum FlatCell {
+    BLOCKED, LAND, WATER
   }
 
   private static void forEachSweptCell(int x, int z, int dx, int dz, CellConsumer consumer) {

@@ -48,7 +48,7 @@ final class ObliqueMovementPrimitive implements MovementPrimitive {
 
   @Override
   public double minimumCost(CalculationContext ctx) {
-    return SQRT_5 * (ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST);
+    return SQRT_5 * Math.min(ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.costs.waterMoveCost());
   }
 
   private static String signed(int value) {

@@ -74,7 +74,7 @@ public class MovementTraverse extends Movement {
       boolean water = false;
       boolean sneaking = false;
       if (MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1)) {
-        WC = context.costs.waterWalkSpeed();
+        WC = context.costs.waterMoveCost();
         water = true;
       } else {
         if (destOn.getBlock() == Blocks.SOUL_SAND) {
@@ -129,7 +129,7 @@ public class MovementTraverse extends Movement {
           return COST_INF;
         }
         double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
-        double WC = throughWater ? context.costs.waterWalkSpeed() : WALK_ONE_BLOCK_COST;
+        double WC = throughWater ? context.costs.waterMoveCost() : WALK_ONE_BLOCK_COST;
         for (int i = 0; i < 5; i++) {
           int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepX();
           int againstY = y - 1 + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepY();
@@ -235,7 +235,8 @@ public class MovementTraverse extends Movement {
 
     boolean isTheBridgeBlockThere = MovementHelper.canWalkOn(ctx, positionToPlace) || ladder || MovementHelper.canUseFrostWalker(ctx, positionToPlace);
     BlockPos feet = ctx.playerFeet();
-    if (feet.getY() != dest.getY() && !ladder) {
+    boolean waterTraverse = MovementHelper.isWater(ctx, feet) || MovementHelper.isWater(ctx, src) || MovementHelper.isWater(ctx, dest);
+    if (feet.getY() != dest.getY() && !ladder && !waterTraverse) {
       logDebug("Wrong Y coordinate");
       if (feet.getY() < dest.getY()) {
         System.out.println("In movement traverse");

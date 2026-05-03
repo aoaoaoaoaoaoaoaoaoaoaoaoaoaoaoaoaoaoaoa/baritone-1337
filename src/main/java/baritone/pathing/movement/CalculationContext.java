@@ -10,17 +10,14 @@ import baritone.pathing.calc.PathingProfiler;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
-import java.util.List;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.*;
-import net.minecraft.world.item.enchantment.effects.EnchantmentAttributeEffect;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -72,32 +69,21 @@ public class CalculationContext {
         }
       }
     }
-    float waterSpeedMultiplier = 1.0f;
-    OUTER : for (EquipmentSlot slot : EquipmentSlot.values()) {
-      ItemEnchantments itemEnchantments = baritone.getPlayerContext().player().getItemBySlot(slot).getEnchantments();
-      for (Holder<Enchantment> enchant : itemEnchantments.keySet()) {
-        List<EnchantmentAttributeEffect> effects = enchant.value().getEffects(EnchantmentEffectComponents.ATTRIBUTES);
-        for (EnchantmentAttributeEffect effect : effects) {
-          if (effect.attribute().is(Attributes.WATER_MOVEMENT_EFFICIENCY.unwrapKey().get())) {
-            waterSpeedMultiplier = effect.amount().calculate(itemEnchantments.getLevel(enchant));
-            break OUTER;
-          }
-        }
-      }
-    }
-    double waterWalkSpeed = ActionCosts.WALK_ONE_IN_WATER_COST * (1 - waterSpeedMultiplier) + ActionCosts.WALK_ONE_BLOCK_COST * waterSpeedMultiplier;
+    boolean canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
+    boolean sprintInWater = Baritone.settings().sprintInWater.value;
+    double waterMoveCost = canSprint && sprintInWater ? ActionCosts.SPRINT_SWIM_ONE_BLOCK_COST : ActionCosts.WALK_ONE_IN_WATER_COST;
     this.placement = new PlacementPolicy(Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(), Baritone.settings().blockPlacementPenalty.value,
       Baritone.settings().allowPlaceInFluidsSource.value, Baritone.settings().allowPlaceInFluidsFlow.value);
     this.breaking = new BreakPolicy(Baritone.settings().allowBreak.value, Baritone.settings().allowBreakAnyway.value);
-    this.movement = new MovementPolicy(Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6, Baritone.settings().allowParkour.value,
-      Baritone.settings().allowParkourPlace.value, Baritone.settings().allowJumpAtBuildLimit.value, Baritone.settings().allowParkourAscend.value, Baritone.settings().assumeWalkOnWater.value,
-      frostWalkerLevel, Baritone.settings().allowDiagonalDescend.value, Baritone.settings().allowDiagonalAscend.value, Baritone.settings().allowObliqueWalk.value,
-      Baritone.settings().allowDownward.value, Baritone.settings().allowWalkOnMagmaBlocks.value);
+    this.movement = new MovementPolicy(canSprint, Baritone.settings().allowParkour.value, Baritone.settings().allowParkourPlace.value, Baritone.settings().allowJumpAtBuildLimit.value,
+      Baritone.settings().allowParkourAscend.value, Baritone.settings().assumeWalkOnWater.value, frostWalkerLevel, Baritone.settings().allowDiagonalDescend.value,
+      Baritone.settings().allowDiagonalAscend.value, Baritone.settings().allowObliqueWalk.value, Baritone.settings().allowDownward.value, Baritone.settings().allowWalkOnMagmaBlocks.value,
+      sprintInWater);
     this.fall =
       new FallPolicy(Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
         false, 3, Baritone.settings().maxFallHeightNoWater.value, Baritone.settings().maxFallHeightBucket.value);
     this.costs = new CostPolicy(Baritone.settings().blockBreakAdditionalPenalty.value, Baritone.settings().backtrackCostFavoringCoefficient.value, Baritone.settings().jumpPenalty.value,
-      Baritone.settings().walkOnWaterOnePenalty.value, waterWalkSpeed);
+      Baritone.settings().walkOnWaterOnePenalty.value, waterMoveCost);
     // why cache these things here, why not let the movements just get directly from settings?
     // because if some movements are calculated one way and others are calculated another way,
     // then you get a wildly inconsistent path that isn't optimal for either scenario.

@@ -57,7 +57,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
     }
     return switch (move) {
       case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST ->
-        ctx.costs.walkOnWaterOnePenalty() < 0 ? 0 : Math.min(ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.costs.waterWalkSpeed());
+        ctx.costs.walkOnWaterOnePenalty() < 0 ? 0 : Math.min(ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.costs.waterMoveCost());
       case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> ctx.costs.jumpPenalty() < 0 ? 0 : ActionCosts.WALK_ONE_BLOCK_COST;
       default -> 0;
     };
