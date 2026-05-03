@@ -102,6 +102,9 @@ public class MovementDescend extends Movement {
       dynamicFallCost(context, x, y, z, destX, destZ, totalCost, below, res);
       return;
     }
+    if (MovementHelper.isWater(destDown) && !MovementHelper.canHorizontalWaterMoveThrough(context, destX, y - 1, destZ, destDown, context.get(destX, y, destZ))) {
+      return;
+    }
 
     if (destDown.getBlock() == Blocks.LADDER || destDown.getBlock() == Blocks.VINE) {
       return;
@@ -127,7 +130,7 @@ public class MovementDescend extends Movement {
       // and potentially replace the water we're going to fall into
       return false;
     }
-    if (!MovementHelper.canWalkThrough(context, destX, y - 2, destZ, below)) {
+    if (!MovementHelper.canMoveThrough(context, destX, y - 2, destZ, below)) {
       return false;
     }
     double costSoFar = 0;
@@ -144,14 +147,14 @@ public class MovementDescend extends Movement {
       int unprotectedFallHeight = fallHeight - (y - effectiveStartHeight); // equal to fallHeight - y + effectiveFallHeight, which is equal to -newY + effectiveFallHeight, which is equal to effectiveFallHeight - newY
       double tentativeCost = WALK_OFF_BLOCK_COST + FALL_N_BLOCKS_COST[unprotectedFallHeight] + frontBreak + costSoFar;
       if (reachedMinimum && MovementHelper.isWater(ontoBlock)) {
-        if (!MovementHelper.canWalkThrough(context, destX, newY, destZ, ontoBlock)) {
+        if (!MovementHelper.canSwimThrough(context, ontoBlock)) {
+          return false;
+        }
+        if (!MovementHelper.canHorizontalWaterMoveThrough(context, destX, newY, destZ, ontoBlock, context.get(destX, newY + 1, destZ))) {
           return false;
         }
         if (context.movement.assumeWalkOnWater()) {
           return false; // TODO fix
-        }
-        if (context.affordances.flowingFluid(destX, newY, destZ, ontoBlock)) {
-          return false; // TODO flowing check required here?
         }
         if (!MovementHelper.canWalkOn(context, destX, newY - 1, destZ)) {
           // we could punch right through the water into something else
@@ -174,7 +177,7 @@ public class MovementDescend extends Movement {
         effectiveStartHeight = newY;
         continue;
       }
-      if (MovementHelper.canWalkThrough(context, destX, newY, destZ, ontoBlock)) {
+      if (MovementHelper.canMoveThrough(context, destX, newY, destZ, ontoBlock)) {
         continue;
       }
       if (!MovementHelper.canWalkOn(context, destX, newY, destZ, ontoBlock)) {

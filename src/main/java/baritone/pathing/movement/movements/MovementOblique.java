@@ -62,7 +62,8 @@ public final class MovementOblique extends Movement {
         }
       }
     }
-    return SQRT_5 * (deepWater ? context.costs.waterMoveCost() : shallowWater ? context.costs.waterWalkCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
+    boolean fastSwim = deepWater && MovementHelper.hasSurfaceSwimSpan(context, x, y, z, dx, dz);
+    return SQRT_5 * (fastSwim ? context.costs.waterMoveCost() : deepWater || shallowWater ? context.costs.waterWalkCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
   }
 
   @Override
@@ -71,7 +72,7 @@ public final class MovementOblique extends Movement {
     if (state.getStatus() != MovementStatus.RUNNING) {
       return state;
     }
-    if (ctx.playerFeet().equals(dest) || overshotDestination()) {
+    if (playerAtDest() || overshotDestination()) {
       return state.setStatus(MovementStatus.SUCCESS);
     }
     if (!playerInValidPosition()) {
@@ -114,11 +115,14 @@ public final class MovementOblique extends Movement {
     BlockState support = context.get(x, y - 1, z);
     boolean feetWater = MovementHelper.isWater(feet);
     boolean headWater = MovementHelper.isWater(head);
+    if (headWater) {
+      return FlatCell.BLOCKED;
+    }
     if (MovementHelper.avoidWalkingInto(feet) && !feetWater || MovementHelper.avoidWalkingInto(head) && !headWater) {
       return FlatCell.BLOCKED;
     }
     if (feetWater) {
-      if (!MovementHelper.canWalkThrough(context, x, y, z, feet) || !MovementHelper.canWalkThrough(context, x, y + 1, z, head)) {
+      if (!MovementHelper.canSwimThrough(context, feet) || !MovementHelper.canMoveThrough(context, x, y + 1, z, head)) {
         return FlatCell.BLOCKED;
       }
       return MovementHelper.isWater(support) || headWater ? FlatCell.DEEP_WATER : FlatCell.SHALLOW_WATER;

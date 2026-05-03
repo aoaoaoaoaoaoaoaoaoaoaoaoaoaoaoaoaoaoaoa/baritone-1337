@@ -311,6 +311,7 @@ final class ElytraSolver {
 
   private List<Vec3> simulate(ElytraSolverContext context, Vec3 goalDelta, float pitch, int ticks, int ticksBoosted, int ticksBoostDelay) {
     var aimProcessor = context.aimProcessor.fork();
+    var rotationGovernor = context.rotationGovernor.fork();
     Vec3 delta = goalDelta;
     Vec3 motion = context.motion;
     AABB hitbox = context.boundingBox;
@@ -322,7 +323,7 @@ final class ElytraSolver {
       if (delta.lengthSqr() < 1) {
         break;
       }
-      Rotation rotation = aimProcessor.nextRotation(RotationUtils.calcRotationFromVec3d(Vec3.ZERO, delta, ctx.playerRotations()).withPitch(pitch));
+      Rotation rotation = aimProcessor.nextRotation(rotationGovernor.govern(RotationUtils.calcRotationFromVec3d(Vec3.ZERO, delta, ctx.playerRotations()).withPitch(pitch)));
       Vec3 lookDirection = RotationUtils.calcLookDirectionFromRotation(rotation);
 
       motion = step(motion, lookDirection, rotation.getPitch());

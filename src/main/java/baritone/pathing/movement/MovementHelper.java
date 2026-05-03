@@ -701,6 +701,76 @@ public interface MovementHelper extends ActionCosts, Helper {
     return isWater(feet) && (isWater(floor) || isWater(head));
   }
 
+  static boolean hasSurfaceSwimSpan(CalculationContext context, int x, int y, int z, int dx, int dz) {
+    dx = Integer.signum(dx);
+    dz = Integer.signum(dz);
+    if (dx == 0 && dz == 0) {
+      return surfaceSwimCell(context, x, y, z);
+    }
+    int run = 0;
+    for (int i = 0; i < 4; i++) {
+      if (!surfaceSwimCell(context, x + dx * i, y, z + dz * i)) {
+        break;
+      }
+      if (++run >= 3) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static boolean surfaceSwimCell(CalculationContext context, int x, int y, int z) {
+    BlockState feet = context.get(x, y, z);
+    BlockState head = context.get(x, y + 1, z);
+    return isWater(feet) && isWater(context.get(x, y - 1, z)) && !isWater(head) && canSwimThrough(context, feet) && canMoveThrough(context, x, y + 1, z, head);
+  }
+
+  static boolean surfaceSwimCell(IPlayerContext ctx, BlockPos pos) {
+    return isWater(ctx, pos) && isWater(ctx, pos.below()) && !isWater(ctx, pos.above());
+  }
+
+  static boolean surfaceSwimEnvelopeCell(IPlayerContext ctx, BlockPos pos) {
+    return isWater(ctx, pos) && (isWater(ctx, pos.below()) && !isWater(ctx, pos.above()) || isWater(ctx, pos.above()) && !isWater(ctx, pos.above(2)));
+  }
+
+  static boolean canHorizontalWaterMoveThrough(CalculationContext context, int x, int y, int z) {
+    return canHorizontalWaterMoveThrough(context, x, y, z, context.get(x, y, z), context.get(x, y + 1, z));
+  }
+
+  static boolean canHorizontalWaterMoveThrough(CalculationContext context, int x, int y, int z, BlockState feet, BlockState head) {
+    if (isWater(head)) {
+      return false;
+    }
+    return !isWater(feet) || canSwimThrough(context, feet) && canMoveThrough(context, x, y + 1, z, head);
+  }
+
+  static boolean canSwimThrough(CalculationContext context, BlockState state) {
+    return isWater(state) && !context.movement.assumeWalkOnWater();
+  }
+
+  static boolean canSwimThrough(BlockState state) {
+    return isWater(state) && !Baritone.settings().assumeWalkOnWater.value;
+  }
+
+  static boolean canMoveThrough(CalculationContext context, int x, int y, int z, BlockState state) {
+    return isWater(state) ? canSwimThrough(context, state) : canWalkThrough(context, x, y, z, state);
+  }
+
+  static boolean canMoveThrough(BlockStateInterface bsi, int x, int y, int z) {
+    BlockState state = bsi.get0(x, y, z);
+    return isWater(state) ? canSwimThrough(state) : canWalkThrough(bsi, x, y, z, state);
+  }
+
+  static boolean canMoveThrough(IPlayerContext ctx, BlockPos pos) {
+    BlockStateInterface bsi = new BlockStateInterface(ctx);
+    BlockState state = bsi.get0(pos.getX(), pos.getY(), pos.getZ());
+    return isWater(state) ? canSwimThrough(state) : canWalkThrough(bsi, pos.getX(), pos.getY(), pos.getZ(), state);
+  }
+
+  static double movementPassageCost(CalculationContext context, int x, int y, int z, BlockState state, boolean includeFalling) {
+    return isWater(state) ? canSwimThrough(context, state) ? 0 : COST_INF : getMiningDurationTicks(context, x, y, z, state, includeFalling);
+  }
+
   static boolean isLava(BlockState state) {
     Fluid f = state.getFluidState().getType();
     return f == Fluids.LAVA || f == Fluids.FLOWING_LAVA;

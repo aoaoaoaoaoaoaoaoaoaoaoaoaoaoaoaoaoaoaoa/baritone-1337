@@ -31,6 +31,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public final class PathingBehavior extends Behavior implements IPathingBehavior, Helper {
 
+  private static final int SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE = 12;
+  private static final int SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE = 48;
+  private static final int SUFFIX_REPLAN_MAX_ANCHOR_ADVANCE = 96;
+  private static final double SUFFIX_REPLACEMENT_COST_EPSILON = 2D;
+
   private PathExecutor current;
   private PathExecutor next;
 
@@ -49,6 +54,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private boolean calcFailedLastTick;
 
   private volatile AbstractNodeCostSearch inProgress;
+  private volatile BetterBlockPos activePlanningStart;
   private final Object pathCalcLock = new Object();
 
   private final Object pathPlanLock = new Object();
@@ -207,9 +213,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           return;
         }
         if (shouldStartTailPlanning()) {
-          logDebug(Baritone.settings().pathingContinuousPlanning.value ? "Extending path tail in background..." : "Path almost over. Planning ahead...");
+          BetterBlockPos start = planAheadStart();
+          logDebug(start.equals(current.getPath().getDest()) ? "Extending path tail in background..." : "Refining path suffix from future anchor " + start + "...");
           queuePathEvent(PathEvent.NEXT_SEGMENT_CALC_STARTED);
-          findPathInNewThread(current.getPath().getDest(), false, context);
+          findPathInNewThread(start, false, context);
         }
       }
     }
@@ -238,6 +245,21 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
     // Don't include the current movement: a very long final movement should not suppress planning until it completes.
     return ticksRemainingInSegment(false).get() < Baritone.settings().planningTickLookahead.value;
+  }
+
+  private BetterBlockPos planAheadStart() {
+    IPath path = current.getPath();
+    if (!Baritone.settings().pathingContinuousPlanning.value) {
+      return path.getDest();
+    }
+    int position = Math.max(0, Math.min(current.getPosition(), path.length() - 1));
+    int remainingMovements = path.length() - 1 - position;
+    if (remainingMovements <= SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE) {
+      return path.getDest();
+    }
+    int advance =
+      Math.min(remainingMovements, Math.min(SUFFIX_REPLAN_MAX_ANCHOR_ADVANCE, Math.max(SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE, Math.max(SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE, remainingMovements / 3))));
+    return path.positions().get(Math.min(path.length() - 1, position + advance));
   }
 
   @Override
@@ -304,6 +326,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   @Override
   public Optional<AbstractNodeCostSearch> getInProgress() { return Optional.ofNullable(inProgress); }
 
+  public Optional<BetterBlockPos> getPlanningStart() { return inProgress == null ? Optional.empty() : Optional.ofNullable(activePlanningStart); }
+
   public boolean isSafeToCancel() {
     if (current == null) {
       return !baritone.getElytraProcess().isActive() || baritone.getElytraProcess().isSafeToCancel();
@@ -325,12 +349,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
   @Override
   public boolean cancelEverything() {
-    boolean doIt = isSafeToCancel();
-    if (doIt) {
-      secretInternalSegmentCancel();
-    }
+    secretInternalSegmentCancel();
     baritone.getPathingControlManager().cancelEverything(); // regardless of if we can stop the current segment, we can still stop the processes
-    return doIt;
+    return true;
   }
 
   public boolean calcFailedLastTick() { // NOT exposed on public api
@@ -340,6 +361,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   public void softCancelIfSafe() {
     synchronized (pathPlanLock) {
       getInProgress().ifPresent(AbstractNodeCostSearch::cancel); // only cancel ours
+      activePlanningStart = null;
       if (!isSafeToCancel()) {
         return;
       }
@@ -355,6 +377,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     queuePathEvent(PathEvent.CANCELED);
     synchronized (pathPlanLock) {
       getInProgress().ifPresent(AbstractNodeCostSearch::cancel);
+      activePlanningStart = null;
       if (current != null) {
         current = null;
         next = null;
@@ -370,6 +393,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     secretInternalSegmentCancel();
     synchronized (pathCalcLock) {
       inProgress = null;
+      activePlanningStart = null;
     }
   }
 
@@ -489,11 +513,12 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       primaryTimeout = Baritone.settings().planAheadPrimaryTimeoutMS.value;
       failureTimeout = Baritone.settings().planAheadFailureTimeoutMS.value;
     }
-    AbstractNodeCostSearch pathfinder = createPathfinder(start, goal, current == null ? null : current.getPath(), context);
+    AbstractNodeCostSearch pathfinder = createPathfinder(start, goal, previousPathForFavoring(start), context);
     if (!Objects.equals(pathfinder.getGoal(), goal)) { // will return the exact same object if simplification didn't happen
       logDebug("Simplifying " + goal.getClass() + " to GoalXZ due to distance");
     }
     pathfinder.setPublicationSink(result -> acceptIncumbent(pathfinder, result));
+    activePlanningStart = new BetterBlockPos(start);
     inProgress = pathfinder;
     Baritone.getExecutor().execute(() -> {
       if (talkAboutIt) {
@@ -506,10 +531,20 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         synchronized (pathCalcLock) {
           if (inProgress == pathfinder) {
             inProgress = null;
+            activePlanningStart = null;
           }
         }
       }
     });
+  }
+
+  private IPath previousPathForFavoring(BlockPos start) {
+    if (current == null) {
+      return null;
+    }
+    IPath path = current.getPath();
+    BetterBlockPos startPos = new BetterBlockPos(start);
+    return !path.getDest().equals(startPos) && path.positions().contains(startPos) ? null : path;
   }
 
   private void acceptIncumbent(AbstractNodeCostSearch pathfinder, PathCalculationResult result) {
@@ -530,7 +565,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
     Optional<PathExecutor> executor = result.getPath().map(p -> new PathExecutor(PathingBehavior.this, p));
     if (executor.isEmpty()) {
-      acceptEmptyCalculation(result, finalResult);
+      acceptEmptyCalculation(result, requestedStart, finalResult);
       return;
     }
     PathExecutor candidate = executor.get();
@@ -553,11 +588,12 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
   }
 
-  private void acceptEmptyCalculation(PathCalculationResult result, boolean finalResult) {
+  private void acceptEmptyCalculation(PathCalculationResult result, BlockPos requestedStart, boolean finalResult) {
     if (!finalResult || result.getType() == PathCalculationResult.Type.CANCELLATION || result.getType() == PathCalculationResult.Type.EXCEPTION) {
       return;
     }
     if (current == null) {
+      logDirect("Path calculation failed from " + requestedStart + " to " + goal + " (" + result.getType() + ")");
       queuePathEvent(PathEvent.CALC_FAILED);
     } else if (next == null) {
       queuePathEvent(PathEvent.NEXT_CALC_FAILED);
@@ -575,6 +611,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       resetEstimatedTicksToGoal(path.getSrc());
       return CandidateDisposition.EXECUTING;
     }
+    if (tryReplaceCurrentSuffix(candidate)) {
+      return CandidateDisposition.EXECUTING;
+    }
     if (path.getSrc().equals(current.getPath().getDest())) {
       return queueFutureCandidate(candidate);
     }
@@ -582,6 +621,31 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       return queueFutureCandidate(candidate);
     }
     return CandidateDisposition.REJECTED;
+  }
+
+  private boolean tryReplaceCurrentSuffix(PathExecutor candidate) {
+    if (!Baritone.settings().splicePath.value) {
+      return false;
+    }
+    Optional<PathExecutor> replacement = current.tryReplaceSuffix(candidate, current.getPosition() + SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE);
+    if (replacement.isEmpty()) {
+      return false;
+    }
+    if (!suffixReplacementIsWorthwhile(candidate.getPath(), replacement.get().getPath())) {
+      return false;
+    }
+    logDebug("Replacing current path suffix from " + candidate.getPath().getSrc() + " to " + candidate.getPath().getDest());
+    current = replacement.get();
+    next = null;
+    queuePathEvent(PathEvent.SPLICING_ONTO_NEXT_EARLY);
+    return true;
+  }
+
+  private boolean suffixReplacementIsWorthwhile(IPath candidate, IPath replacement) {
+    if (goal.isInGoal(candidate.getDest()) || improvesBeyond(candidate, current.getPath())) {
+      return true;
+    }
+    return replacement.ticksRemainingFrom(current.getPosition()) + SUFFIX_REPLACEMENT_COST_EPSILON < current.getPath().ticksRemainingFrom(current.getPosition());
   }
 
   private CandidateDisposition queueFutureCandidate(PathExecutor candidate) {

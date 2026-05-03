@@ -1,6 +1,7 @@
 package baritone.process.elytra;
 
 import baritone.api.behavior.look.ITickableAimProcessor;
+import baritone.control.RotationGovernor;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -16,10 +17,11 @@ final class ElytraSolverContext {
   final boolean ignoreLava;
   final ElytraFireworkBoost boost;
   final ITickableAimProcessor aimProcessor;
+  final RotationGovernor rotationGovernor;
   final ElytraControlDecision control;
 
   ElytraSolverContext(ElytraPath path, int playerNear, Vec3 start, Vec3 motion, AABB boundingBox, boolean ignoreLava, ElytraFireworkBoost boost, ITickableAimProcessor aimProcessor,
-    ElytraControlDecision control) {
+    RotationGovernor rotationGovernor, ElytraControlDecision control) {
     this.path = path;
     this.playerNear = playerNear;
     this.start = start;
@@ -28,6 +30,7 @@ final class ElytraSolverContext {
     this.ignoreLava = ignoreLava;
     this.boost = boost;
     this.aimProcessor = aimProcessor;
+    this.rotationGovernor = rotationGovernor;
     this.control = control;
   }
 

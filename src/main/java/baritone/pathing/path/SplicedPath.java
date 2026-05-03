@@ -82,4 +82,25 @@ public class SplicedPath extends PathBase {
     movements.addAll(second.movements().subList(positionInSecond, second.length() - 1));
     return Optional.of(new SplicedPath(positions, movements, first.getNumNodesConsidered() + second.getNumNodesConsidered(), first.getGoal()));
   }
+
+  public static Optional<SplicedPath> tryReplaceSuffix(IPath prefix, IPath replacement, int minimumAnchorIndex) {
+    if (prefix == null || replacement == null || replacement.length() < 2) {
+      return Optional.empty();
+    }
+    int anchor = prefix.positions().indexOf(replacement.getSrc());
+    if (anchor < minimumAnchorIndex) {
+      return Optional.empty();
+    }
+    HashSet<BetterBlockPos> retainedPrefix = new HashSet<>(prefix.positions().subList(0, anchor + 1));
+    for (int i = 1; i < replacement.length(); i++) {
+      if (retainedPrefix.contains(replacement.positions().get(i))) {
+        return Optional.empty();
+      }
+    }
+    List<BetterBlockPos> positions = new ArrayList<>(prefix.positions().subList(0, anchor + 1));
+    List<IMovement> movements = new ArrayList<>(prefix.movements().subList(0, anchor));
+    positions.addAll(replacement.positions().subList(1, replacement.length()));
+    movements.addAll(replacement.movements());
+    return Optional.of(new SplicedPath(positions, movements, prefix.getNumNodesConsidered() + replacement.getNumNodesConsidered(), prefix.getGoal()));
+  }
 }

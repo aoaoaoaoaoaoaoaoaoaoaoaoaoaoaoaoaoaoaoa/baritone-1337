@@ -47,6 +47,9 @@ public class MovementAscend extends Movement {
   }
 
   public static double cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
+    if (!MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z)) {
+      return COST_INF;
+    }
     BlockState toPlace = context.get(destX, y, destZ);
     double additionalPlacementCost = 0;
     if (!MovementHelper.canWalkOn(context, destX, y, destZ, toPlace)) {
@@ -141,7 +144,7 @@ public class MovementAscend extends Movement {
 
   @Override
   public MovementState updateState(MovementState state) {
-    if (ctx.playerFeet().y < src.y) {
+    if (ctx.playerFeet().y < src.y && !shoreExitFromSurfaceEnvelope()) {
       // this check should run even when in preparing state (breaking blocks)
       return state.setStatus(MovementStatus.UNREACHABLE);
     }
@@ -219,6 +222,14 @@ public class MovementAscend extends Movement {
       }
     }
     return true;
+  }
+
+  private boolean shoreExitFromSurfaceEnvelope() {
+    if (dest.y <= src.y || dest.x == src.x && dest.z == src.z) {
+      return false;
+    }
+    return MovementHelper.surfaceSwimEnvelopeCell(ctx, ctx.playerFeet()) && MovementHelper.surfaceSwimCell(ctx, src) && !MovementHelper.isWater(ctx, dest)
+      && MovementHelper.canWalkOn(ctx, dest.below());
   }
 
   @Override

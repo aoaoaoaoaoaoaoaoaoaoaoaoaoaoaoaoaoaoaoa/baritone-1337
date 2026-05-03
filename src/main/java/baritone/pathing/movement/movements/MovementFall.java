@@ -183,7 +183,7 @@ public class MovementFall extends Movement {
     // only break if one of the first three needs to be broken
     // specifically ignore the last one which might be water
     for (int i = 0; i < 4 && i < positionsToBreak.length; i++) {
-      if (!MovementHelper.canWalkThrough(ctx, positionsToBreak[i])) {
+      if (!MovementHelper.canMoveThrough(ctx, positionsToBreak[i])) {
         return super.prepared(state);
       }
     }

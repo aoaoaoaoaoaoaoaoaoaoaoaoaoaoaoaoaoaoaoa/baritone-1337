@@ -102,6 +102,8 @@ public final class PathRenderer implements IRenderer {
 
     // If there is a path calculation currently running, render the path calculation process
     behavior.getInProgress().ifPresent(currentlyRunning -> {
+      behavior.getPlanningStart().ifPresent(start -> drawManySelectionBoxes(view, ctx.player(), Collections.singletonList(start), settings.colorBestPathSoFar.value));
+
       currentlyRunning.bestPathSoFar().ifPresent(p -> {
         drawPath(view, p.positions(), 0, settings.colorBestPathSoFar.value, settings.fadePath.value, 10, 20);
       });

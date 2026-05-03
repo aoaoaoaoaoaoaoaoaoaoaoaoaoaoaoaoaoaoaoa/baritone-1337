@@ -497,9 +497,9 @@ public final class Settings {
   public final Setting<Integer> costVerificationLookahead = new Setting<>(5);
 
   /**
-   * Static cutoff factor. 0.9 means cut off the last 10% of all paths, regardless of chunk load state
+   * Static cutoff factor. 0.75 means cut off the last 25% of all paths, regardless of chunk load state
    */
-  public final Setting<Double> pathCutoffFactor = new Setting<>(0.9);
+  public final Setting<Double> pathCutoffFactor = new Setting<>(0.75);
 
   /**
    * Only apply static cutoff for paths of at least this length (in terms of number of movements)
@@ -517,24 +517,24 @@ public final class Settings {
   public final Setting<Boolean> pathingEarlyIncumbentExecution = new Setting<>(true);
 
   /**
-   * Keep the background planner hot while a path is executing, extending from the committed segment tail instead of waiting for the tail to be imminent.
+   * Keep the background planner hot while a path is executing, refining from a near-future anchor instead of waiting for the tail to be imminent.
    */
   public final Setting<Boolean> pathingContinuousPlanning = new Setting<>(true);
 
   /**
    * Worker-thread interval between materialized incumbent path publications. Set to 0 to suppress incumbent publication.
    */
-  public final Setting<Long> pathingIncumbentIntervalMS = new Setting<>(250L);
+  public final Setting<Long> pathingIncumbentIntervalMS = new Setting<>(100L);
 
   /**
    * Do not execute an incumbent shorter than this many path positions unless it already reaches the goal.
    */
-  public final Setting<Integer> pathingMinIncumbentLength = new Setting<>(20);
+  public final Setting<Integer> pathingMinIncumbentLength = new Setting<>(12);
 
   /**
    * Required heuristic improvement before replacing a currently executing or queued segment with a newly published incumbent.
    */
-  public final Setting<Double> pathingIncumbentHeuristicMargin = new Setting<>(24D);
+  public final Setting<Double> pathingIncumbentHeuristicMargin = new Setting<>(6D);
 
   /**
    * How far are you allowed to fall onto solid ground (without a water bucket)?

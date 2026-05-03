@@ -75,8 +75,7 @@ public interface IPathingBehavior extends IBehavior {
    * <p>
    * Basically, "MAKE IT STOP".
    *
-   * @return Whether or not the pathing behavior was canceled. All processes are guaranteed to be canceled, but the
-   * PathingBehavior might be in the middle of an uncancelable action like a parkour jump
+   * @return Always true after the executor and all controlling processes have been axed.
    */
   boolean cancelEverything();
 

@@ -16,12 +16,15 @@ import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.phys.Vec3;
 
 public class MovementPillar extends Movement {
+  private static final float WATER_COLUMN_ASCENT_PITCH = -4F;
+
   public MovementPillar(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
     super(baritone, start, end, new BetterBlockPos[]{start.above(2)}, start);
   }
@@ -58,10 +61,10 @@ public class MovementPillar extends Movement {
       return COST_INF;
     }
     BlockState srcUp = null;
-    if (MovementHelper.isWater(toBreak) && MovementHelper.isWater(fromState)) { // TODO should this also be allowed if toBreakBlock is air?
+    if (MovementHelper.isWater(fromState)) {
       srcUp = context.get(x, y + 1, z);
-      if (MovementHelper.isWater(srcUp)) {
-        return LADDER_UP_ONE_COST; // allow ascending pillars of water, but only if we're already in one
+      if (MovementHelper.canSwimThrough(context, fromState) && MovementHelper.canSwimThrough(context, srcUp) && MovementHelper.canMoveThrough(context, x, y + 2, z, toBreak)) {
+        return context.costs.waterWalkCost(); // explicit surfacing leg; horizontal fast-swim is reserved for top-level water
       }
     }
     double placeCost = 0;
@@ -153,15 +156,17 @@ public class MovementPillar extends Movement {
 
     BlockState fromDown = BlockStateInterface.get(ctx, src);
     if (MovementHelper.isWater(fromDown) && MovementHelper.isWater(ctx, dest)) {
-      // stay centered while swimming up a water column
-      state.setTarget(new MovementState.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()), false));
-      Vec3 destCenter = VecUtils.getBlockPosCenter(dest);
-      if (Math.abs(ctx.player().position().x - destCenter.x) > 0.2 || Math.abs(ctx.player().position().z - destCenter.z) > 0.2) {
-        state.setInput(Input.MOVE_FORWARD, true);
-      }
-      if (ctx.playerFeet().equals(dest)) {
+      if (waterColumnAscentComplete()) {
         return state.setStatus(MovementStatus.SUCCESS);
       }
+      // Aim upward and keep forward motion. The liquid controller owns the altitude actuator: held jump while far below the surface, one-tick taps near the breathing band.
+      Vec3 destCenter = VecUtils.getBlockPosCenter(dest);
+      Rotation yaw =
+        horizontalDistanceSq(ctx.player().position(), destCenter) > 0.04D ? RotationUtils.calcRotationFromVec3d(ctx.playerHead(), destCenter, ctx.playerRotations()) : ctx.playerRotations();
+      state.setTarget(new MovementState.MovementTarget(new Rotation(yaw.getYaw(), WATER_COLUMN_ASCENT_PITCH), true));
+      state.setInput(Input.JUMP, false);
+      state.setInput(Input.MOVE_FORWARD, true);
+      state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value);
       return state;
     }
     boolean ladder = fromDown.getBlock() == Blocks.LADDER || fromDown.getBlock() == Blocks.VINE;
@@ -244,6 +249,14 @@ public class MovementPillar extends Movement {
   }
 
   @Override
+  protected boolean safeToCancel(MovementState state) {
+    if (submergedWaterColumnAscent()) {
+      return false;
+    }
+    return super.safeToCancel(state);
+  }
+
+  @Override
   protected boolean prepared(MovementState state) {
     if (ctx.playerFeet().equals(src) || ctx.playerFeet().equals(src.below())) {
       Block block = BlockStateInterface.getBlock(ctx, src.below());
@@ -255,5 +268,20 @@ public class MovementPillar extends Movement {
       return true;
     }
     return super.prepared(state);
+  }
+
+  private boolean submergedWaterColumnAscent() {
+    return dest.y > src.y && dest.x == src.x && dest.z == src.z && MovementHelper.isWater(BlockStateInterface.get(ctx, src)) && MovementHelper.isWater(ctx, dest)
+      && ctx.player().isEyeInFluid(FluidTags.WATER) && !waterColumnAscentComplete();
+  }
+
+  private boolean waterColumnAscentComplete() {
+    return ctx.playerFeet().getY() >= dest.y;
+  }
+
+  private static double horizontalDistanceSq(Vec3 a, Vec3 b) {
+    double dx = a.x - b.x;
+    double dz = a.z - b.z;
+    return dx * dx + dz * dz;
   }
 }

@@ -12,6 +12,8 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.RotationUtils;
 import baritone.api.utils.input.Input;
+import baritone.control.RotationGovernor;
+import baritone.control.ScalarGovernorSpec;
 import baritone.process.ElytraProcess;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.accessor.IFireworkRocketEntity;
@@ -46,6 +48,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 public final class ElytraBehavior implements ElytraPathManager.Host, ElytraSolver.CollisionProbe {
+  private static final ScalarGovernorSpec ELYTRA_YAW_GOVERNOR = new ScalarGovernorSpec(1.5, 0.32, 8, 0.25, 0.32, 6);
+
   private final Baritone baritone;
   private final IPlayerContext ctx;
 
@@ -57,6 +61,7 @@ public final class ElytraBehavior implements ElytraPathManager.Host, ElytraSolve
   private final ElytraRenderer renderer;
   private final ElytraSolver angleSolver;
   private final ElytraGlideController glideController;
+  private final RotationGovernor rotationGovernor;
   private final ElytraTelemetry telemetry;
 
   /**
@@ -109,6 +114,7 @@ public final class ElytraBehavior implements ElytraPathManager.Host, ElytraSolve
     this.launchFireworkArmed = launchMode.launchFirework();
     this.renderer = new ElytraRenderer();
     this.glideController = new ElytraGlideController();
+    this.rotationGovernor = new RotationGovernor(ELYTRA_YAW_GOVERNOR, ScalarGovernorSpec.IDENTITY);
     this.solverExecutor = Executors.newSingleThreadExecutor();
     this.nextTickBoostCounter = new int[2];
 
@@ -321,7 +327,7 @@ public final class ElytraBehavior implements ElytraPathManager.Host, ElytraSolve
     if (telemetry != null) telemetry.tick(solverContext, solution, landingMode);
     debugOverlay(solverContext, solution);
 
-    baritone.getLookBehavior().updateTarget(solution.rotation(), false);
+    baritone.getLookBehavior().updateTarget(rotationGovernor.govern(solution.rotation()), false);
 
     if (!solution.solvedPitch()) {
       logVerbose("no safe pitch solution");
@@ -371,7 +377,7 @@ public final class ElytraBehavior implements ElytraPathManager.Host, ElytraSolve
     Vec3 start = ctx.playerFeetAsVec();
     Vec3 motion = ctx.playerMotion();
     ElytraControlDecision control = glideController.decide(policy, path, near, start, motion, boost, landingMode, recoveryFloorY(path, near, start), !async);
-    return new ElytraSolverContext(path, near, start, motion, ctx.player().getBoundingBox(), ctx.player().isInLava(), boost, aim, control);
+    return new ElytraSolverContext(path, near, start, motion, ctx.player().getBoundingBox(), ctx.player().isInLava(), boost, aim, rotationGovernor.fork(), control);
   }
 
   private double recoveryFloorY(ElytraPath path, int near, Vec3 start) {

@@ -314,9 +314,9 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         final boolean antiCheat = settings.antiCheatCompatibility.value;
         final boolean blockFreeLook = settings.blockFreeLook.value;
 
-        if (ctx.player().isFallFlying()) {
-          // always need to set angles while flying
-          return settings.elytraFreeLook.value ? SERVER : CLIENT;
+        if (ctx.player().isFallFlying() || ctx.player().isInWater() || ctx.player().isSwimming()) {
+          // Elytra and water physics are client-rotation-sensitive. Silent free-look corrupts the movement vector.
+          return CLIENT;
         } else if (settings.freeLook.value) {
           // Regardless of if antiCheatCompatibility is enabled, if a blockInteract is requested then the player
           // rotation needs to be set somehow, otherwise Baritone will halt since objectMouseOver() will just be

@@ -63,6 +63,9 @@ public class MovementTraverse extends Movement {
   public static double cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
     BlockState pb0 = context.get(destX, y + 1, destZ);
     BlockState pb1 = context.get(destX, y, destZ);
+    if (!MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z) || !MovementHelper.canHorizontalWaterMoveThrough(context, destX, y, destZ, pb1, pb0)) {
+      return COST_INF;
+    }
     BlockState destOn = context.get(destX, y - 1, destZ);
     boolean hasFacts = facts != null && facts.matches(x, y, z);
     BlockState srcDown = hasFacts ? facts.srcDown : context.get(x, y - 1, z);
@@ -74,7 +77,7 @@ public class MovementTraverse extends Movement {
       boolean water = false;
       boolean sneaking = false;
       if (MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1)) {
-        WC = context.costs.waterCost(MovementHelper.isDeepWater(pb1, destOn, pb0));
+        WC = context.costs.waterCost(MovementHelper.hasSurfaceSwimSpan(context, destX, y, destZ, destX - x, destZ - z));
         water = true;
       } else {
         if (destOn.getBlock() == Blocks.SOUL_SAND) {
@@ -91,11 +94,11 @@ public class MovementTraverse extends Movement {
           WC += (SNEAK_ONE_BLOCK_COST - WALK_ONE_BLOCK_COST) / 2;
         }
       }
-      double hardness1 = MovementHelper.getMiningDurationTicks(context, destX, y, destZ, pb1, false);
+      double hardness1 = MovementHelper.movementPassageCost(context, destX, y, destZ, pb1, false);
       if (hardness1 >= COST_INF) {
         return COST_INF;
       }
-      double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+      double hardness2 = MovementHelper.movementPassageCost(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
       if (hardness1 == 0 && hardness2 == 0) {
         if (!water && !sneaking && context.movement.canSprint()) {
           // If there's nothing in the way, and this isn't water, and we aren't sneak placing
@@ -124,12 +127,12 @@ public class MovementTraverse extends Movement {
         if (placeCost >= COST_INF) {
           return COST_INF;
         }
-        double hardness1 = MovementHelper.getMiningDurationTicks(context, destX, y, destZ, pb1, false);
+        double hardness1 = MovementHelper.movementPassageCost(context, destX, y, destZ, pb1, false);
         if (hardness1 >= COST_INF) {
           return COST_INF;
         }
-        double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
-        double WC = throughWater ? context.costs.waterCost(MovementHelper.isDeepWater(pb1, destOn, pb0)) : WALK_ONE_BLOCK_COST;
+        double hardness2 = MovementHelper.movementPassageCost(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+        double WC = throughWater ? context.costs.waterCost(MovementHelper.hasSurfaceSwimSpan(context, destX, y, destZ, destX - x, destZ - z)) : WALK_ONE_BLOCK_COST;
         for (int i = 0; i < 5; i++) {
           int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepX();
           int againstY = y - 1 + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepY();
@@ -246,10 +249,10 @@ public class MovementTraverse extends Movement {
     }
 
     if (isTheBridgeBlockThere) {
-      if (feet.equals(dest)) {
+      if (playerAtDest()) {
         return state.setStatus(MovementStatus.SUCCESS);
       }
-      if (Baritone.settings().overshootTraverse.value && (feet.equals(dest.offset(getDirection())) || feet.equals(dest.offset(getDirection()).offset(getDirection())))) {
+      if (Baritone.settings().overshootTraverse.value && (playerAt(dest.offset(getDirection())) || playerAt(dest.offset(getDirection()).offset(getDirection())))) {
         return state.setStatus(MovementStatus.SUCCESS);
       }
       Block low = BlockStateInterface.get(ctx, src).getBlock();
@@ -368,4 +371,5 @@ public class MovementTraverse extends Movement {
     }
     return super.prepared(state);
   }
+
 }

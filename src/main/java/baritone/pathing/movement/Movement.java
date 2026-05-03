@@ -92,7 +92,33 @@ public abstract class Movement implements IMovement, MovementHelper {
   }
 
   protected boolean playerInValidPosition() {
-    return getValidPositions().contains(ctx.playerFeet()) || getValidPositions().contains(((PathingBehavior) baritone.getPathingBehavior()).pathStart());
+    return acceptsPosition(ctx.playerFeet()) || getValidPositions().contains(((PathingBehavior) baritone.getPathingBehavior()).pathStart());
+  }
+
+  public final boolean acceptsPosition(BlockPos pos) {
+    if (getValidPositions().contains(pos)) {
+      return true;
+    }
+    for (BlockPos target : getValidPositions()) {
+      if (surfaceEquivalent(pos, target)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  protected final boolean playerAtDest() {
+    return playerAt(dest);
+  }
+
+  protected final boolean playerAt(BlockPos target) {
+    BlockPos feet = ctx.playerFeet();
+    return feet.equals(target) || surfaceEquivalent(feet, target);
+  }
+
+  private boolean surfaceEquivalent(BlockPos feet, BlockPos target) {
+    return feet.getX() == target.getX() && feet.getZ() == target.getZ() && feet.getY() + 1 == target.getY() && MovementHelper.surfaceSwimEnvelopeCell(ctx, feet)
+      && MovementHelper.surfaceSwimCell(ctx, target);
   }
 
   /**
@@ -115,6 +141,10 @@ public abstract class Movement implements IMovement, MovementHelper {
     if (ctx.player().isInWall()) {
       ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, pos)));
       currentState.setInput(Input.CLICK_LEFT, true);
+    }
+
+    if (baritone instanceof Baritone b && b.getPlayerTelemetryBehavior().active()) {
+      b.getPlayerTelemetryBehavior().recordMovementControl(this, currentState);
     }
 
     // If the movement target has to force the new rotations, or we aren't using silent move, then force the rotations
@@ -142,7 +172,7 @@ public abstract class Movement implements IMovement, MovementHelper {
       if (!ctx.world().getEntitiesOfClass(FallingBlockEntity.class, new AABB(0, 0, 0, 1, 1.1, 1).move(blockPos)).isEmpty() && Baritone.settings().pauseMiningForFallingBlocks.value) {
         return false;
       }
-      if (!MovementHelper.canWalkThrough(ctx, blockPos)) { // can't break air, so don't try
+      if (!MovementHelper.canMoveThrough(ctx, blockPos)) { // can't break air, so don't try
         somethingInTheWay = true;
         MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, blockPos));
         Optional<Rotation> reachable = RotationUtils.reachable(ctx, blockPos, ctx.playerController().getBlockReachDistance());
@@ -238,7 +268,7 @@ public abstract class Movement implements IMovement, MovementHelper {
     }
     List<BlockPos> result = new ArrayList<>();
     for (BetterBlockPos positionToBreak : positionsToBreak) {
-      if (!MovementHelper.canWalkThrough(bsi, positionToBreak.x, positionToBreak.y, positionToBreak.z)) {
+      if (!MovementHelper.canMoveThrough(bsi, positionToBreak.x, positionToBreak.y, positionToBreak.z)) {
         result.add(positionToBreak);
       }
     }
