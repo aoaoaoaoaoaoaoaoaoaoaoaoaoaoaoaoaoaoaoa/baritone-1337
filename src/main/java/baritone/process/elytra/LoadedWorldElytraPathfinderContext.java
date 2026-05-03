@@ -21,8 +21,9 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 public final class LoadedWorldElytraPathfinderContext implements ElytraPathfinderContext {
-  private static final int WAYPOINT_SPACING = 48;
+  private static final int WAYPOINT_SPACING = 32;
   private static final int LOAD_PROBE_SPACING = 16;
+  private static final int TERRAIN_CORRIDOR_RADIUS = 16;
 
   private final IPlayerContext ctx;
   private final ElytraFlightPolicy policy;
@@ -77,10 +78,6 @@ public final class LoadedWorldElytraPathfinderContext implements ElytraPathfinde
     int terrainCeiling = loadedTerrainCeiling(src, dst, flatDistance);
     int cruiseY = policy.cruiseY(src.getY(), dst.getY(), terrainCeiling);
 
-    if (Math.abs(src.getY() - cruiseY) > 8) {
-      points.add(new BetterBlockPos(src.getX(), cruiseY, src.getZ()));
-    }
-
     if (flatDistance < 1) {
       points.add(new BetterBlockPos(dst));
       return new ElytraPathSegment(true, dedupe(points));
@@ -120,7 +117,21 @@ public final class LoadedWorldElytraPathfinderContext implements ElytraPathfinde
       if (!hasChunkAtBlock(x, z)) {
         break;
       }
-      max = Math.max(max, world.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z));
+      max = Math.max(max, corridorCeiling(world, x, z));
+    }
+    return max;
+  }
+
+  private int corridorCeiling(Level world, int x, int z) {
+    int max = policy.minY();
+    for (int dx = -TERRAIN_CORRIDOR_RADIUS; dx <= TERRAIN_CORRIDOR_RADIUS; dx += 8) {
+      for (int dz = -TERRAIN_CORRIDOR_RADIUS; dz <= TERRAIN_CORRIDOR_RADIUS; dz += 8) {
+        int px = x + dx;
+        int pz = z + dz;
+        if (hasChunkAtBlock(px, pz)) {
+          max = Math.max(max, world.getHeight(Heightmap.Types.MOTION_BLOCKING, px, pz));
+        }
+      }
     }
     return max;
   }

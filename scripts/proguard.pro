@@ -1,6 +1,4 @@
--keepattributes Signature
--keepattributes *Annotation*
--keepattributes InnerClasses
+-keepattributes Signature,*Annotation*,InnerClasses,SourceFile,LineNumberTable
 
 -optimizationpasses 5
 

@@ -1374,6 +1374,11 @@ public final class Settings {
   public final Setting<Boolean> notificationOnMineFail = new Setting<>(true);
 
   /**
+   * Master switch for all elytra pathing and transport promotion.
+   */
+  public final Setting<Boolean> elytraEnabled = new Setting<>(true);
+
+  /**
    * The number of ticks of elytra movement to simulate while firework boost is not active. Higher values are
    * computationally more expensive.
    */
@@ -1391,10 +1396,10 @@ public final class Settings {
   public final Setting<Double> elytraFireworkSpeed = new Setting<>(1.2);
 
   /**
-   * Firework use policy for elytra flight. GLIDE is the default firework-free energy-cycling mode; RECOVERY only boosts
-   * when the solver is out of safe unboosted options; SPEED maintains the configured firework cruise speed.
+   * Firework use policy for elytra flight. RECOVERY is the default high-quality mode: energy-cycle when possible, boost when
+   * altitude control is failing. SPEED maintains the configured firework cruise speed.
    */
-  public final Setting<ElytraFireworkPolicy> elytraFireworkPolicy = new Setting<>(ElytraFireworkPolicy.GLIDE);
+  public final Setting<ElytraFireworkPolicy> elytraFireworkPolicy = new Setting<>(ElytraFireworkPolicy.RECOVERY);
 
   /**
    * The delay after the player's position is set-back by the server that a firework may be automatically deployed.
@@ -1425,6 +1430,11 @@ public final class Settings {
    * Renders the best elytra flight path that was simulated each tick.
    */
   public final Setting<Boolean> elytraRenderSimulation = new Setting<>(true);
+
+  /**
+   * Displays the live elytra controller state in the actionbar.
+   */
+  public final Setting<Boolean> elytraDebugOverlay = new Setting<>(false);
 
   /**
    * Automatically path to and jump off of ledges to initiate elytra flight when grounded.

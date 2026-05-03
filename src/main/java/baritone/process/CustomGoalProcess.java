@@ -5,6 +5,7 @@ import baritone.api.pathing.goals.Goal;
 import baritone.api.process.ICustomGoalProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
+import baritone.transport.TransportModeSelector;
 import baritone.utils.BaritoneProcessHelper;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.chat.Component;
@@ -22,6 +23,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
   private Goal mostRecentGoal;
 
   private State state = new State.Idle();
+  private int transportSuppressionTicks;
 
   public CustomGoalProcess(Baritone baritone) {
     super(baritone);
@@ -59,16 +61,25 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
 
   @Override
   public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+    if (transportSuppressionTicks > 0) {
+      transportSuppressionTicks--;
+    }
     return switch (this.state) {
       case State.Idle() -> throw new IllegalStateException("Inactive CustomGoalProcess tick");
       case State.GoalSet(var goal) -> new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
       case State.PathRequested(var goal) -> {
         // return FORCE_REVALIDATE_GOAL_AND_PATH just once
         this.state = new State.Executing(goal);
+        if (tryTransportPromotion(goal)) {
+          yield new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+        }
         yield new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
       }
       case State.Executing(var goal) -> {
         if (calcFailed) {
+          if (tryTransportPromotion(goal)) {
+            yield new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+          }
           onLostControl();
           yield new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
@@ -84,9 +95,30 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
           }
           yield new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
+        if (tryTransportPromotion(goal)) {
+          yield new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+        }
         yield new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
       }
     };
+  }
+
+  private boolean tryTransportPromotion(Goal goal) {
+    if (transportSuppressionTicks > 0) {
+      return false;
+    }
+    TransportModeSelector.Decision decision = TransportModeSelector.select(baritone, goal);
+    if (decision instanceof TransportModeSelector.Decision.Elytra elytra) {
+      logDirect(String.format("Switching to elytra for %.0f block route", elytra.horizontalDistance()));
+      baritone.getElytraProcess().pathTo(elytra.destination(), elytra.launchMode(), goal);
+      this.state = new State.Idle();
+      return true;
+    }
+    return false;
+  }
+
+  public void suppressTransportPromotion(int ticks) {
+    transportSuppressionTicks = Math.max(transportSuppressionTicks, ticks);
   }
 
   @Override

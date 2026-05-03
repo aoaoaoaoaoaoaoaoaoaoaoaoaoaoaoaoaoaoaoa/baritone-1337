@@ -31,15 +31,12 @@ final class ElytraSolver {
 
   private final IPlayerContext ctx;
   private final ElytraPathfinderContext pathfinder;
-  private final ElytraFlightPolicy policy;
-  private final ElytraGlideController glideController = new ElytraGlideController();
   private final ElytraRenderer renderer;
   private final CollisionProbe collision;
 
-  ElytraSolver(IPlayerContext ctx, ElytraPathfinderContext pathfinder, ElytraFlightPolicy policy, ElytraRenderer renderer, CollisionProbe collision) {
+  ElytraSolver(IPlayerContext ctx, ElytraPathfinderContext pathfinder, ElytraRenderer renderer, CollisionProbe collision) {
     this.ctx = ctx;
     this.pathfinder = pathfinder;
-    this.policy = policy;
     this.renderer = renderer;
     this.collision = collision;
   }
@@ -55,7 +52,7 @@ final class ElytraSolver {
       int lookahead = relaxation == 0 ? 2 : 3;
       int minStep = playerNear;
 
-      for (int i = Math.min(playerNear + 20, path.size() - 1); i >= minStep; i--) {
+      for (int i = maxCandidateIndex(context, landingMode); i >= minStep; i--) {
         List<Pair<Vec3, Integer>> candidates = candidates(path, i, minStep, heights, relaxation);
 
         for (Pair<Vec3, Integer> candidate : candidates) {
@@ -63,6 +60,8 @@ final class ElytraSolver {
           Vec3 dest = candidate.first().add(0, augment, 0);
           if (landingMode) {
             dest = dest.add(0.5, 0.5, 0.5);
+          } else if (sameColumn(start, dest) && hasHorizontalLookahead(path, i, start)) {
+            continue;
           }
 
           if (augment != 0 && !canAugment(start, path, dest, i, lookahead, augment)) {
@@ -75,17 +74,43 @@ final class ElytraSolver {
             continue;
           }
 
-          float yaw = RotationUtils.calcRotationFromVec3d(start, dest, ctx.playerRotations()).getYaw();
-          Pair<Float, Boolean> pitch = solvePitch(context, dest, relaxation, landingMode);
+          PitchSelection pitch = solvePitch(context, dest, relaxation, landingMode);
           if (pitch == null) {
-            solution = new ElytraSolution(context, new Rotation(yaw, ctx.playerRotations().getPitch()), null, false, false);
+            float yaw = RotationUtils.calcRotationFromVec3d(start, dest, ctx.playerRotations()).getYaw();
+            solution = new ElytraSolution(context, new Rotation(yaw, ctx.playerRotations().getPitch()), null, false, false, "none", "none");
             continue;
           }
-          return new ElytraSolution(context, new Rotation(yaw, pitch.first()), dest, true, pitch.second());
+          float yaw = RotationUtils.calcRotationFromVec3d(start, pitch.yawTarget(), ctx.playerRotations()).getYaw();
+          return new ElytraSolution(context, new Rotation(yaw, pitch.pitch()), dest, true, pitch.forceFirework(), pitch.source(), pitch.fireworkReason());
         }
       }
     }
     return solution;
+  }
+
+  private static int maxCandidateIndex(ElytraSolverContext context, boolean landingMode) {
+    ElytraPath path = context.path;
+    int playerNear = landingMode ? path.size() - 1 : context.playerNear;
+    int max = Math.min(playerNear + 20, path.size() - 1);
+    if (!landingMode && playerNear + 1 < path.size() && context.start.y < path.get(playerNear + 1).y - 16) {
+      return Math.min(playerNear + 2, max);
+    }
+    return max;
+  }
+
+  private static boolean sameColumn(Vec3 start, Vec3 dest) {
+    double dx = dest.x - start.x;
+    double dz = dest.z - start.z;
+    return dx * dx + dz * dz < 4;
+  }
+
+  private static boolean hasHorizontalLookahead(ElytraPath path, int index, Vec3 start) {
+    for (int i = index + 1; i < Math.min(path.size(), index + 8); i++) {
+      if (!sameColumn(start, path.getVec(i))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private List<Pair<Vec3, Integer>> candidates(ElytraPath path, int i, int minStep, int[] heights, int relaxation) {
@@ -156,7 +181,7 @@ final class ElytraSolver {
     return pathfinder.raytrace(8, src, dst, ElytraPathfinderContext.Visibility.ALL);
   }
 
-  private Pair<Float, Boolean> solvePitch(ElytraSolverContext context, Vec3 goal, int relaxation, boolean landingMode) {
+  private PitchSelection solvePitch(ElytraSolverContext context, Vec3 goal, int relaxation, boolean landingMode) {
     boolean desperate = relaxation == 2;
     float goodPitch = RotationUtils.calcRotationFromVec3d(context.start, goal, ctx.playerRotations()).getPitch();
     FloatArrayList pitches = pitchesToSolveFor(goodPitch, desperate);
@@ -177,37 +202,72 @@ final class ElytraSolver {
     int ticks = desperate ? 3 : context.boost.isBoosted() ? Math.max(5, context.boost.guaranteedBoostTicks()) : settings.elytraSimulationTicks.value;
     tests.add(new IntTriple(ticks, context.boost.isBoosted() ? ticks : 0, 0));
 
-    Float glidePitch = glideController.pitch(policy, context, landingMode);
+    ElytraControlDecision control = context.control;
+    boolean emergencyFirework = control.firework();
+    String fireworkReason = control.fireworkReason();
+    Float glidePitch = control.pitch();
     if (glidePitch != null) {
-      FloatArrayList glidePitches = new FloatArrayList(1);
-      glidePitches.add(glidePitch);
-      Optional<PitchResult> glide = tests.stream().map(i -> solvePitch(context, goal, relaxation, glidePitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode))
-        .filter(Objects::nonNull).filter(result -> advancesToward(goal.subtract(context.start), result)).findFirst();
+      Vec3 yawTarget = controllerYawTarget(context, goal);
+      Optional<PitchResult> glide = tests.stream().map(i -> solveControllerPitch(context, yawTarget, glidePitch, i.ticks, i.ticksBoosted, i.ticksBoostDelay)).filter(Objects::nonNull).findFirst();
       if (glide.isPresent()) {
-        return new Pair<>(glide.get().pitch, false);
+        return new PitchSelection(glide.get().pitch, emergencyFirework, "glide:" + control.mode().name().toLowerCase(), fireworkReason, yawTarget);
       }
     }
 
     Optional<PitchResult> result =
       tests.stream().map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode)).filter(Objects::nonNull).findFirst();
     if (result.isPresent()) {
-      return new Pair<>(result.get().pitch, false);
+      return new PitchSelection(result.get().pitch, emergencyFirework, glidePitch == null ? "solver" : "solver:glide_unsafe", fireworkReason, goal);
     }
 
     if (desperate) {
       Optional<PitchResult> resultBoost = List.of(new IntTriple(ticks, 10, 3), new IntTriple(ticks, 10, 2), new IntTriple(ticks, 10, 1)).stream()
         .map(i -> solvePitch(context, goal, relaxation, pitches.iterator(), i.ticks, i.ticksBoosted, i.ticksBoostDelay, landingMode)).filter(Objects::nonNull).findFirst();
       if (resultBoost.isPresent()) {
-        return new Pair<>(resultBoost.get().pitch, true);
+        return new PitchSelection(resultBoost.get().pitch, true, "solver:boost_sim", "solver_boost", goal);
       }
     }
 
     return null;
   }
 
-  private static boolean advancesToward(Vec3 goalDelta, PitchResult result) {
-    Vec3 displacement = result.steps.get(result.steps.size() - 1);
-    return displacement.lengthSqr() > 0.01 && goalDelta.normalize().dot(displacement.normalize()) > 0.55;
+  private static Vec3 controllerYawTarget(ElytraSolverContext context, Vec3 fallback) {
+    Vec3 start = context.start;
+    ElytraPath path = context.path;
+    int max = Math.min(path.size() - 1, context.playerNear + 20);
+    Vec3 best = fallback;
+    double bestDistance = horizontalDistanceSqr(start, fallback);
+    for (int i = context.playerNear; i <= max; i++) {
+      Vec3 candidate = path.getVec(i);
+      double distance = horizontalDistanceSqr(start, candidate);
+      if (distance > bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    }
+    if (bestDistance > 16 * 16) {
+      return best;
+    }
+    Vec3 motion = context.motion.multiply(1, 0, 1);
+    if (motion.lengthSqr() > 1e-4) {
+      return start.add(motion.normalize().scale(128));
+    }
+    return best;
+  }
+
+  private static double horizontalDistanceSqr(Vec3 a, Vec3 b) {
+    double dx = a.x - b.x;
+    double dz = a.z - b.z;
+    return dx * dx + dz * dz;
+  }
+
+  private PitchResult solveControllerPitch(ElytraSolverContext context, Vec3 yawTarget, float pitch, int ticks, int ticksBoosted, int ticksBoostDelay) {
+    List<Vec3> displacement = simulate(context, yawTarget.subtract(context.start), pitch, ticks, ticksBoosted, ticksBoostDelay);
+    if (displacement == null) {
+      return null;
+    }
+    renderer.simulation(displacement);
+    return new PitchResult(pitch, 1, displacement);
   }
 
   private PitchResult solvePitch(ElytraSolverContext context, Vec3 goal, int relaxation, FloatIterator pitches, int ticks, int ticksBoosted, int ticksBoostDelay, boolean landingMode) {
@@ -348,5 +408,8 @@ final class ElytraSolver {
   }
 
   private record IntTriple(int ticks, int ticksBoosted, int ticksBoostDelay) {
+  }
+
+  private record PitchSelection(float pitch, boolean forceFirework, String source, String fireworkReason, Vec3 yawTarget) {
   }
 }

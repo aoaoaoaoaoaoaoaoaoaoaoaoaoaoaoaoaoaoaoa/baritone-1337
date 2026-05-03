@@ -44,6 +44,9 @@ public class ElytraCommand extends Command {
     }
 
     if (!args.hasAny()) {
+      if (!Baritone.settings().elytraEnabled.value) {
+        throw new CommandInvalidStateException("Elytra pathing is disabled by elytraEnabled");
+      }
       if (Baritone.settings().elytraTermsAccepted.value) {
         if (ctx.world().dimension() == Level.NETHER && detectOn2b2t()) {
           warn2b2t();
@@ -119,10 +122,9 @@ public class ElytraCommand extends Command {
       Component.literal("If you want Baritone to attempt to take off from the ground for you, you can enable the elytraAutoJump setting (not advisable on laggy servers!). ");
     gatekeep2.setStyle(gatekeep2.getStyle().withHoverEvent(new HoverEvent.ShowText(Component.literal(Baritone.settings().prefix.value + "set elytraAutoJump true"))));
     gatekeep.append(gatekeep2);
-    MutableComponent gatekeep3 =
-      Component.literal("Firework use is controlled by elytraFireworkPolicy: GLIDE for firework-free energy cycling, RECOVERY for emergency boosts, SPEED for routine speed maintenance. ");
+    MutableComponent gatekeep3 = Component.literal("Firework use is controlled by elytraFireworkPolicy: RECOVERY for energy cycling plus emergency boosts, SPEED for routine speed maintenance. ");
     gatekeep3.setStyle(gatekeep3.getStyle().withHoverEvent(
-      new HoverEvent.ShowText(Component.literal(Baritone.settings().prefix.value + "set elytraFireworkPolicy GLIDE\n" + Baritone.settings().prefix.value + "set elytraFireworkPolicy SPEED"))));
+      new HoverEvent.ShowText(Component.literal(Baritone.settings().prefix.value + "set elytraFireworkPolicy RECOVERY\n" + Baritone.settings().prefix.value + "set elytraFireworkPolicy SPEED"))));
     gatekeep.append(gatekeep3);
 
     if (ctx.world().dimension() == Level.NETHER) {

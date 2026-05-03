@@ -16,7 +16,8 @@ public record ElytraFlightPolicy(ResourceKey<Level> dimension, int minY, int max
   int landingSupportRadius, ElytraFireworkPolicy fireworkPolicy, boolean preferNativeNetherBackend) {
   private static final int NETHER_MIN_Y = 0;
   private static final int NETHER_MAX_Y_EXCLUSIVE = 128;
-  private static final int SKY_CRUISE_MARGIN = 80;
+  private static final int SKY_POWERED_CRUISE_MARGIN = 96;
+  private static final int SKY_ENERGY_CRUISE_MARGIN = 128;
 
   public static ElytraFlightPolicy capture(Level world) {
     ResourceKey<Level> dimension = world.dimension();
@@ -39,6 +40,10 @@ public record ElytraFlightPolicy(ResourceKey<Level> dimension, int minY, int max
     return new LoadedWorldElytraPathfinderContext(ctx, this);
   }
 
+  public int targetY(IPlayerContext ctx) {
+    return defaultTargetY;
+  }
+
   public boolean inBounds(BlockPos pos) {
     return pos.getY() >= minY && pos.getY() < maxYExclusive;
   }
@@ -48,8 +53,12 @@ public record ElytraFlightPolicy(ResourceKey<Level> dimension, int minY, int max
   }
 
   public int cruiseY(int srcY, int dstY, int loadedTerrainCeilingY) {
-    int terrainClearance = dimension == Level.NETHER ? 40 : SKY_CRUISE_MARGIN;
-    return clamp(Math.max(Math.max(cruiseFloorY, Math.max(srcY, dstY) + 48), loadedTerrainCeilingY + terrainClearance), minY + 16, maxYExclusive - 24);
+    int terrainClearance = terrainClearance();
+    return clamp(Math.max(Math.max(cruiseFloorY, Math.max(srcY, dstY)), loadedTerrainCeilingY + terrainClearance), minY + 16, maxYExclusive - 24);
+  }
+
+  public int terrainClearance() {
+    return dimension == Level.NETHER ? 40 : fireworkPolicy.energyGlide() ? SKY_ENERGY_CRUISE_MARGIN : SKY_POWERED_CRUISE_MARGIN;
   }
 
   public boolean safeLandingBlock(IPlayerContext ctx, BlockPos pos) {

@@ -43,6 +43,7 @@ public final class ElytraPathManager {
   private int maxPlayerNear;
   private int ticksNearUnchanged;
   private int playerNear;
+  private int nextSegmentBackoffTicks;
 
   ElytraPathManager(Host host) {
     this.host = host;
@@ -60,6 +61,9 @@ public final class ElytraPathManager {
       ticksNearUnchanged = 0;
     }
 
+    if (nextSegmentBackoffTicks > 0) {
+      nextSegmentBackoffTicks--;
+    }
     pathfindAroundObstacles();
     attemptNextSegment();
   }
@@ -71,6 +75,10 @@ public final class ElytraPathManager {
   public CompletableFuture<Void> pathToDestination(BlockPos from) {
     long start = System.nanoTime();
     return path0(from, host.destination(), UnaryOperator.identity()).thenRun(() -> {
+      if (path.isEmpty()) {
+        host.logDirect("Computed empty elytra path");
+        return;
+      }
       double distance = path.get(0).distanceTo(path.get(path.size() - 1));
       if (completePath) {
         host.logVerbose(String.format("Computed path (%.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
@@ -124,7 +132,13 @@ public final class ElytraPathManager {
     BetterBlockPos pathStart = path.get(afterIncl);
 
     path0(pathStart, host.destination(), segment -> segment.prepend(before.stream())).thenRun(() -> {
-      int recompute = path.size() - before.size() - 1;
+      int added = path.size() - before.size();
+      if (added <= 0) {
+        nextSegmentBackoffTicks = 20;
+        host.logVerbose("Waiting for more chunks before extending elytra route");
+        return;
+      }
+      int recompute = path.size() - added;
       double distance = path.get(0).distanceTo(path.get(recompute));
       if (completePath) {
         host.logVerbose(String.format("Computed path (%.1f blocks in %.4f seconds)", distance, (System.nanoTime() - start) / 1e9d));
@@ -155,6 +169,7 @@ public final class ElytraPathManager {
     playerNear = 0;
     ticksNearUnchanged = 0;
     maxPlayerNear = 0;
+    nextSegmentBackoffTicks = 0;
   }
 
   public ElytraPath getPath() { return path; }
@@ -217,7 +232,7 @@ public final class ElytraPathManager {
   }
 
   private void pathfindAroundObstacles() {
-    if (recalculating) {
+    if (recalculating || nextSegmentBackoffTicks > 0) {
       return;
     }
 
@@ -262,7 +277,7 @@ public final class ElytraPathManager {
   }
 
   private void attemptNextSegment() {
-    if (recalculating) {
+    if (recalculating || nextSegmentBackoffTicks > 0) {
       return;
     }
 

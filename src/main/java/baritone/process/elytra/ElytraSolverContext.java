@@ -16,8 +16,10 @@ final class ElytraSolverContext {
   final boolean ignoreLava;
   final ElytraFireworkBoost boost;
   final ITickableAimProcessor aimProcessor;
+  final ElytraControlDecision control;
 
-  ElytraSolverContext(ElytraPath path, int playerNear, Vec3 start, Vec3 motion, AABB boundingBox, boolean ignoreLava, ElytraFireworkBoost boost, ITickableAimProcessor aimProcessor) {
+  ElytraSolverContext(ElytraPath path, int playerNear, Vec3 start, Vec3 motion, AABB boundingBox, boolean ignoreLava, ElytraFireworkBoost boost, ITickableAimProcessor aimProcessor,
+    ElytraControlDecision control) {
     this.path = path;
     this.playerNear = playerNear;
     this.start = start;
@@ -26,6 +28,7 @@ final class ElytraSolverContext {
     this.ignoreLava = ignoreLava;
     this.boost = boost;
     this.aimProcessor = aimProcessor;
+    this.control = control;
   }
 
   @Override
@@ -37,11 +40,11 @@ final class ElytraSolverContext {
       return false;
     }
     return path == other.path && playerNear == other.playerNear && ignoreLava == other.ignoreLava && Objects.equals(start, other.start) && Objects.equals(motion, other.motion)
-      && Objects.equals(boundingBox, other.boundingBox) && Objects.equals(boost, other.boost);
+      && Objects.equals(boundingBox, other.boundingBox) && Objects.equals(boost, other.boost) && Objects.equals(control, other.control);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(System.identityHashCode(path), playerNear, start, motion, boundingBox, ignoreLava, boost);
+    return Objects.hash(System.identityHashCode(path), playerNear, start, motion, boundingBox, ignoreLava, boost, control);
   }
 }

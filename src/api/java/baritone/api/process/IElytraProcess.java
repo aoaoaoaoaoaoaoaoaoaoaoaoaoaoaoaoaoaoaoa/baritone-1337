@@ -14,6 +14,10 @@ public interface IElytraProcess extends IBaritoneProcess {
 
   void pathTo(BlockPos destination);
 
+  void pathTo(BlockPos destination, ElytraLaunchMode launchMode);
+
+  void pathTo(BlockPos destination, ElytraLaunchMode launchMode, Goal continuationGoal);
+
   void pathTo(Goal destination);
 
   /**

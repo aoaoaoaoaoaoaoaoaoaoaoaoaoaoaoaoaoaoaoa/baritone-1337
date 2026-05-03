@@ -23,6 +23,7 @@ final class ElytraRenderer {
   private final List<Pair<Vec3, Vec3>> blockedLines = new CopyOnWriteArrayList<>();
   private List<Vec3> simulationLine;
   private BlockPos aimPos;
+  private Vec3 aimTarget;
   private List<BetterBlockPos> visiblePath;
 
   void resetTick() {
@@ -31,6 +32,7 @@ final class ElytraRenderer {
     visiblePath = null;
     simulationLine = null;
     aimPos = null;
+    aimTarget = null;
   }
 
   void visiblePath(List<BetterBlockPos> visiblePath) {
@@ -39,6 +41,7 @@ final class ElytraRenderer {
 
   void aim(Vec3 target) {
     this.aimPos = new BetterBlockPos(target.x, target.y, target.z);
+    this.aimTarget = target;
   }
 
   void simulation(List<Vec3> simulationLine) {
@@ -54,9 +57,15 @@ final class ElytraRenderer {
     RenderContext view = RenderContext.capture(event);
     if (visiblePath != null) {
       PathRenderer.drawPath(view, visiblePath, 0, Color.RED, false, 0, 0, 0.0D);
+      renderRouteLine(view, visiblePath, settings);
     }
     if (aimPos != null) {
       PathRenderer.drawGoal(view, ctx, new GoalBlock(aimPos), Color.GREEN);
+    }
+    if (aimTarget != null) {
+      BufferBuilder bufferBuilder = IRenderer.startLines(new Color(0xFFD400), 0.75F);
+      IRenderer.emitLine(bufferBuilder, view, ctx.playerHead(), aimTarget, settings.pathRenderLineWidthPixels.value * 1.5F);
+      IRenderer.endLines(bufferBuilder, true);
     }
     if (!clearLines.isEmpty() && settings.elytraRenderRaytraces.value) {
       BufferBuilder bufferBuilder = IRenderer.startLines(Color.GREEN);
@@ -80,5 +89,18 @@ final class ElytraRenderer {
       }
       IRenderer.endLines(bufferBuilder, settings.renderPathIgnoreDepth.value);
     }
+  }
+
+  private static void renderRouteLine(RenderContext view, List<BetterBlockPos> path, Settings settings) {
+    if (path.size() < 2) {
+      return;
+    }
+    BufferBuilder bufferBuilder = IRenderer.startLines(new Color(0xFF2BD6), 0.8F);
+    for (int i = 0; i < path.size() - 1; i++) {
+      BetterBlockPos a = path.get(i);
+      BetterBlockPos b = path.get(i + 1);
+      IRenderer.emitLine(bufferBuilder, view, a.getCenter(), b.getCenter(), settings.pathRenderLineWidthPixels.value * 1.5F);
+    }
+    IRenderer.endLines(bufferBuilder, true);
   }
 }

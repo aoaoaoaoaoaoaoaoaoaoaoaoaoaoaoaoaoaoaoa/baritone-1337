@@ -1,7 +1,7 @@
 package baritone.api.utils;
 
 public enum ElytraFireworkPolicy {
-  GLIDE(false, false, false), RECOVERY(false, true, true), SPEED(true, true, true);
+  RECOVERY(false, true, true), SPEED(true, true, true);
 
   private final boolean routineBoosts;
   private final boolean forcedBoosts;
@@ -26,6 +26,6 @@ public enum ElytraFireworkPolicy {
   }
 
   public boolean energyGlide() {
-    return this == GLIDE;
+    return !routineBoosts;
   }
 }
