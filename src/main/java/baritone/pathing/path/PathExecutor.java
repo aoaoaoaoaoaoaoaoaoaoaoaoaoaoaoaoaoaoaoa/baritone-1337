@@ -11,6 +11,7 @@ import baritone.api.utils.input.Input;
 import baritone.behavior.PathingBehavior;
 import baritone.pathing.calc.AbstractNodeCostSearch;
 import baritone.pathing.movement.CalculationContext;
+import baritone.pathing.movement.LiquidLocomotionController;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.movements.*;
@@ -60,6 +61,7 @@ public class PathExecutor implements IPathExecutor, Helper {
 
   private final PathingBehavior behavior;
   private final IPlayerContext ctx;
+  private final LiquidLocomotionController liquidLocomotion;
 
   private boolean sprintNextTick;
 
@@ -69,6 +71,7 @@ public class PathExecutor implements IPathExecutor, Helper {
     this.path = path;
     this.flatValidPositions = flatValidPositions(path);
     this.pathIndexByPosition = pathIndexByPosition(path.positions());
+    this.liquidLocomotion = new LiquidLocomotionController(ctx);
     this.pathPosition = 0;
   }
 
@@ -87,6 +90,13 @@ public class PathExecutor implements IPathExecutor, Helper {
       return true; // stop bugging me, I'm done
     }
     Movement movement = (Movement) path.movements().get(pathPosition);
+    int projectedWaterPosition = liquidLocomotion.projectedWaterPosition(path, pathPosition);
+    if (projectedWaterPosition > pathPosition) {
+      pathPosition = projectedWaterPosition;
+      onChangeInPathPosition();
+      onTick();
+      return true;
+    }
     BetterBlockPos whereAmI = ctx.playerFeet();
     if (!movement.getValidPositions().contains(whereAmI)) {
       for (int i = 0; i < pathPosition && i < path.length(); i++) {//this happens for example when you lag out and get teleported back a couple blocks
@@ -211,7 +221,7 @@ public class PathExecutor implements IPathExecutor, Helper {
       clearKeys();
       return true;
     }
-    MovementStatus movementStatus = movement.update();
+    MovementStatus movementStatus = movement.update(liquidLocomotion, path, pathPosition);
     if (movementStatus == UNREACHABLE || movementStatus == FAILED) {
       logDebug("Movement returns status " + movementStatus);
       cancel();
@@ -638,6 +648,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         throw new IllegalStateException(String.format("Path has end %s instead of %s after splicing", path.getDest(), next.getPath().getDest()));
       }
       PathExecutor ret = new PathExecutor(behavior, path);
+      ret.liquidLocomotion.copyFrom(liquidLocomotion);
       ret.pathPosition = pathPosition;
       ret.currentMovementOriginalCostEstimate = currentMovementOriginalCostEstimate;
       ret.costEstimateIndex = costEstimateIndex;
@@ -656,6 +667,7 @@ public class PathExecutor implements IPathExecutor, Helper {
       }
       logDebug("Discarding earliest segment movements, length cut from " + path.length() + " to " + newPath.length());
       PathExecutor ret = new PathExecutor(behavior, newPath);
+      ret.liquidLocomotion.copyFrom(liquidLocomotion);
       ret.pathPosition = pathPosition - cutoffAmt;
       ret.currentMovementOriginalCostEstimate = currentMovementOriginalCostEstimate;
       if (costEstimateIndex != null) {
