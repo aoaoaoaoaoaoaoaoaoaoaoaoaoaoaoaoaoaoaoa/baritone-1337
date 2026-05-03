@@ -18,5 +18,8 @@ Fabric artifacts are written to `dist/`. Use the standalone Fabric jar for norma
 - Core pathfinding hardening and optimization.
 - In-game path microprofiles via `#profile next`.
 - Conservative `(2, 1)` oblique walking primitives.
+- Overworld elytra transport.
+- Sprint-swimming path support.
+- Better speculative/background pathing.
 
 License: LGPL-3.0. Original project: https://github.com/cabaletta/baritone

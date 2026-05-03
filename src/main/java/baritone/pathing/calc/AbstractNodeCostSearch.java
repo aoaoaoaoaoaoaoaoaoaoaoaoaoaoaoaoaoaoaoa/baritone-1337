@@ -38,6 +38,10 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
   protected boolean cancelRequested;
 
+  private PathPublicationSink publicationSink = PathPublicationSink.IGNORE;
+
+  private PathNode lastPublishedNode;
+
   /**
    * This is really complicated and hard to explain. I wrote a comment in the old version of MineBot but it was so
    * long it was easier as a Google Doc (because I could insert charts).
@@ -76,6 +80,12 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     cancelRequested = true;
   }
 
+  public void setPublicationSink(PathPublicationSink publicationSink) { this.publicationSink = publicationSink == null ? PathPublicationSink.IGNORE : publicationSink; }
+
+  protected boolean hasPublicationSink() {
+    return publicationSink != PathPublicationSink.IGNORE;
+  }
+
   @Override
   public synchronized PathCalculationResult calculate(long primaryTimeout, long failureTimeout) {
     if (isFinished) {
@@ -86,54 +96,12 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     profile = context.pathingProfiler.begin(realStart, startX, startY, startZ, goal, primaryTimeout, failureTimeout);
     try {
       Optional<IPath> rawPath = calculate0(primaryTimeout, failureTimeout);
-      long postProcessNanos = 0;
-      long loadedChunkCutoffNanos = 0;
-      long staticCutoffNanos = 0;
-      IPath path = null;
-      if (rawPath.isPresent()) {
-        long phaseStart = profile == null ? 0 : System.nanoTime();
-        path = rawPath.get().postProcess();
-        if (profile != null) {
-          postProcessNanos = System.nanoTime() - phaseStart;
-        }
-      }
       if (cancelRequested) {
         result = new PathCalculationResult(PathCalculationResult.Type.CANCELLATION);
         return result;
       }
-      if (path == null) {
-        result = new PathCalculationResult(PathCalculationResult.Type.FAILURE);
-        return result;
-      }
-      int previousLength = path.length();
-      long phaseStart = profile == null ? 0 : System.nanoTime();
-      path = path.cutoffAtLoadedChunks(context.bsi);
-      if (profile != null) {
-        loadedChunkCutoffNanos = System.nanoTime() - phaseStart;
-      }
-      if (path.length() < previousLength) {
-        Helper.HELPER.logDebug("Cutting off path at edge of loaded chunks");
-        Helper.HELPER.logDebug("Length decreased by " + (previousLength - path.length()));
-      } else {
-        Helper.HELPER.logDebug("Path ends within loaded chunks");
-      }
-      previousLength = path.length();
-      phaseStart = profile == null ? 0 : System.nanoTime();
-      path = path.staticCutoff(goal);
-      if (profile != null) {
-        staticCutoffNanos = System.nanoTime() - phaseStart;
-        profile.finishPathPhases(postProcessNanos, loadedChunkCutoffNanos, staticCutoffNanos);
-      }
-      if (path.length() < previousLength) {
-        Helper.HELPER.logDebug("Static cutoff " + previousLength + " to " + path.length());
-      }
-      if (goal.isInGoal(path.getDest())) {
-        result = new PathCalculationResult(PathCalculationResult.Type.SUCCESS_TO_GOAL, path);
-        return result;
-      } else {
-        result = new PathCalculationResult(PathCalculationResult.Type.SUCCESS_SEGMENT, path);
-        return result;
-      }
+      result = materialize(rawPath, true, true);
+      return result;
     } catch (Exception e) {
       Helper.HELPER.logDirect("Pathing exception: " + e);
       e.printStackTrace();
@@ -150,6 +118,80 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   }
 
   protected abstract Optional<IPath> calculate0(long primaryTimeout, long failureTimeout);
+
+  private PathCalculationResult materialize(Optional<IPath> rawPath, boolean profilePhases, boolean logPhases) {
+    long postProcessNanos = 0;
+    long loadedChunkCutoffNanos = 0;
+    long staticCutoffNanos = 0;
+    IPath path = null;
+    if (rawPath.isPresent()) {
+      long phaseStart = profilePhases && profile != null ? System.nanoTime() : 0;
+      path = rawPath.get().postProcess();
+      if (profilePhases && profile != null) {
+        postProcessNanos = System.nanoTime() - phaseStart;
+      }
+    }
+    if (path == null) {
+      return new PathCalculationResult(PathCalculationResult.Type.FAILURE);
+    }
+    int previousLength = path.length();
+    long phaseStart = profilePhases && profile != null ? System.nanoTime() : 0;
+    path = path.cutoffAtLoadedChunks(context.bsi);
+    if (profilePhases && profile != null) {
+      loadedChunkCutoffNanos = System.nanoTime() - phaseStart;
+    }
+    if (logPhases) {
+      if (path.length() < previousLength) {
+        Helper.HELPER.logDebug("Cutting off path at edge of loaded chunks");
+        Helper.HELPER.logDebug("Length decreased by " + (previousLength - path.length()));
+      } else {
+        Helper.HELPER.logDebug("Path ends within loaded chunks");
+      }
+    }
+    previousLength = path.length();
+    phaseStart = profilePhases && profile != null ? System.nanoTime() : 0;
+    path = path.staticCutoff(goal);
+    if (profilePhases && profile != null) {
+      staticCutoffNanos = System.nanoTime() - phaseStart;
+      profile.finishPathPhases(postProcessNanos, loadedChunkCutoffNanos, staticCutoffNanos);
+    }
+    if (logPhases && path.length() < previousLength) {
+      Helper.HELPER.logDebug("Static cutoff " + previousLength + " to " + path.length());
+    }
+    return new PathCalculationResult(goal.isInGoal(path.getDest()) ? PathCalculationResult.Type.SUCCESS_TO_GOAL : PathCalculationResult.Type.SUCCESS_SEGMENT, path);
+  }
+
+  protected void publishBestSoFar(int numNodes) {
+    if (!hasPublicationSink() || cancelRequested) {
+      return;
+    }
+    PathNode node = bestPublishableNode();
+    if (node == null || node == lastPublishedNode) {
+      return;
+    }
+    try {
+      PathCalculationResult result = materialize(Optional.of(new Path(realStart, startNode, node, numNodes, goal, context)), false, false);
+      if (result.getPath().isPresent()) {
+        lastPublishedNode = node;
+        publicationSink.publish(result);
+      }
+    } catch (Exception e) {
+      Helper.HELPER.logDirect("Incumbent path publication failed: " + e);
+      e.printStackTrace();
+    }
+  }
+
+  private PathNode bestPublishableNode() {
+    if (startNode == null) {
+      return null;
+    }
+    for (PathNode candidate : bestSoFar) {
+      if (candidate != null && getDistFromStartSq(candidate) > MIN_DIST_PATH * MIN_DIST_PATH) {
+        return candidate;
+      }
+    }
+    return null;
+  }
 
   protected int nodeMapSize() {
     return nodes.size();

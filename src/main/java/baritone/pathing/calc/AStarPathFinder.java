@@ -67,6 +67,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     long startTime = System.currentTimeMillis();
     long primaryTimeoutTime = startTime + primaryTimeout;
     long failureTimeoutTime = startTime + failureTimeout;
+    long incumbentInterval = hasPublicationSink() ? Math.max(0L, Baritone.settings().pathingIncumbentIntervalMS.value) : 0L;
+    long nextIncumbentPublishTime = incumbentInterval == 0 ? Long.MAX_VALUE : startTime + incumbentInterval;
     boolean failing = true;
     int numNodes = 0;
     int numMovementsConsidered = 0;
@@ -82,6 +84,10 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         long now = System.currentTimeMillis(); // since nanoTime is slow on windows (takes many microseconds)
         if (now - failureTimeoutTime >= 0 || (!failing && now - primaryTimeoutTime >= 0)) {
           break;
+        }
+        if (now - nextIncumbentPublishTime >= 0) {
+          publishBestSoFar(numNodes);
+          nextIncumbentPublishTime = now + incumbentInterval;
         }
       }
       heapStart = activeProfile == null ? 0 : System.nanoTime();

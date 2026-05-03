@@ -512,6 +512,31 @@ public final class Settings {
   public final Setting<Integer> planningTickLookahead = new Setting<>(150);
 
   /**
+   * Begin executing stable incumbent A* segments before the current calculation reaches its final timeout.
+   */
+  public final Setting<Boolean> pathingEarlyIncumbentExecution = new Setting<>(true);
+
+  /**
+   * Keep the background planner hot while a path is executing, extending from the committed segment tail instead of waiting for the tail to be imminent.
+   */
+  public final Setting<Boolean> pathingContinuousPlanning = new Setting<>(true);
+
+  /**
+   * Worker-thread interval between materialized incumbent path publications. Set to 0 to suppress incumbent publication.
+   */
+  public final Setting<Long> pathingIncumbentIntervalMS = new Setting<>(250L);
+
+  /**
+   * Do not execute an incumbent shorter than this many path positions unless it already reaches the goal.
+   */
+  public final Setting<Integer> pathingMinIncumbentLength = new Setting<>(20);
+
+  /**
+   * Required heuristic improvement before replacing a currently executing or queued segment with a newly published incumbent.
+   */
+  public final Setting<Double> pathingIncumbentHeuristicMargin = new Setting<>(24D);
+
+  /**
    * How far are you allowed to fall onto solid ground (without a water bucket)?
    * 3 won't deal any damage. But if you just want to get down the mountain quickly and you have
    * Feather Falling IV, you might set it a bit higher, like 4 or 5.

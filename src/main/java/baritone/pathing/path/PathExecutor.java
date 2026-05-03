@@ -263,6 +263,9 @@ public class PathExecutor implements IPathExecutor, Helper {
     if (!ctx.player().onGround()) {
       return false;
     }
+    if (pathIndex(current.get().getStart()) != -1) {
+      return false;
+    }
     if (!MovementHelper.canWalkOn(ctx, ctx.playerFeet().below())) {
       // we're in some kind of sketchy situation, maybe parkouring
       return false;
