@@ -186,6 +186,10 @@ public class MovementAscend extends Movement {
       return state; // don't jump while walking from a non double slab into a bottom slab
     }
 
+    if (stairStepAscent(jumpingOnto)) {
+      return state.setInput(Input.SPRINT, Baritone.settings().allowSprint.value && !MovementHelper.isLiquid(ctx, ctx.playerFeet()));
+    }
+
     if (Baritone.settings().assumeStep.value || ctx.playerFeet().equals(src.above())) {
       // no need to hit space if we're already jumping
       return state;
@@ -213,6 +217,18 @@ public class MovementAscend extends Movement {
     // This is slightly more efficient because otherwise we might start jumping before moving, and fall down without moving onto the block we want to jump onto
     // Also wait until we are close enough, because we might jump and hit our head on an adjacent block
     return state.setInput(Input.JUMP, true);
+  }
+
+  public boolean stairStepAscent() {
+    return stairStepAscent(BlockStateInterface.get(ctx, positionToPlace));
+  }
+
+  private boolean stairStepAscent(BlockState support) {
+    return MovementHelper.canStrideUpStair(ctx, positionToPlace, support, horizontalDirection());
+  }
+
+  private Direction horizontalDirection() {
+    return Direction.getNearest(dest.x - src.x, 0, dest.z - src.z, Direction.NORTH);
   }
 
   public boolean headBonkClear() {

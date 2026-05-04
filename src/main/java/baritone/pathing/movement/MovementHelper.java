@@ -37,6 +37,7 @@ import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.level.block.state.properties.StairsShape;
 import net.minecraft.world.level.material.*;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.pathfinder.PathComputationType;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -618,6 +619,33 @@ public interface MovementHelper extends ActionCosts, Helper {
 
   static boolean isBottomSlab(BlockState state) {
     return state.getBlock() instanceof SlabBlock && state.getValue(SlabBlock.TYPE) == SlabType.BOTTOM;
+  }
+
+  static boolean canStrideUpStair(IPlayerContext ctx, BlockPos support, BlockState state, Direction movement) {
+    if (!(state.getBlock() instanceof StairBlock) || state.getValue(StairBlock.HALF) != Half.BOTTOM) {
+      return false;
+    }
+    return collisionHeightAtEntry(ctx, support, state, movement) <= 0.5625D;
+  }
+
+  private static double collisionHeightAtEntry(IPlayerContext ctx, BlockPos support, BlockState state, Direction movement) {
+    double x = switch (movement) {
+      case EAST -> 0.0625D;
+      case WEST -> 0.9375D;
+      default -> 0.5D;
+    };
+    double z = switch (movement) {
+      case SOUTH -> 0.0625D;
+      case NORTH -> 0.9375D;
+      default -> 0.5D;
+    };
+    double height = 0D;
+    for (AABB box : state.getCollisionShape(ctx.world(), support).toAabbs()) {
+      if (x >= box.minX - 1.0E-7D && x <= box.maxX + 1.0E-7D && z >= box.minZ - 1.0E-7D && z <= box.maxZ + 1.0E-7D) {
+        height = Math.max(height, box.maxY);
+      }
+    }
+    return height;
   }
 
   /**

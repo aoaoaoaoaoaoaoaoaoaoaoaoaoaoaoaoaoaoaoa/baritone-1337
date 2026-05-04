@@ -426,7 +426,7 @@ public class RouteExecutor implements IPathExecutor, Helper {
           pathPosition++;
           onChangeInPathPosition();
           onTick();
-          controlFrame = controlFrame.mutate().setInput(Input.JUMP, true).build();
+          controlFrame = controlFrame.mutate().setInput(Input.JUMP, !((MovementAscend) next).stairStepAscent()).build();
           return true;
         } else {
           logDebug("Too far to the side to safely sprint ascend");
