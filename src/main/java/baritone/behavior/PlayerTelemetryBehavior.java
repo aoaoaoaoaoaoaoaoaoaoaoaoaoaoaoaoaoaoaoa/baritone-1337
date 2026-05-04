@@ -12,6 +12,7 @@ import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.PathExecutor;
 import baritone.pathing.transport.TransportControl;
 import baritone.pathing.transport.TransportSnapshot;
+import baritone.planning.ObservationSnapshot;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -202,8 +203,16 @@ public final class PlayerTelemetryBehavior extends Behavior {
     return (JsonWritable) json -> {
       TransportSnapshot.Executor current = snapshot.current();
       TransportSnapshot.Plan plan = current.current();
+      ObservationSnapshot observation = snapshot.observation();
       json.append('{');
       field(json, "actual", snapshot.actual()).append(',');
+      field(json, "actualKind", observation.actualMode().kind()).append(',');
+      field(json, "actualMode", observation.actualMode().getClass().getSimpleName()).append(',');
+      field(json, "worldRevision", observation.worldRevision().chunkRevision() + ":" + observation.worldRevision().blockRevision() + ":" + observation.worldRevision().inventoryRevision()).append(',');
+      field(json, "hotbarBoatSlot", observation.inventory().hotbarBoatSlot()).append(',');
+      field(json, "hotbarBoats", observation.inventory().hotbarBoatCount()).append(',');
+      field(json, "fireworks", observation.inventory().plainFireworks()).append(',');
+      field(json, "elytraDurability", observation.inventory().equippedElytraDurability()).append(',');
       field(json, "planned", plan == null ? null : plan.mode()).append(',');
       field(json, "phase", plan == null ? null : plan.phase()).append(',');
       field(json, "terminal", plan == null ? null : plan.terminal()).append(',');

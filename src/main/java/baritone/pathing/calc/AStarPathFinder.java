@@ -4,6 +4,7 @@ import baritone.Baritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.SearchStopReason;
 import baritone.api.utils.SettingsUtil;
 import baritone.pathing.calc.openset.BinaryHeapOpenSet;
 import baritone.pathing.movement.BlockOffset;
@@ -98,6 +99,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       mostRecentConsidered = currentNode;
       numNodes++;
       if (goal.isInGoal(currentNode.x, currentNode.y, currentNode.z)) {
+        searchStopReason = new SearchStopReason.GoalReached(numNodes, numMovementsConsidered);
         logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
         if (activeProfile != null) {
           activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "goal", System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
@@ -248,6 +250,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         }
       }
     }
+    searchStopReason = stopReason(cancelRequested, openSet.isEmpty(), numEmptyChunk, pathingMaxChunkBorderFetch, failing, numNodes, numMovementsConsidered);
     if (activeProfile != null) {
       activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(),
         cancelRequested ? "cancel" : openSet.isEmpty() ? "open_set_empty" : numEmptyChunk >= pathingMaxChunkBorderFetch ? "empty_chunk_limit" : "timeout", System.nanoTime() - searchLoopStarted,
@@ -265,5 +268,19 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
     }
     return result;
+  }
+
+  private static SearchStopReason stopReason(boolean cancelRequested, boolean openSetEmpty, int numEmptyChunk, int pathingMaxChunkBorderFetch, boolean failing, int numNodes,
+    int numMovementsConsidered) {
+    if (cancelRequested) {
+      return new SearchStopReason.Cancelled();
+    }
+    if (openSetEmpty) {
+      return new SearchStopReason.ExhaustedOpenSet(numNodes, numMovementsConsidered);
+    }
+    if (numEmptyChunk >= pathingMaxChunkBorderFetch) {
+      return new SearchStopReason.EmptyChunkLimit(numEmptyChunk, pathingMaxChunkBorderFetch, numNodes);
+    }
+    return new SearchStopReason.Timeout(failing, numNodes, numMovementsConsidered);
   }
 }

@@ -6,6 +6,7 @@ import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.api.utils.PathCalculationResult;
+import baritone.api.utils.SearchStopReason;
 import baritone.pathing.movement.CalculationContext;
 import java.util.Optional;
 
@@ -33,6 +34,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   protected final PathNode[] bestSoFar = new PathNode[COEFFICIENTS.length];
 
   protected PathingProfiler.Active profile;
+  protected SearchStopReason searchStopReason = new SearchStopReason.NoPath("not_started");
 
   private volatile boolean isFinished;
 
@@ -97,7 +99,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     try {
       Optional<IPath> rawPath = calculate0(primaryTimeout, failureTimeout);
       if (cancelRequested) {
-        result = new PathCalculationResult(PathCalculationResult.Type.CANCELLATION);
+        result = new PathCalculationResult(PathCalculationResult.Type.CANCELLATION, new SearchStopReason.Cancelled());
         return result;
       }
       result = materialize(rawPath, true, true);
@@ -105,7 +107,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     } catch (Exception e) {
       Helper.HELPER.logDirect("Pathing exception: " + e);
       e.printStackTrace();
-      result = new PathCalculationResult(PathCalculationResult.Type.EXCEPTION);
+      result = new PathCalculationResult(PathCalculationResult.Type.EXCEPTION, new SearchStopReason.ExceptionThrown(e.toString()));
       return result;
     } finally {
       if (profile != null && result != null) {
@@ -132,7 +134,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
       }
     }
     if (path == null) {
-      return new PathCalculationResult(PathCalculationResult.Type.FAILURE);
+      return new PathCalculationResult(PathCalculationResult.Type.FAILURE, searchStopReason);
     }
     int previousLength = path.length();
     long phaseStart = profilePhases && profile != null ? System.nanoTime() : 0;
@@ -158,7 +160,9 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     if (logPhases && path.length() < previousLength) {
       Helper.HELPER.logDebug("Static cutoff " + previousLength + " to " + path.length());
     }
-    return new PathCalculationResult(goal.isInGoal(path.getDest()) ? PathCalculationResult.Type.SUCCESS_TO_GOAL : PathCalculationResult.Type.SUCCESS_SEGMENT, path);
+    boolean reachedGoal = goal.isInGoal(path.getDest());
+    return new PathCalculationResult(reachedGoal ? PathCalculationResult.Type.SUCCESS_TO_GOAL : PathCalculationResult.Type.SUCCESS_SEGMENT, path,
+      reachedGoal ? searchStopReason instanceof SearchStopReason.GoalReached ? searchStopReason : new SearchStopReason.GoalReached(0, 0) : searchStopReason);
   }
 
   protected void publishBestSoFar(int numNodes) {

@@ -17,6 +17,9 @@ import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.PathExecutor;
 import baritone.pathing.transport.TransportSnapshot;
+import baritone.planning.ObservationSnapshot;
+import baritone.planning.PlanSupervisor;
+import baritone.planning.RoutePlan;
 import baritone.utils.PathRenderer;
 import baritone.utils.PathingCommandContext;
 import baritone.utils.pathing.Favoring;
@@ -39,6 +42,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
   private PathExecutor current;
   private PathExecutor next;
+  private final PlanSupervisor planSupervisor = new PlanSupervisor();
 
   private Goal goal;
   private CalculationContext context;
@@ -95,6 +99,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     expectedSegmentStart = pathStart();
     baritone.getPathingControlManager().preTick();
     tickPath();
+    planSupervisor.observe(ObservationSnapshot.capture(baritone, ctx));
+    planSupervisor.syncWalkExecutors(ctx.world().dimension(), current, next);
     transportDebugOverlay();
     ticksElapsedSoFar++;
     dispatchEvents();
@@ -371,6 +377,14 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return TransportSnapshot.capture(baritone, ctx, current, next, activePlanningStart);
   }
 
+  public ObservationSnapshot observationSnapshot() {
+    return transportSnapshot().observation();
+  }
+
+  public RoutePlan routePlan() {
+    return planSupervisor.snapshot();
+  }
+
   public void softCancelIfSafe() {
     synchronized (pathPlanLock) {
       getInProgress().ifPresent(AbstractNodeCostSearch::cancel); // only cancel ours
@@ -608,7 +622,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       return;
     }
     if (current == null) {
-      logDirect("Path calculation failed from " + requestedStart + " to " + goal + " (" + result.getType() + ")");
+      logDirect("Path calculation failed from " + requestedStart + " to " + goal + " (" + result.getType() + ", " + result.getStopReason() + ")");
       queuePathEvent(PathEvent.CALC_FAILED);
     } else if (next == null) {
       queuePathEvent(PathEvent.NEXT_CALC_FAILED);

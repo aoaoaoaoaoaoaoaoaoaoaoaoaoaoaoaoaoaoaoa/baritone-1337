@@ -8,14 +8,17 @@ import baritone.api.utils.IPlayerContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.PathExecutor;
+import baritone.planning.ActualMode;
+import baritone.planning.ObservationSnapshot;
 import java.util.Locale;
-import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 
-public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor current, TransportSnapshot.Executor next, BetterBlockPos planningStart, TransportControl control) {
+public record TransportSnapshot(ObservationSnapshot observation, TransportMode actual, TransportSnapshot.Executor current, TransportSnapshot.Executor next, BetterBlockPos planningStart,
+  TransportControl control) {
   private static final int SEQUENCE_LIMIT = 10;
 
   public static TransportSnapshot capture(Baritone baritone, IPlayerContext ctx, PathExecutor current, PathExecutor next, BetterBlockPos planningStart) {
-    return new TransportSnapshot(actual(baritone, ctx), Executor.capture(ctx, current, SEQUENCE_LIMIT), Executor.capture(ctx, next, SEQUENCE_LIMIT), planningStart,
+    ObservationSnapshot observation = ObservationSnapshot.capture(baritone, ctx);
+    return new TransportSnapshot(observation, actual(observation), Executor.capture(ctx, current, SEQUENCE_LIMIT), Executor.capture(ctx, next, SEQUENCE_LIMIT), planningStart,
       current == null ? null : current.transportControl());
   }
 
@@ -24,17 +27,14 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
       planningStart == null ? "-" : planningStart.x + "," + planningStart.y + "," + planningStart.z);
   }
 
-  private static TransportMode actual(Baritone baritone, IPlayerContext ctx) {
-    if (baritone.getElytraProcess().isActive() || ctx.player().isFallFlying()) {
-      return TransportMode.ELYTRA;
-    }
-    if (ctx.player().getVehicle() instanceof AbstractBoat) {
-      return TransportMode.BOAT;
-    }
-    if (MovementHelper.isWater(ctx, ctx.playerFeet()) || ctx.player().isSwimming()) {
-      return TransportMode.SWIM;
-    }
-    return TransportMode.PEDESTRIAN;
+  private static TransportMode actual(ObservationSnapshot observation) {
+    return switch (observation.actualMode()) {
+      case ActualMode.RidingBoat ignored -> TransportMode.BOAT;
+      case ActualMode.FallFlying ignored -> TransportMode.ELYTRA;
+      case ActualMode.InWater ignored -> TransportMode.SWIM;
+      case ActualMode.InPortal ignored -> TransportMode.PEDESTRIAN;
+      case ActualMode.OnFoot ignored -> TransportMode.PEDESTRIAN;
+    };
   }
 
   private static Plan plan(IPlayerContext ctx, IMovement movement) {
