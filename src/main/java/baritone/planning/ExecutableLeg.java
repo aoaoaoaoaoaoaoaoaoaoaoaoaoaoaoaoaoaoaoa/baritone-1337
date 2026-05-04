@@ -2,7 +2,7 @@ package baritone.planning;
 
 import java.util.Optional;
 
-public sealed interface ExecutableLeg permits WalkPathLeg {
+public sealed interface ExecutableLeg permits WalkPathLeg, SurfaceLineLeg {
   LegId id();
 
   StableBoundary start();

@@ -670,6 +670,10 @@ public class PathExecutor implements IPathExecutor, Helper {
   @Override
   public int getPosition() { return pathPosition; }
 
+  public IMovement currentMovement() {
+    return pathPosition >= 0 && pathPosition < path.movements().size() ? path.movements().get(pathPosition) : null;
+  }
+
   public TransportControl transportControl() {
     return transportControl;
   }

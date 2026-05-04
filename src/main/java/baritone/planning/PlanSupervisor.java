@@ -1,6 +1,7 @@
 package baritone.planning;
 
 import baritone.pathing.path.PathExecutor;
+import baritone.pathing.movement.movements.MovementWaterLine;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -26,9 +27,16 @@ public final class PlanSupervisor {
     }
     syncedCurrent = current;
     syncedNext = next;
-    this.current = current == null ? null : WalkPathLeg.of(dimension, current);
-    this.next = next == null ? null : WalkPathLeg.of(dimension, next);
+    this.current = leg(dimension, current);
+    this.next = leg(dimension, next);
     revision++;
+  }
+
+  private static ExecutableLeg leg(ResourceKey<Level> dimension, PathExecutor executor) {
+    if (executor == null) {
+      return null;
+    }
+    return executor.currentMovement() instanceof MovementWaterLine water ? SurfaceLineLeg.of(dimension, executor, water) : WalkPathLeg.of(dimension, executor);
   }
 
   public void reportFailure(ExecutionFailure failure) {
