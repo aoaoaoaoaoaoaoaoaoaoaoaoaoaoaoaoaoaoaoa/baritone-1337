@@ -12,6 +12,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -23,6 +24,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Random;
 import java.util.function.Predicate;
@@ -149,6 +151,32 @@ public final class InventoryBehavior extends Behavior implements Helper {
       }
     }
     return false;
+  }
+
+  public boolean hasBoat() {
+    NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+    for (int i = 0; i < 9; i++) {
+      if (isBoat(inv.get(i))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public Optional<InteractionHand> selectBoat() {
+    LocalPlayer player = ctx.player();
+    NonNullList<ItemStack> inv = player.getInventory().getNonEquipmentItems();
+    for (int i = 0; i < 9; i++) {
+      if (isBoat(inv.get(i))) {
+        player.getInventory().setSelectedSlot(i);
+        return Optional.of(InteractionHand.MAIN_HAND);
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static boolean isBoat(ItemStack stack) {
+    return stack.getItem() instanceof BoatItem;
   }
 
   public boolean selectThrowawayForLocation(boolean select, int x, int y, int z) {

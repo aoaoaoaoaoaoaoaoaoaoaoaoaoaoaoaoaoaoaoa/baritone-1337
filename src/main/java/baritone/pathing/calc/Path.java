@@ -9,6 +9,7 @@ import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementCatalog;
 import baritone.pathing.movement.MovementPrimitive;
+import baritone.pathing.movement.water.SurfaceWaterPathCompactor;
 import baritone.pathing.path.CutoffPath;
 import baritone.utils.pathing.PathBase;
 import com.google.common.collect.Lists;
@@ -85,8 +86,8 @@ class Path extends PathBase {
     }
 
     // Nodes are traversed last to first so we need to reverse the list
-    this.path = Lists.reverse(tempPath);
-    this.nodes = Lists.reverse(tempNodes);
+    this.path = new ArrayList<>(Lists.reverse(tempPath));
+    this.nodes = new ArrayList<>(Lists.reverse(tempNodes));
   }
 
   @Override
@@ -157,8 +158,6 @@ class Path extends PathBase {
     }
     verified = true;
     boolean failed = assembleMovements();
-    movements.forEach(m -> m.checkLoadedChunk(context));
-
     if (failed) { // at least one movement became impossible during calculation
       CutoffPath res = new CutoffPath(this, movements().size());
       if (res.movements().size() != movements.size()) {
@@ -166,6 +165,14 @@ class Path extends PathBase {
       }
       return res;
     }
+    SurfaceWaterPathCompactor.Result compacted = SurfaceWaterPathCompactor.compact(context, path, movements);
+    if (compacted.changed()) {
+      path.clear();
+      path.addAll(compacted.positions());
+      movements.clear();
+      movements.addAll(compacted.movements());
+    }
+    movements.forEach(m -> m.checkLoadedChunk(context));
     // more post processing here
     sanityCheck();
     return this;

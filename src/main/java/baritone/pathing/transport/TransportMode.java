@@ -1,0 +1,13 @@
+package baritone.pathing.transport;
+
+public enum TransportMode {
+  PEDESTRIAN, LEGACY_WATER, SWIM, BOAT, ELYTRA;
+
+  public boolean boat() {
+    return this == BOAT;
+  }
+
+  public boolean inertial() {
+    return this == BOAT || this == ELYTRA || this == SWIM;
+  }
+}

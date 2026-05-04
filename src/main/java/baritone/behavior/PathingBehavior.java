@@ -16,6 +16,7 @@ import baritone.pathing.calc.AbstractNodeCostSearch;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.PathExecutor;
+import baritone.pathing.transport.TransportSnapshot;
 import baritone.utils.PathRenderer;
 import baritone.utils.PathingCommandContext;
 import baritone.utils.pathing.Favoring;
@@ -94,6 +95,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     expectedSegmentStart = pathStart();
     baritone.getPathingControlManager().preTick();
     tickPath();
+    transportDebugOverlay();
     ticksElapsedSoFar++;
     dispatchEvents();
   }
@@ -151,7 +153,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           }
           return;
         }
-        if (next != null && !next.getPath().positions().contains(ctx.playerFeet()) && !next.getPath().positions().contains(expectedSegmentStart)) { // can contain either one
+        if (next != null && !next.containsPathPosition(ctx.playerFeet()) && !next.containsPathPosition(expectedSegmentStart)) { // can contain either one
           // if the current path failed, we may not actually be on the next one, so make sure
           logDebug("Discarding next path as it does not contain current position");
           // for example if we had a nicely planned ahead path that starts where current ends
@@ -226,10 +228,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (calcFrom.equals(ctx.playerFeet()) || calcFrom.equals(expectedSegmentStart)) {
       return true;
     }
-    if (current != null && (current.getPath().getDest().equals(calcFrom) || current.getPath().positions().contains(calcFrom))) {
+    if (current != null && (current.getPath().getDest().equals(calcFrom) || current.containsPathPosition(calcFrom))) {
       return true;
     }
-    if (next != null && (next.getPath().getDest().equals(calcFrom) || next.getPath().positions().contains(calcFrom))) {
+    if (next != null && (next.getPath().getDest().equals(calcFrom) || next.containsPathPosition(calcFrom))) {
       return true;
     }
     return false;
@@ -358,6 +360,17 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return calcFailedLastTick;
   }
 
+  private void transportDebugOverlay() {
+    if (!Baritone.settings().transportDebugOverlay.value || ctx.player() == null) {
+      return;
+    }
+    ctx.player().sendOverlayMessage(Component.literal(transportSnapshot().overlayLine()));
+  }
+
+  public TransportSnapshot transportSnapshot() {
+    return TransportSnapshot.capture(baritone, ctx, current, next, activePlanningStart);
+  }
+
   public void softCancelIfSafe() {
     synchronized (pathPlanLock) {
       getInProgress().ifPresent(AbstractNodeCostSearch::cancel); // only cancel ours
@@ -426,10 +439,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     resetEstimatedTicksToGoal(expectedSegmentStart);
   }
 
-  private void resetEstimatedTicksToGoal(BlockPos start) {
-    resetEstimatedTicksToGoal(new BetterBlockPos(start));
-  }
-
   private void resetEstimatedTicksToGoal(BetterBlockPos start) {
     ticksElapsedSoFar = 0;
     startPosition = start;
@@ -496,6 +505,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (inProgress != null) {
       throw new IllegalStateException("Already doing it"); // should have been checked by caller
     }
+    context = liveCalculationContext(context);
+    this.context = context;
     if (!context.safeForThreadedUse) {
       throw new IllegalStateException("Improper context thread safety level");
     }
@@ -538,13 +549,17 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     });
   }
 
+  private CalculationContext liveCalculationContext(CalculationContext base) {
+    return base != null && base.getClass() != CalculationContext.class ? base : new CalculationContext(baritone, true);
+  }
+
   private IPath previousPathForFavoring(BlockPos start) {
     if (current == null) {
       return null;
     }
     IPath path = current.getPath();
     BetterBlockPos startPos = new BetterBlockPos(start);
-    return !path.getDest().equals(startPos) && path.positions().contains(startPos) ? null : path;
+    return !path.getDest().equals(startPos) && current.containsPathPosition(startPos) ? null : path;
   }
 
   private void acceptIncumbent(AbstractNodeCostSearch pathfinder, PathCalculationResult result) {
@@ -603,7 +618,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private CandidateDisposition acceptCandidate(PathExecutor candidate) {
     IPath path = candidate.getPath();
     if (current == null) {
-      if (!anchorsCurrentExecution(path)) {
+      if (!anchorsCurrentExecution(candidate)) {
         return CandidateDisposition.REJECTED;
       }
       queuePathEvent(PathEvent.CALC_FINISHED_NOW_EXECUTING);
@@ -617,7 +632,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (path.getSrc().equals(current.getPath().getDest())) {
       return queueFutureCandidate(candidate);
     }
-    if (anchorsFutureExecution(path)) {
+    if (anchorsFutureExecution(candidate)) {
       return queueFutureCandidate(candidate);
     }
     return CandidateDisposition.REJECTED;
@@ -664,15 +679,15 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return goal.isInGoal(path.getDest()) || path.length() >= Baritone.settings().pathingMinIncumbentLength.value;
   }
 
-  private boolean anchorsCurrentExecution(IPath path) {
-    return path.positions().contains(ctx.playerFeet()) || path.positions().contains(expectedSegmentStart);
+  private boolean anchorsCurrentExecution(PathExecutor path) {
+    return path.containsPathPosition(ctx.playerFeet()) || path.containsPathPosition(expectedSegmentStart);
   }
 
-  private boolean anchorsFutureExecution(IPath path) {
+  private boolean anchorsFutureExecution(PathExecutor path) {
     if (anchorsCurrentExecution(path)) {
       return true;
     }
-    return current != null && path.positions().contains(current.getPath().getDest());
+    return current != null && path.containsPathPosition(current.getPath().getDest());
   }
 
   private boolean improvesBeyond(IPath candidate, IPath incumbent) {

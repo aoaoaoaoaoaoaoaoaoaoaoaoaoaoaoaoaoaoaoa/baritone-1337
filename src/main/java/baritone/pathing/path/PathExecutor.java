@@ -15,6 +15,7 @@ import baritone.pathing.movement.LiquidLocomotionController;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.movements.*;
+import baritone.pathing.transport.TransportControl;
 import baritone.utils.BlockStateInterface;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -65,13 +66,14 @@ public class PathExecutor implements IPathExecutor, Helper {
   private final LiquidLocomotionController liquidLocomotion;
 
   private boolean sprintNextTick;
+  private TransportControl transportControl;
 
   public PathExecutor(PathingBehavior behavior, IPath path) {
     this.behavior = behavior;
     this.ctx = behavior.ctx;
     this.path = path;
     this.flatValidPositions = flatValidPositions(path);
-    this.pathIndexByPosition = pathIndexByPosition(path.positions());
+    this.pathIndexByPosition = pathIndexByPosition(path);
     this.liquidLocomotion = new LiquidLocomotionController(ctx);
     this.pathPosition = 0;
   }
@@ -83,6 +85,7 @@ public class PathExecutor implements IPathExecutor, Helper {
    * not sneaking out over lava), false otherwise
    */
   public boolean onTick() {
+    transportControl = null;
     ExecutionPolicy policy = ExecutionPolicy.capture(behavior);
     for (int revisions = 0; revisions < MAX_POSITION_REVISIONS_PER_TICK; revisions++) {
       if (pathPosition == path.length() - 1) {
@@ -99,7 +102,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         continue;
       }
       BetterBlockPos whereAmI = ctx.playerFeet();
-      if (!movement.acceptsPosition(whereAmI)) {
+      if (!movement.acceptsPosition(whereAmI) && !movement.acceptsPathingDrift(whereAmI)) {
         boolean revised = false;
         for (int i = Math.min(pathPosition - 1, path.movements().size() - 1); i >= 0; i--) {//this happens for example when you lag out and get teleported back a couple blocks
           if (((Movement) path.movements().get(i)).acceptsPosition(whereAmI)) {
@@ -134,9 +137,11 @@ public class PathExecutor implements IPathExecutor, Helper {
         }
       }
       ClosestPathPosition status = closestPathPos();
-      if (possiblyOffPath(status, MAX_DIST_FROM_PATH)) {
+      double sustainedPathTolerance = Math.max(MAX_DIST_FROM_PATH, movement.sustainedPathDistanceTolerance());
+      double immediatePathTolerance = Math.max(MAX_MAX_DIST_FROM_PATH, movement.immediatePathDistanceTolerance());
+      if (possiblyOffPath(status, sustainedPathTolerance)) {
         ticksAway++;
-        System.out.println("FAR AWAY FROM PATH FOR " + ticksAway + " TICKS. Current distance: " + status.distance() + ". Threshold: " + MAX_DIST_FROM_PATH);
+        System.out.println("FAR AWAY FROM PATH FOR " + ticksAway + " TICKS. Current distance: " + status.distance() + ". Threshold: " + sustainedPathTolerance);
         if (ticksAway > MAX_TICKS_AWAY) {
           logDebug("Too far away from path for too long, cancelling path");
           cancel();
@@ -145,7 +150,7 @@ public class PathExecutor implements IPathExecutor, Helper {
       } else {
         ticksAway = 0;
       }
-      if (possiblyOffPath(status, MAX_MAX_DIST_FROM_PATH)) { // ok, stop right away, we're way too far.
+      if (possiblyOffPath(status, immediatePathTolerance)) { // ok, stop right away, we're way too far.
         logDebug("too far from path");
         cancel();
         return false;
@@ -230,6 +235,7 @@ public class PathExecutor implements IPathExecutor, Helper {
         return true;
       }
       MovementStatus movementStatus = movement.update(liquidLocomotion, path, pathPosition);
+      transportControl = movement.transportControl();
       if (movementStatus == UNREACHABLE || movementStatus == FAILED) {
         logDebug("Movement returns status " + movementStatus);
         cancel();
@@ -527,6 +533,10 @@ public class PathExecutor implements IPathExecutor, Helper {
     return pathIndexByPosition.get(pos.asLong());
   }
 
+  public boolean containsPathPosition(BlockPos pos) {
+    return pathIndex(pos) != -1;
+  }
+
   private static BlockPos[] flatValidPositions(IPath path) {
     ArrayList<BlockPos> validPositions = new ArrayList<>();
     LongOpenHashSet seen = new LongOpenHashSet();
@@ -540,13 +550,23 @@ public class PathExecutor implements IPathExecutor, Helper {
     return validPositions.toArray(BlockPos[]::new);
   }
 
-  private static Long2IntOpenHashMap pathIndexByPosition(List<BetterBlockPos> positions) {
+  private static Long2IntOpenHashMap pathIndexByPosition(IPath path) {
+    List<BetterBlockPos> positions = path.positions();
     Long2IntOpenHashMap indices = new Long2IntOpenHashMap(positions.size());
     indices.defaultReturnValue(-1);
     for (int i = 0; i < positions.size(); i++) {
       long key = positions.get(i).asLong();
       if (!indices.containsKey(key)) {
         indices.put(key, i);
+      }
+    }
+    List<IMovement> movements = path.movements();
+    for (int i = 0; i < movements.size(); i++) {
+      for (BlockPos pos : ((Movement) movements.get(i)).getValidPositions()) {
+        long key = pos.asLong();
+        if (!indices.containsKey(key)) {
+          indices.put(key, i);
+        }
       }
     }
     return indices;
@@ -649,6 +669,10 @@ public class PathExecutor implements IPathExecutor, Helper {
 
   @Override
   public int getPosition() { return pathPosition; }
+
+  public TransportControl transportControl() {
+    return transportControl;
+  }
 
   public PathExecutor trySplice(PathExecutor next) {
     if (next == null) {

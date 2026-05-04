@@ -7,6 +7,7 @@ import baritone.api.IBaritone;
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.cache.WorldData;
 import baritone.pathing.calc.PathingProfiler;
+import baritone.pathing.movement.water.WaterTransportPolicy;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
@@ -46,6 +47,7 @@ public class CalculationContext {
   public final BlockAffordanceCache affordances;
   public final PathingProfiler pathingProfiler;
   public final MovementCatalog movementCatalog;
+  public final WaterTransportPolicy waterTransport;
 
   public CalculationContext(IBaritone baritone) {
     this(baritone, false);
@@ -91,6 +93,7 @@ public class CalculationContext {
     this.modificationGeofence = ModificationGeofence.snapshot(world.dimension().identifier().toString(), Baritone.settings().modificationGeofences.value);
     this.affordances = new BlockAffordanceCache(this);
     this.pathingProfiler = ((Baritone) baritone).getPathingProfiler();
+    this.waterTransport = WaterTransportPolicy.snapshot((Baritone) baritone);
     this.movementCatalog = MovementCatalog.legacyWalking(this);
   }
 

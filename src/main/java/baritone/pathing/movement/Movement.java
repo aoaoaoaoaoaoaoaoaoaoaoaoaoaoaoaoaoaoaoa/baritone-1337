@@ -8,6 +8,8 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.*;
 import baritone.api.utils.input.Input;
 import baritone.behavior.PathingBehavior;
+import baritone.pathing.transport.TransportControl;
+import baritone.pathing.transport.TransportSnapshot;
 import baritone.utils.BlockStateInterface;
 import java.util.*;
 import net.minecraft.core.BlockPos;
@@ -107,6 +109,18 @@ public abstract class Movement implements IMovement, MovementHelper {
     return false;
   }
 
+  public boolean acceptsPathingDrift(BlockPos pos) {
+    return acceptsPosition(pos);
+  }
+
+  public double sustainedPathDistanceTolerance() {
+    return 2D;
+  }
+
+  public double immediatePathDistanceTolerance() {
+    return 3D;
+  }
+
   protected final boolean playerAtDest() {
     return playerAt(dest);
   }
@@ -143,10 +157,6 @@ public abstract class Movement implements IMovement, MovementHelper {
       currentState.setInput(Input.CLICK_LEFT, true);
     }
 
-    if (baritone instanceof Baritone b && b.getPlayerTelemetryBehavior().active()) {
-      b.getPlayerTelemetryBehavior().recordMovementControl(this, currentState);
-    }
-
     // If the movement target has to force the new rotations, or we aren't using silent move, then force the rotations
     currentState.getTarget().getRotation().ifPresent(rotation -> baritone.getLookBehavior().updateTarget(rotation, currentState.getTarget().hasToForceRotations()));
     baritone.getInputOverrideHandler().clearAllKeys();
@@ -161,6 +171,16 @@ public abstract class Movement implements IMovement, MovementHelper {
     }
 
     return currentState.getStatus();
+  }
+
+  public TransportControl transportControl() {
+    Optional<Rotation> rotation = currentState.getTarget().getRotation();
+    return new TransportControl(getClass().getSimpleName(), currentState.getStatus(), rotation.map(Rotation::getYaw).orElse(null), rotation.map(Rotation::getPitch).orElse(null),
+      currentState.getTarget().hasToForceRotations());
+  }
+
+  public TransportSnapshot.Plan transportPlan() {
+    return TransportSnapshot.Plan.pedestrian(getClass().getSimpleName(), src, dest);
   }
 
   protected boolean prepared(MovementState state) {

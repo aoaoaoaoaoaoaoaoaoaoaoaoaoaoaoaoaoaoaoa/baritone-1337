@@ -537,6 +537,11 @@ public final class Settings {
   public final Setting<Double> pathingIncumbentHeuristicMargin = new Setting<>(6D);
 
   /**
+   * Displays live transport-mode executor state in the actionbar.
+   */
+  public final Setting<Boolean> transportDebugOverlay = new Setting<>(false);
+
+  /**
    * How far are you allowed to fall onto solid ground (without a water bucket)?
    * 3 won't deal any damage. But if you just want to get down the mountain quickly and you have
    * Feather Falling IV, you might set it a bit higher, like 4 or 5.

@@ -4,16 +4,14 @@ import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.event.events.WorldEvent;
 import baritone.api.pathing.calc.IPath;
-import baritone.api.pathing.movement.IMovement;
-import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.process.IBaritoneProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.Movement;
-import baritone.pathing.movement.MovementState;
 import baritone.pathing.path.PathExecutor;
+import baritone.pathing.transport.TransportControl;
+import baritone.pathing.transport.TransportSnapshot;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +24,9 @@ import java.util.Optional;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 import net.minecraft.world.phys.Vec3;
 
 public final class PlayerTelemetryBehavior extends Behavior {
@@ -39,7 +40,6 @@ public final class PlayerTelemetryBehavior extends Behavior {
   private long startedNanos;
   private int samples;
   private String lastFailure;
-  private MovementControl movementControl;
 
   public PlayerTelemetryBehavior(Baritone baritone) {
     super(baritone);
@@ -96,12 +96,6 @@ public final class PlayerTelemetryBehavior extends Behavior {
     return lastFailure == null ? output == null ? "Player telemetry idle" : "Player telemetry idle; last output: " + output : "Player telemetry idle; last failure: " + lastFailure;
   }
 
-  public void recordMovementControl(Movement movement, MovementState state) {
-    Optional<Rotation> rotation = state.getTarget().getRotation();
-    movementControl = new MovementControl(movement.getClass().getSimpleName(), state.getStatus(), rotation.map(Rotation::getYaw).orElse(null), rotation.map(Rotation::getPitch).orElse(null),
-      state.getTarget().hasToForceRotations());
-  }
-
   @Override
   public void onPostTick(TickEvent event) {
     if (event.getType() == TickEvent.Type.IN && active() && ctx.player() != null && ctx.world() != null) {
@@ -122,10 +116,8 @@ public final class PlayerTelemetryBehavior extends Behavior {
       LocalPlayer player = ctx.player();
       PathExecutor executor = baritone.getPathingBehavior().getCurrent();
       IPath path = executor == null ? null : executor.getPath();
-      int pathPosition = executor == null ? -1 : executor.getPosition();
-      IMovement movement = path != null && pathPosition >= 0 && pathPosition < path.movements().size() ? path.movements().get(pathPosition) : null;
-      MovementControl control = movementControl;
-      movementControl = null;
+      TransportSnapshot transport = baritone.getPathingBehavior().transportSnapshot();
+      TransportSnapshot.Plan currentPlan = transport.current().current();
       Rotation effective = ctx.playerRotations();
       StringBuilder json = base("tick");
       json.append(',');
@@ -151,6 +143,7 @@ public final class PlayerTelemetryBehavior extends Behavior {
       field(json, "sprinting", player.isSprinting()).append(',');
       field(json, "crouching", player.isCrouching()).append(',');
       field(json, "pose", player.getPose()).append(',');
+      field(json, "vehicle", vehicle(player.getVehicle())).append(',');
       field(json, "air", player.getAirSupply()).append(',');
       field(json, "maxAir", player.getMaxAirSupply()).append(',');
       field(json, "food", player.getFoodData().getFoodLevel()).append(',');
@@ -160,12 +153,13 @@ public final class PlayerTelemetryBehavior extends Behavior {
       field(json, "pathing", baritone.getPathingBehavior().isPathing()).append(',');
       field(json, "process", baritone.getPathingControlManager().mostRecentInControl().map(IBaritoneProcess::displayName).orElse(null)).append(',');
       field(json, "command", baritone.getPathingControlManager().mostRecentCommand().map(PathingCommand::toString).orElse(null)).append(',');
-      field(json, "movementControl", control).append(',');
-      field(json, "pathPosition", pathPosition).append(',');
+      field(json, "movementControl", transport.control()).append(',');
+      field(json, "pathPosition", transport.current().position()).append(',');
       field(json, "pathLength", path == null ? null : path.length()).append(',');
-      field(json, "movement", movement == null ? null : movement.getClass().getSimpleName()).append(',');
-      field(json, "movementSrc", movement == null ? null : movement.getSrc()).append(',');
-      field(json, "movementDest", movement == null ? null : movement.getDest());
+      field(json, "movement", currentPlan == null ? null : currentPlan.movement()).append(',');
+      field(json, "movementSrc", currentPlan == null ? null : currentPlan.src()).append(',');
+      field(json, "movementDest", currentPlan == null ? null : currentPlan.dest()).append(',');
+      field(json, "transport", transport(transport));
       json.append("}\n");
       out.write(json.toString());
       out.flush();
@@ -204,6 +198,55 @@ public final class PlayerTelemetryBehavior extends Behavior {
     return json;
   }
 
+  private Object transport(TransportSnapshot snapshot) {
+    return (JsonWritable) json -> {
+      TransportSnapshot.Executor current = snapshot.current();
+      TransportSnapshot.Plan plan = current.current();
+      json.append('{');
+      field(json, "actual", snapshot.actual()).append(',');
+      field(json, "planned", plan == null ? null : plan.mode()).append(',');
+      field(json, "phase", plan == null ? null : plan.phase()).append(',');
+      field(json, "terminal", plan == null ? null : plan.terminal()).append(',');
+      field(json, "entry", plan == null ? null : plan.entry()).append(',');
+      field(json, "progress", plan == null ? null : plan.progress()).append(',');
+      field(json, "sequence", current.sequence()).append(',');
+      field(json, "current", executor(current)).append(',');
+      field(json, "next", executor(snapshot.next()));
+      json.append('}');
+    };
+  }
+
+  private Object executor(TransportSnapshot.Executor executor) {
+    return (JsonWritable) json -> {
+      json.append('{');
+      field(json, "position", executor.position()).append(',');
+      field(json, "size", executor.size()).append(',');
+      field(json, "done", executor.done()).append(',');
+      field(json, "plan", plan(executor.current())).append(',');
+      field(json, "sequence", executor.sequence());
+      json.append('}');
+    };
+  }
+
+  private Object plan(TransportSnapshot.Plan plan) {
+    if (plan == null) {
+      return null;
+    }
+    return (JsonWritable) json -> {
+      json.append('{');
+      field(json, "mode", plan.mode()).append(',');
+      field(json, "movement", plan.movement()).append(',');
+      field(json, "src", plan.src()).append(',');
+      field(json, "dest", plan.dest()).append(',');
+      field(json, "phase", plan.phase()).append(',');
+      field(json, "terminal", plan.terminal()).append(',');
+      field(json, "entry", plan.entry()).append(',');
+      field(json, "progress", plan.progress()).append(',');
+      field(json, "token", String.valueOf(plan.token()));
+      json.append('}');
+    };
+  }
+
   private Object inputs() {
     return (JsonWritable) json -> {
       json.append('{');
@@ -228,6 +271,30 @@ public final class PlayerTelemetryBehavior extends Behavior {
       double surfaceY = waterSurfaceY(feet);
       field(json, "surfaceY", Double.isNaN(surfaceY) ? null : surfaceY).append(',');
       field(json, "clearance", Double.isNaN(surfaceY) ? null : playerEyeClearance(surfaceY));
+      json.append('}');
+    };
+  }
+
+  private Object vehicle(Entity vehicle) {
+    if (vehicle == null) {
+      return null;
+    }
+    return (JsonWritable) json -> {
+      json.append('{');
+      field(json, "type", BuiltInRegistries.ENTITY_TYPE.getKey(vehicle.getType()).toString()).append(',');
+      field(json, "pos", vehicle.position()).append(',');
+      field(json, "velocity", vehicle.getDeltaMovement()).append(',');
+      field(json, "horizontalSpeed", horizontalSpeed(vehicle.getDeltaMovement())).append(',');
+      field(json, "yaw", vehicle.getYRot()).append(',');
+      field(json, "pitch", vehicle.getXRot()).append(',');
+      field(json, "controlled", vehicle == ctx.player().getControlledVehicle()).append(',');
+      if (vehicle instanceof AbstractBoat boat) {
+        field(json, "boatLeftPaddle", boat.getPaddleState(AbstractBoat.PADDLE_LEFT)).append(',');
+        field(json, "boatRightPaddle", boat.getPaddleState(AbstractBoat.PADDLE_RIGHT));
+      } else {
+        field(json, "boatLeftPaddle", null).append(',');
+        field(json, "boatRightPaddle", null);
+      }
       json.append('}');
     };
   }
@@ -324,7 +391,6 @@ public final class PlayerTelemetryBehavior extends Behavior {
   private void close() {
     BufferedWriter writer = out;
     out = null;
-    movementControl = null;
     try {
       if (writer != null) {
         writer.close();
@@ -352,8 +418,19 @@ public final class PlayerTelemetryBehavior extends Behavior {
       case Enum<?> e -> quote(json, e.name());
       case BlockPos pos -> blockPos(json, pos);
       case Vec3 vec -> vec3(json, vec);
+      case TransportControl control -> transportControl(json, control);
       default -> quote(json, String.valueOf(value));
     }
+  }
+
+  private static void transportControl(StringBuilder json, TransportControl control) {
+    json.append('{');
+    field(json, "movement", control.movement()).append(',');
+    field(json, "status", control.status()).append(',');
+    field(json, "targetYaw", control.targetYaw()).append(',');
+    field(json, "targetPitch", control.targetPitch()).append(',');
+    field(json, "forceRotations", control.forceRotations());
+    json.append('}');
   }
 
   private static void blockPos(StringBuilder json, BlockPos pos) {
@@ -392,16 +469,4 @@ public final class PlayerTelemetryBehavior extends Behavior {
     void write(StringBuilder json);
   }
 
-  private record MovementControl(String movement, MovementStatus status, Float targetYaw, Float targetPitch, boolean forceRotations) implements JsonWritable {
-    @Override
-    public void write(StringBuilder json) {
-      json.append('{');
-      field(json, "movement", movement).append(',');
-      field(json, "status", status).append(',');
-      field(json, "targetYaw", targetYaw).append(',');
-      field(json, "targetPitch", targetPitch).append(',');
-      field(json, "forceRotations", forceRotations);
-      json.append('}');
-    }
-  }
 }

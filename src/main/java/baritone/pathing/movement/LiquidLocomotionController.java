@@ -18,7 +18,6 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.phys.Vec3;
 
 public final class LiquidLocomotionController implements MovementHelper {
-  private static final int SURFACE_AIR_ENTER = 90;
   private static final int SWIM_ENTER_TICKS = 4;
   private static final int PROJECTED_WATER_ADVANCE_LIMIT = 2;
   private static final int MIN_FAST_SWIM_RUNWAY = 3;
@@ -35,6 +34,8 @@ public final class LiquidLocomotionController implements MovementHelper {
   private static final double SURFACE_BUMP_FLOOR = -0.250D;
   private static final double SURFACE_BUMP_CEILING = 0.040D;
   private static final double SURFACE_BUMP_MAX_UPWARD_VELOCITY = -0.002D;
+  private static final double SURFACE_NEAR_AIR_RESERVE = 0.10D;
+  private static final double SURFACE_DEEP_AIR_RESERVE = 0.30D;
   private static final int SURFACE_GLIDE_BUMP_INTERVAL_TICKS = 8;
   private static final int SURFACE_DROWN_BUMP_INTERVAL_TICKS = 4;
   private static final float SURFACE_ASCENT_PITCH = -4F;
@@ -205,22 +206,26 @@ public final class LiquidLocomotionController implements MovementHelper {
     if (mode == Mode.SWIM_CRUISE) {
       switchMode(eyeWet || clearance < SURFACE_GLIDE_LOW_CLEARANCE ? Mode.SWIM_SURFACE_DROWNING : Mode.SWIM_SURFACE_GLIDING);
     }
-    if (eyeWet || clearance < SURFACE_GLIDE_LOW_CLEARANCE || air <= SURFACE_AIR_ENTER) {
+    boolean nearSurface = clearance >= SURFACE_BUMP_FLOOR;
+    boolean urgent = air <= oxygenReserve(maxAir, nearSurface);
+    if (eyeWet || clearance < SURFACE_GLIDE_LOW_CLEARANCE || urgent) {
       switchMode(Mode.SWIM_SURFACE_DROWNING);
     } else {
       switchMode(Mode.SWIM_SURFACE_GLIDING);
     }
-    boolean urgent = eyeWet || air <= SURFACE_AIR_ENTER || maxAir > 0 && air < maxAir / 2;
     double bumpClearance = mode == Mode.SWIM_SURFACE_DROWNING ? SURFACE_DROWN_BUMP_CLEARANCE : SURFACE_GLIDE_BUMP_CLEARANCE;
-    boolean nearSurface = clearance >= SURFACE_BUMP_FLOOR;
-    boolean canBump = swimming || eyeWet && air <= SURFACE_AIR_ENTER;
-    boolean drowningGlide = swimming && eyeWet;
+    boolean canBump = swimming || eyeWet && urgent;
+    boolean drowningGlide = swimming && eyeWet && urgent;
     boolean breathingBandBump = (urgent || clearance < bumpClearance) && clearance < SURFACE_BUMP_CEILING;
     boolean jump = canBump && nearSurface && (drowningGlide || breathingBandBump) && ctx.player().getDeltaMovement().y <= SURFACE_BUMP_MAX_UPWARD_VELOCITY && surfaceBumpCooldown == 0;
     if (jump) {
       surfaceBumpCooldown = urgent ? SURFACE_DROWN_BUMP_INTERVAL_TICKS : SURFACE_GLIDE_BUMP_INTERVAL_TICKS;
     }
     return new SurfaceAction(jump);
+  }
+
+  private static int oxygenReserve(int maxAir, boolean nearSurface) {
+    return (int) Math.ceil(Math.max(1, maxAir) * (nearSurface ? SURFACE_NEAR_AIR_RESERVE : SURFACE_DEEP_AIR_RESERVE));
   }
 
   private float surfacePitch(double clearance) {
