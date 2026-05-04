@@ -10,7 +10,7 @@ import baritone.pathing.movement.EdgeEvalScratch;
 import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import java.util.ArrayList;
@@ -41,7 +41,7 @@ public class MovementDiagonal extends Movement {
   }
 
   @Override
-  protected boolean safeToCancel(MovementState state) {
+  protected boolean safeToCancel(ControlFrame.Builder state) {
     // too simple. backfill does not work after cornering with this
     // return context.affordances.canWalkOn(ctx.playerFeet().down());
     LocalPlayer player = ctx.player();
@@ -250,7 +250,7 @@ public class MovementDiagonal extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     super.updateState(state);
     if (state.getStatus() != MovementStatus.RUNNING) {
       return state;
@@ -286,7 +286,7 @@ public class MovementDiagonal extends Movement {
   }
 
   @Override
-  protected boolean prepared(MovementState state) {
+  protected boolean prepared(ControlFrame.Builder state) {
     return true;
   }
 

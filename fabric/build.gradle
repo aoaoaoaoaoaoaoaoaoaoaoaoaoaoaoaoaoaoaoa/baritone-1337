@@ -32,6 +32,53 @@ unimined.minecraft {
   }
 }
 
+def playtestRoot = rootProject.file("run/playtest")
+def minecraftClientRuntimeJar = providers.provider {
+  rootProject.file("${gradle.gradleUserHomeDir}/caches/unimined/net/minecraft/minecraft/${rootProject.minecraft_version}/minecraft-${rootProject.minecraft_version}-client.jar")
+}
+
+tasks.matching { it.name in ["runClient", "runServer"] }.configureEach {
+  javaVersion = JavaVersion.toVersion(rootProject.java_toolchain_version)
+  classpath += files(minecraftClientRuntimeJar)
+}
+
+tasks.register("runPlaytestClient") {
+  group = "Unimined_runs"
+  description = "Minecraft Client with the Baritone playtest harness enabled"
+  dependsOn tasks.named("runClient")
+}
+
+tasks.register("runPlaytestServer") {
+  group = "Unimined_runs"
+  description = "Minecraft Server for the Baritone playtest harness"
+  dependsOn tasks.named("runServer")
+}
+
+gradle.taskGraph.whenReady { graph ->
+  boolean playtestClient = graph.hasTask(tasks.named("runPlaytestClient").get())
+  boolean playtestServer = graph.hasTask(tasks.named("runPlaytestServer").get())
+  if (playtestClient) {
+    tasks.named("runClient").configure { run ->
+      run.workingDir = file(findProperty("baritonePlaytestClientDir") ?: new File(playtestRoot, "client"))
+      run.systemProperty "baritone.playtest.enabled", "true"
+      run.systemProperty "baritone.playtest.inbox", findProperty("baritonePlaytestInbox") ?: new File(playtestRoot, "inbox").absolutePath
+      run.systemProperty "baritone.playtest.results", findProperty("baritonePlaytestResults") ?: new File(playtestRoot, "results").absolutePath
+      run.systemProperty "baritone.playtest.server", findProperty("baritonePlaytestServer") ?: "127.0.0.1:25565"
+      run.systemProperty "baritone.playtest.quitOnFinish", findProperty("baritonePlaytestQuitOnFinish") ?: "false"
+      run.setProperty("auth_player_name") { (findProperty("baritonePlaytestUsername") ?: "BaritoneTest").toString() }
+      run.setProperty("auth_uuid") { (findProperty("baritonePlaytestUuid") ?: "8b53c6c6-93e4-3df0-8b0c-415e38e60014").toString() }
+      run.setProperty("auth_access_token") { "0" }
+      run.setProperty("auth_xuid") { "" }
+      run.args "--width", "854", "--height", "480"
+    }
+  }
+  if (playtestServer) {
+    tasks.named("runServer").configure {
+      workingDir = file(findProperty("baritonePlaytestServerDir") ?: new File(playtestRoot, "server"))
+    }
+  }
+}
+
 configurations {
   common
   shadowCommon // Don't use shadow from the shadow plugin because we don't want IDEA to index this.

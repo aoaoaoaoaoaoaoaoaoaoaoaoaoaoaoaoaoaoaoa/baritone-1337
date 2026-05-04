@@ -102,7 +102,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
       if (!MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), state)) {
         Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, InteractionPlan.Click.LEFT);
         if (plan.isPresent() && isSafeToCancel) {
-          return plan.get().pause(baritone, () -> MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos)),
+          return plan.get().pause(baritone, () -> MovementHelper.bestToolSlot(ctx, ctx.world().getBlockState(pos)).ifPresent(ctx.player().getInventory()::setSelectedSlot),
             () -> ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(plan.get().rotation()));
         }
       }

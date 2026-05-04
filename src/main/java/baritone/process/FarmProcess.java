@@ -221,7 +221,7 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
       }
       Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, InteractionPlan.Click.LEFT);
       if (plan.isPresent() && isSafeToCancel) {
-        return plan.get().pause(baritone, () -> MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos)), () -> ctx.isLookingAt(pos));
+        return plan.get().pause(baritone, () -> MovementHelper.bestToolSlot(ctx, ctx.world().getBlockState(pos)).ifPresent(ctx.player().getInventory()::setSelectedSlot), () -> ctx.isLookingAt(pos));
       }
     }
     ArrayList<BlockPos> both = new ArrayList<>(openFarmland);

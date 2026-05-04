@@ -8,7 +8,7 @@ import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.NodeTerrainFacts;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
@@ -126,6 +126,9 @@ public class MovementAscend extends Movement {
       }
       walk += context.costs.jumpPenalty();
     }
+    if (MovementHelper.surfaceSwimCell(context, x, y, z) && !MovementHelper.isWater(toPlace)) {
+      walk += Math.max(0D, context.costs.jumpPenalty());
+    }
 
     double totalCost = walk + additionalPlacementCost;
     // start with srcUp2 since we already have its state
@@ -143,7 +146,7 @@ public class MovementAscend extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     if (ctx.playerFeet().y < src.y && !shoreExitFromSurfaceEnvelope()) {
       // this check should run even when in preparing state (breaking blocks)
       return state.setStatus(MovementStatus.UNREACHABLE);
@@ -233,7 +236,7 @@ public class MovementAscend extends Movement {
   }
 
   @Override
-  public boolean safeToCancel(MovementState state) {
+  public boolean safeToCancel(ControlFrame.Builder state) {
     // if we had to place, don't allow pause
     return state.getStatus() != MovementStatus.RUNNING || ticksWithoutPlacement == 0;
   }

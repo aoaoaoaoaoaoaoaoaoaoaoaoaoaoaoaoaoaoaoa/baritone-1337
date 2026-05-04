@@ -154,25 +154,23 @@ public final class InventoryBehavior extends Behavior implements Helper {
   }
 
   public boolean hasBoat() {
+    return findBoatHotbarSlot().isPresent();
+  }
+
+  public OptionalInt findBoatHotbarSlot() {
     NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
     for (int i = 0; i < 9; i++) {
       if (isBoat(inv.get(i))) {
-        return true;
+        return OptionalInt.of(i);
       }
     }
-    return false;
+    return OptionalInt.empty();
   }
 
   public Optional<InteractionHand> selectBoat() {
-    LocalPlayer player = ctx.player();
-    NonNullList<ItemStack> inv = player.getInventory().getNonEquipmentItems();
-    for (int i = 0; i < 9; i++) {
-      if (isBoat(inv.get(i))) {
-        player.getInventory().setSelectedSlot(i);
-        return Optional.of(InteractionHand.MAIN_HAND);
-      }
-    }
-    return Optional.empty();
+    OptionalInt slot = findBoatHotbarSlot();
+    slot.ifPresent(ctx.player().getInventory()::setSelectedSlot);
+    return slot.isPresent() ? Optional.of(InteractionHand.MAIN_HAND) : Optional.empty();
   }
 
   private static boolean isBoat(ItemStack stack) {
@@ -196,6 +194,56 @@ public final class InventoryBehavior extends Behavior implements Helper {
       }
     }
     return false;
+  }
+
+  public OptionalInt findThrowawayHotbarSlotForLocation(int x, int y, int z) {
+    BlockState maybe = baritone.getBuilderProcess().placeAt(x, y, z, baritone.bsi.get0(x, y, z));
+    if (maybe != null) {
+      OptionalInt exact = findThrowawayHotbarSlot(
+        stack -> stack.getItem() instanceof BlockItem && maybe.equals(((BlockItem) stack.getItem()).getBlock().getStateForPlacement(new BlockPlaceContext(new UseOnContext(ctx.world(), ctx.player(),
+          InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(ctx.player().position().x, ctx.player().position().y, ctx.player().position().z), Direction.UP, ctx.playerFeet(), false)) {
+        }))));
+      if (exact.isPresent()) {
+        return exact;
+      }
+      OptionalInt sameBlock = findThrowawayHotbarSlot(stack -> stack.getItem() instanceof BlockItem && ((BlockItem) stack.getItem()).getBlock().equals(maybe.getBlock()));
+      if (sameBlock.isPresent()) {
+        return sameBlock;
+      }
+    }
+    for (Item item : Baritone.settings().acceptableThrowawayItems.value) {
+      OptionalInt slot = findThrowawayHotbarSlot(stack -> item.equals(stack.getItem()));
+      if (slot.isPresent()) {
+        return slot;
+      }
+    }
+    return OptionalInt.empty();
+  }
+
+  private OptionalInt findThrowawayHotbarSlot(Predicate<? super ItemStack> desired) {
+    LocalPlayer p = ctx.player();
+    NonNullList<ItemStack> inv = p.getInventory().getNonEquipmentItems();
+    for (int i = 0; i < 9; i++) {
+      if (desired.test(inv.get(i))) {
+        return OptionalInt.of(i);
+      }
+    }
+    if (desired.test(p.getItemBySlot(EquipmentSlot.OFFHAND))) {
+      for (int i = 0; i < 9; i++) {
+        ItemStack item = inv.get(i);
+        if (item.isEmpty() || item.getItem().components().has(DataComponents.TOOL)) {
+          return OptionalInt.of(i);
+        }
+      }
+    }
+    if (Baritone.settings().allowInventory.value) {
+      for (int i = 9; i < 36; i++) {
+        if (desired.test(inv.get(i)) && requestSwapWithHotBar(i, 7)) {
+          return OptionalInt.of(7);
+        }
+      }
+    }
+    return OptionalInt.empty();
   }
 
   public boolean throwaway(boolean select, Predicate<? super ItemStack> desired) {

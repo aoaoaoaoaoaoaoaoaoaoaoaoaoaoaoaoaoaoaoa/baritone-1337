@@ -1,5 +1,0 @@
-package baritone.planning;
-
-public enum ExitDisposition {
-  STAY_IN_MODE, STABILIZE_ON_FOOT, STABILIZE_IN_WATER, DISMOUNT_AND_PICKUP_BOAT, DISMOUNT_AND_LEAVE_BOAT
-}

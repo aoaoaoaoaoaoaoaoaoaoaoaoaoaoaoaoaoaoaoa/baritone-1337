@@ -11,7 +11,7 @@ import baritone.pathing.movement.EdgeEvalScratch;
 import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.NodeTerrainFacts;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
@@ -39,7 +39,7 @@ public class MovementDescend extends Movement {
   }
 
   /**
-   * Called by PathExecutor if needing safeMode can only be detected with knowledge about the next movement
+   * Called by RouteExecutor if needing safeMode can only be detected with knowledge about the next movement
    */
   public void forceSafeMode() {
     forceSafeMode = true;
@@ -205,7 +205,7 @@ public class MovementDescend extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     super.updateState(state);
     if (state.getStatus() != MovementStatus.RUNNING) {
       return state;
@@ -224,7 +224,7 @@ public class MovementDescend extends Movement {
       double destX = (src.getX() + 0.5) * 0.17 + (dest.getX() + 0.5) * 0.83;
       double destZ = (src.getZ() + 0.5) * 0.17 + (dest.getZ() + 0.5) * 0.83;
       state
-        .setTarget(new MovementState.MovementTarget(
+        .setTarget(new ControlFrame.MovementTarget(
           RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3(destX, dest.getY(), destZ), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false))
         .setInput(Input.MOVE_FORWARD, true);
       return state;

@@ -12,13 +12,15 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.*;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.input.Input;
-import baritone.pathing.movement.MovementState.MovementTarget;
+import baritone.pathing.control.ControlFrame;
+import baritone.pathing.control.ControlFrame.MovementTarget;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -624,8 +626,8 @@ public interface MovementHelper extends ActionCosts, Helper {
    * @param ctx The player context
    * @param b   the blockstate to mine
    */
-  static void switchToBestToolFor(IPlayerContext ctx, BlockState b) {
-    switchToBestToolFor(ctx, b, new ToolSet(ctx.player()), BaritoneAPI.getSettings().preferSilkTouch.value);
+  static void switchToBestToolFor(ControlFrame.Builder state, IPlayerContext ctx, BlockState b) {
+    bestToolSlot(ctx, b).ifPresent(state::selectHotbarSlot);
   }
 
   /**
@@ -635,29 +637,38 @@ public interface MovementHelper extends ActionCosts, Helper {
    * @param b   the blockstate to mine
    * @param ts  previously calculated ToolSet
    */
-  static void switchToBestToolFor(IPlayerContext ctx, BlockState b, ToolSet ts, boolean preferSilkTouch) {
-    if (Baritone.settings().autoTool.value && !Baritone.settings().assumeExternalAutoTool.value) {
-      ctx.player().getInventory().setSelectedSlot(ts.getBestSlot(b.getBlock(), preferSilkTouch));
-    }
+  static void switchToBestToolFor(ControlFrame.Builder state, IPlayerContext ctx, BlockState b, ToolSet ts, boolean preferSilkTouch) {
+    bestToolSlot(b, ts, preferSilkTouch).ifPresent(state::selectHotbarSlot);
   }
 
-  static void moveTowards(IPlayerContext ctx, MovementState state, BlockPos pos) {
+  static OptionalInt bestToolSlot(IPlayerContext ctx, BlockState b) {
+    return bestToolSlot(b, new ToolSet(ctx.player()), BaritoneAPI.getSettings().preferSilkTouch.value);
+  }
+
+  static OptionalInt bestToolSlot(BlockState b, ToolSet ts, boolean preferSilkTouch) {
+    if (Baritone.settings().autoTool.value && !Baritone.settings().assumeExternalAutoTool.value) {
+      return OptionalInt.of(ts.getBestSlot(b.getBlock(), preferSilkTouch));
+    }
+    return OptionalInt.empty();
+  }
+
+  static void moveTowards(IPlayerContext ctx, ControlFrame.Builder state, BlockPos pos) {
     state
       .setTarget(new MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(pos), ctx.playerRotations()).withPitch(ctx.playerRotations().getPitch()), false))
       .setInput(Input.MOVE_FORWARD, true);
   }
 
-  static void moveTowardsWithoutRotation(IPlayerContext ctx, MovementState state, float idealYaw) {
+  static void moveTowardsWithoutRotation(IPlayerContext ctx, ControlFrame.Builder state, float idealYaw) {
     MovementOption.getOptions(Mth.sin(ctx.playerRotations().getYaw() * DEG_TO_RAD_F), Mth.cos(ctx.playerRotations().getYaw() * DEG_TO_RAD_F), Baritone.settings().allowSprint.value)
       .min(Comparator.comparing(option -> option.distanceToSq(Mth.sin(idealYaw * DEG_TO_RAD_F), Mth.cos(idealYaw * DEG_TO_RAD_F)))).ifPresent(selection -> selection.setInputs(state));
   }
 
-  static void moveTowardsWithoutRotation(IPlayerContext ctx, MovementState state, BlockPos dest) {
+  static void moveTowardsWithoutRotation(IPlayerContext ctx, ControlFrame.Builder state, BlockPos dest) {
     float idealYaw = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()).getYaw();
     moveTowardsWithoutRotation(ctx, state, idealYaw);
   }
 
-  static void moveTowardsWithSlightRotation(IPlayerContext ctx, MovementState state, BlockPos dest) {
+  static void moveTowardsWithSlightRotation(IPlayerContext ctx, ControlFrame.Builder state, BlockPos dest) {
     float idealYaw = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()).getYaw();
     float distance = Rotation.yawDistanceFromOffset(ctx.playerRotations().getYaw(), idealYaw) % 45f;
     float newYaw = distance > 0f ? distance > 22.5f ? distance - 45f : distance : distance < -22.5f ? distance + 45f : distance;
@@ -821,7 +832,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     return false;
   }
 
-  static PlaceResult attemptToPlaceABlock(MovementState state, IBaritone baritone, BlockPos placeAt, boolean preferDown, boolean wouldSneak) {
+  static PlaceResult attemptToPlaceABlock(ControlFrame.Builder state, IBaritone baritone, BlockPos placeAt, boolean preferDown, boolean wouldSneak) {
     IPlayerContext ctx = baritone.getPlayerContext();
     Optional<Rotation> direct = RotationUtils.reachable(ctx, placeAt, wouldSneak); // we assume that if there is a block there, it must be replacable
     boolean found = false;
@@ -865,7 +876,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (wouldSneak) {
           state.setInput(Input.SNEAK, true);
         }
-        ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, placeAt.getX(), placeAt.getY(), placeAt.getZ());
+        ((Baritone) baritone).getInventoryBehavior().findThrowawayHotbarSlotForLocation(placeAt.getX(), placeAt.getY(), placeAt.getZ()).ifPresent(state::selectHotbarSlot);
         return PlaceResult.READY_TO_PLACE;
       }
     }
@@ -873,7 +884,7 @@ public interface MovementHelper extends ActionCosts, Helper {
       if (wouldSneak) {
         state.setInput(Input.SNEAK, true);
       }
-      ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, placeAt.getX(), placeAt.getY(), placeAt.getZ());
+      ((Baritone) baritone).getInventoryBehavior().findThrowawayHotbarSlotForLocation(placeAt.getX(), placeAt.getY(), placeAt.getZ()).ifPresent(state::selectHotbarSlot);
       return PlaceResult.ATTEMPTING;
     }
     return PlaceResult.NO_OPTION;

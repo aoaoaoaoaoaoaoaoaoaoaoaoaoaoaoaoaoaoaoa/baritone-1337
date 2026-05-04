@@ -9,7 +9,6 @@ import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementCatalog;
 import baritone.pathing.movement.MovementPrimitive;
-import baritone.pathing.movement.water.SurfaceWaterPathCompactor;
 import baritone.pathing.path.CutoffPath;
 import baritone.utils.pathing.PathBase;
 import com.google.common.collect.Lists;
@@ -164,13 +163,6 @@ class Path extends PathBase {
         throw new IllegalStateException("Path has wrong size after cutoff");
       }
       return res;
-    }
-    SurfaceWaterPathCompactor.Result compacted = SurfaceWaterPathCompactor.compact(context, path, movements);
-    if (compacted.changed()) {
-      path.clear();
-      path.addAll(compacted.positions());
-      movements.clear();
-      movements.addAll(compacted.movements());
     }
     movements.forEach(m -> m.checkLoadedChunk(context));
     // more post processing here

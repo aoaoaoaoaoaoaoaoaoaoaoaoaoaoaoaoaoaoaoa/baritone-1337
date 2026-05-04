@@ -9,7 +9,7 @@ import baritone.api.process.IBaritoneProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.behavior.PathingBehavior;
-import baritone.pathing.path.PathExecutor;
+import baritone.pathing.path.RouteExecutor;
 import net.minecraft.core.BlockPos;
 
 import java.util.*;
@@ -136,7 +136,7 @@ public class PathingControlManager implements IPathingControlManager {
   }
 
   public boolean forceRevalidate(Goal newGoal) {
-    PathExecutor current = baritone.getPathingBehavior().getCurrent();
+    RouteExecutor current = baritone.getPathingBehavior().getCurrent();
     if (current != null) {
       if (newGoal.isInGoal(current.getPath().getDest())) {
         return false;
@@ -147,7 +147,7 @@ public class PathingControlManager implements IPathingControlManager {
   }
 
   public boolean revalidateGoal(Goal newGoal) {
-    PathExecutor current = baritone.getPathingBehavior().getCurrent();
+    RouteExecutor current = baritone.getPathingBehavior().getCurrent();
     if (current != null) {
       Goal intended = current.getPath().getGoal();
       BlockPos end = current.getPath().getDest();

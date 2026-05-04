@@ -7,7 +7,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.behavior.PathingBehavior;
-import baritone.pathing.path.PathExecutor;
+import baritone.pathing.path.RouteExecutor;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
@@ -80,8 +80,8 @@ public final class PathRenderer implements IRenderer {
       return;
     }
 
-    PathExecutor current = behavior.getCurrent(); // this should prevent most race conditions?
-    PathExecutor next = behavior.getNext(); // like, now it's not possible for current!=null to be true, then suddenly false because of another thread
+    RouteExecutor current = behavior.getCurrent(); // this should prevent most race conditions?
+    RouteExecutor next = behavior.getNext(); // like, now it's not possible for current!=null to be true, then suddenly false because of another thread
     if (current != null && settings.renderSelectionBoxes.value) {
       drawManySelectionBoxes(view, ctx.player(), current.toBreak(), settings.colorBlocksToBreak.value);
       drawManySelectionBoxes(view, ctx.player(), current.toPlace(), settings.colorBlocksToPlace.value);

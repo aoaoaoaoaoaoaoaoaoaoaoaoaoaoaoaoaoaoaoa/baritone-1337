@@ -1,6 +1,7 @@
 package baritone.pathing.movement;
 
 import baritone.api.utils.input.Input;
+import baritone.pathing.control.ControlFrame;
 import net.minecraft.util.Mth;
 
 import java.util.stream.Stream;
@@ -12,7 +13,7 @@ public record MovementOption(Input input1, Input input2, float motionX, float mo
     this(input1, null, motionX, motionZ);
   }
 
-  public void setInputs(MovementState movementState) {
+  public void setInputs(ControlFrame.Builder movementState) {
     if (input1 != null) {
       movementState.setInput(input1, true);
     }

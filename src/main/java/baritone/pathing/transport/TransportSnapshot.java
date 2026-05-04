@@ -7,18 +7,15 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.path.PathExecutor;
-import baritone.planning.ActualMode;
-import baritone.planning.ObservationSnapshot;
+import baritone.pathing.path.RouteExecutor;
 import java.util.Locale;
+import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 
-public record TransportSnapshot(ObservationSnapshot observation, TransportMode actual, TransportSnapshot.Executor current, TransportSnapshot.Executor next, BetterBlockPos planningStart,
-  TransportControl control) {
+public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor current, TransportSnapshot.Executor next, BetterBlockPos planningStart, TransportControl control) {
   private static final int SEQUENCE_LIMIT = 10;
 
-  public static TransportSnapshot capture(Baritone baritone, IPlayerContext ctx, PathExecutor current, PathExecutor next, BetterBlockPos planningStart) {
-    ObservationSnapshot observation = ObservationSnapshot.capture(baritone, ctx);
-    return new TransportSnapshot(observation, actual(observation), Executor.capture(ctx, current, SEQUENCE_LIMIT), Executor.capture(ctx, next, SEQUENCE_LIMIT), planningStart,
+  public static TransportSnapshot capture(Baritone baritone, IPlayerContext ctx, RouteExecutor current, RouteExecutor next, BetterBlockPos planningStart) {
+    return new TransportSnapshot(actual(baritone, ctx), Executor.capture(ctx, current, SEQUENCE_LIMIT), Executor.capture(ctx, next, SEQUENCE_LIMIT), planningStart,
       current == null ? null : current.transportControl());
   }
 
@@ -27,14 +24,17 @@ public record TransportSnapshot(ObservationSnapshot observation, TransportMode a
       planningStart == null ? "-" : planningStart.x + "," + planningStart.y + "," + planningStart.z);
   }
 
-  private static TransportMode actual(ObservationSnapshot observation) {
-    return switch (observation.actualMode()) {
-      case ActualMode.RidingBoat ignored -> TransportMode.BOAT;
-      case ActualMode.FallFlying ignored -> TransportMode.ELYTRA;
-      case ActualMode.InWater ignored -> TransportMode.SWIM;
-      case ActualMode.InPortal ignored -> TransportMode.PEDESTRIAN;
-      case ActualMode.OnFoot ignored -> TransportMode.PEDESTRIAN;
-    };
+  private static TransportMode actual(Baritone baritone, IPlayerContext ctx) {
+    if (baritone.getElytraProcess().isActive() || ctx.player().isFallFlying()) {
+      return TransportMode.ELYTRA;
+    }
+    if (ctx.player().getVehicle() instanceof AbstractBoat) {
+      return TransportMode.BOAT;
+    }
+    if (MovementHelper.isWater(ctx, ctx.playerFeet()) || ctx.player().isSwimming()) {
+      return TransportMode.SWIM;
+    }
+    return TransportMode.PEDESTRIAN;
   }
 
   private static Plan plan(IPlayerContext ctx, IMovement movement) {
@@ -58,7 +58,7 @@ public record TransportSnapshot(ObservationSnapshot observation, TransportMode a
       return new Executor(position, size, null, "");
     }
 
-    private static Executor capture(IPlayerContext ctx, PathExecutor executor, int sequenceLimit) {
+    private static Executor capture(IPlayerContext ctx, RouteExecutor executor, int sequenceLimit) {
       if (executor == null) {
         return absent();
       }
@@ -68,7 +68,8 @@ public record TransportSnapshot(ObservationSnapshot observation, TransportMode a
       if (position >= size) {
         return done(position, size);
       }
-      return new Executor(position, size, plan(ctx, path.movements().get(position)), sequence(ctx, path, position, sequenceLimit));
+      Plan plan = executor.transportPlan(ctx);
+      return new Executor(position, size, plan == null ? plan(ctx, path.movements().get(position)) : plan, sequence(ctx, path, position, sequenceLimit));
     }
 
     public boolean present() {

@@ -6,8 +6,8 @@ import baritone.api.process.PathingCommandType;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
-import baritone.pathing.path.PathExecutor;
+import baritone.pathing.control.ControlFrame;
+import baritone.pathing.path.RouteExecutor;
 import baritone.utils.BaritoneProcessHelper;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -55,7 +55,7 @@ public final class BackfillProcess extends BaritoneProcessHelper {
     }
     baritone.getInputOverrideHandler().clearAllKeys();
     for (BlockPos toPlace : toFillIn()) {
-      MovementState fake = new MovementState();
+      ControlFrame.Builder fake = ControlFrame.builder();
       switch (MovementHelper.attemptToPlaceABlock(fake, baritone, toPlace, false, false)) {
         case NO_OPTION :
           continue;
@@ -87,7 +87,7 @@ public final class BackfillProcess extends BaritoneProcessHelper {
   }
 
   private boolean partOfCurrentMovement(BlockPos pos) {
-    PathExecutor exec = baritone.getPathingBehavior().getCurrent();
+    RouteExecutor exec = baritone.getPathingBehavior().getCurrent();
     if (exec == null || exec.finished() || exec.failed()) {
       return false;
     }

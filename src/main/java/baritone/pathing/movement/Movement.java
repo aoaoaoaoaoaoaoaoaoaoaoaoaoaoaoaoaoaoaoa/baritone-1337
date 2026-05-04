@@ -8,6 +8,7 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.*;
 import baritone.api.utils.input.Input;
 import baritone.behavior.PathingBehavior;
+import baritone.pathing.control.ControlFrame;
 import baritone.pathing.transport.TransportControl;
 import baritone.pathing.transport.TransportSnapshot;
 import baritone.utils.BlockStateInterface;
@@ -16,6 +17,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public abstract class Movement implements IMovement, MovementHelper {
 
@@ -24,7 +26,7 @@ public abstract class Movement implements IMovement, MovementHelper {
   protected final IBaritone baritone;
   protected final IPlayerContext ctx;
 
-  private MovementState currentState = new MovementState().setStatus(MovementStatus.PREPPING);
+  private ControlFrame.Builder currentState = ControlFrame.builder().setStatus(MovementStatus.PREPPING);
 
   protected final BetterBlockPos src;
 
@@ -110,7 +112,7 @@ public abstract class Movement implements IMovement, MovementHelper {
   }
 
   public boolean acceptsPathingDrift(BlockPos pos) {
-    return acceptsPosition(pos);
+    return acceptsPosition(pos) || acceptsWaterPathingDrift(pos);
   }
 
   public double sustainedPathDistanceTolerance() {
@@ -130,6 +132,36 @@ public abstract class Movement implements IMovement, MovementHelper {
     return feet.equals(target) || surfaceEquivalent(feet, target);
   }
 
+  private boolean acceptsWaterPathingDrift(BlockPos pos) {
+    if (!waterDriftCandidate(pos) || Math.abs(pos.getY() - src.y) > 1 && Math.abs(pos.getY() - dest.y) > 1) {
+      return false;
+    }
+    Vec3 player = ctx.player().position();
+    double sx = src.x + 0.5D;
+    double sz = src.z + 0.5D;
+    double dx = dest.x - src.x;
+    double dz = dest.z - src.z;
+    double lenSq = dx * dx + dz * dz;
+    if (lenSq < 1.0E-6D) {
+      return square(player.x - sx) + square(player.z - sz) <= 2.25D;
+    }
+    double progress = ((player.x - sx) * dx + (player.z - sz) * dz) / lenSq;
+    if (progress < -0.75D || progress > 1.75D) {
+      return false;
+    }
+    double closestX = sx + dx * progress;
+    double closestZ = sz + dz * progress;
+    return square(player.x - closestX) + square(player.z - closestZ) <= 2.25D;
+  }
+
+  private boolean waterDriftCandidate(BlockPos pos) {
+    return MovementHelper.isWater(ctx, pos) || MovementHelper.isWater(ctx, pos.above()) || MovementHelper.isWater(ctx, src) || MovementHelper.isWater(ctx, dest);
+  }
+
+  private static double square(double value) {
+    return value * value;
+  }
+
   private boolean surfaceEquivalent(BlockPos feet, BlockPos target) {
     return feet.getX() == target.getX() && feet.getZ() == target.getZ() && feet.getY() + 1 == target.getY() && MovementHelper.surfaceSwimEnvelopeCell(ctx, feet)
       && MovementHelper.surfaceSwimCell(ctx, target);
@@ -143,34 +175,23 @@ public abstract class Movement implements IMovement, MovementHelper {
    */
   @Override
   public MovementStatus update() {
-    return update(null, null, -1);
+    return tick(null, null, -1).status();
   }
 
-  public MovementStatus update(LiquidLocomotionController liquidLocomotion, IPath path, int pathPosition) {
+  public MovementTick tick(LiquidLocomotionController liquidLocomotion, IPath path, int pathPosition) {
     ctx.player().getAbilities().flying = false;
+    currentState.beginTick();
     currentState = updateState(currentState);
     if (liquidLocomotion != null) {
-      liquidLocomotion.apply(this, currentState, path, pathPosition);
+      currentState = liquidLocomotion.adjust(this, currentState, path, pathPosition);
     }
     if (ctx.player().isInWall()) {
-      ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, pos)));
+      ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(currentState, ctx, BlockStateInterface.get(ctx, pos)));
       currentState.setInput(Input.CLICK_LEFT, true);
     }
 
-    // If the movement target has to force the new rotations, or we aren't using silent move, then force the rotations
-    currentState.getTarget().getRotation().ifPresent(rotation -> baritone.getLookBehavior().updateTarget(rotation, currentState.getTarget().hasToForceRotations()));
-    baritone.getInputOverrideHandler().clearAllKeys();
-    currentState.getInputStates().forEach((input, forced) -> {
-      baritone.getInputOverrideHandler().setInputForceState(input, forced);
-    });
-    currentState.getInputStates().clear();
-
-    // If the current status indicates a completed movement
-    if (currentState.getStatus().isComplete()) {
-      baritone.getInputOverrideHandler().clearAllKeys();
-    }
-
-    return currentState.getStatus();
+    ControlFrame frame = currentState.getStatus().isComplete() ? ControlFrame.EMPTY : currentState.build();
+    return new MovementTick(currentState.getStatus(), frame, safeToCancel(currentState), progress());
   }
 
   public TransportControl transportControl() {
@@ -183,7 +204,7 @@ public abstract class Movement implements IMovement, MovementHelper {
     return TransportSnapshot.Plan.pedestrian(getClass().getSimpleName(), src, dest);
   }
 
-  protected boolean prepared(MovementState state) {
+  protected boolean prepared(ControlFrame.Builder state) {
     if (state.getStatus() == MovementStatus.WAITING) {
       return true;
     }
@@ -194,11 +215,11 @@ public abstract class Movement implements IMovement, MovementHelper {
       }
       if (!MovementHelper.canMoveThrough(ctx, blockPos)) { // can't break air, so don't try
         somethingInTheWay = true;
-        MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, blockPos));
+        MovementHelper.switchToBestToolFor(state, ctx, BlockStateInterface.get(ctx, blockPos));
         Optional<Rotation> reachable = RotationUtils.reachable(ctx, blockPos, ctx.playerController().getBlockReachDistance());
         if (reachable.isPresent()) {
           Rotation rotTowardsBlock = reachable.get();
-          state.setTarget(new MovementState.MovementTarget(rotTowardsBlock, true));
+          state.setTarget(new ControlFrame.MovementTarget(rotTowardsBlock, true));
           if (ctx.isLookingAt(blockPos) || ctx.playerRotations().isReallyCloseTo(rotTowardsBlock)) {
             state.setInput(Input.CLICK_LEFT, true);
           }
@@ -208,7 +229,7 @@ public abstract class Movement implements IMovement, MovementHelper {
         //i'm doing it anyway
         //i dont care if theres snow in the way!!!!!!!
         //you dont own me!!!!
-        state.setTarget(new MovementState.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(blockPos), ctx.playerRotations()), true));
+        state.setTarget(new ControlFrame.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(blockPos), ctx.playerRotations()), true));
         // don't check selectedblock on this one, this is a fallback when we can't see any face directly, it's intended to be breaking the "incorrect" block
         state.setInput(Input.CLICK_LEFT, true);
         return false;
@@ -228,7 +249,7 @@ public abstract class Movement implements IMovement, MovementHelper {
     return safeToCancel(currentState);
   }
 
-  protected boolean safeToCancel(MovementState currentState) {
+  protected boolean safeToCancel(ControlFrame.Builder currentState) {
     return true;
   }
 
@@ -240,7 +261,11 @@ public abstract class Movement implements IMovement, MovementHelper {
 
   @Override
   public void reset() {
-    currentState = new MovementState().setStatus(MovementStatus.PREPPING);
+    currentState = ControlFrame.builder().setStatus(MovementStatus.PREPPING);
+  }
+
+  protected double progress() {
+    return playerAtDest() ? 1D : 0D;
   }
 
   /**
@@ -249,7 +274,7 @@ public abstract class Movement implements IMovement, MovementHelper {
    * @param state The current state
    * @return The new state
    */
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     if (!prepared(state)) {
       return state.setStatus(MovementStatus.PREPPING);
     } else if (state.getStatus() == MovementStatus.PREPPING) {

@@ -11,7 +11,7 @@ import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.NodeTerrainFacts;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
@@ -163,7 +163,7 @@ public class MovementTraverse extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     super.updateState(state);
     BlockState pb0 = BlockStateInterface.get(ctx, positionsToBreak[0]);
     BlockState pb1 = BlockStateInterface.get(ctx, positionsToBreak[1]);
@@ -202,7 +202,7 @@ public class MovementTraverse extends Movement {
         pitchToBreak = 26;
       }
 
-      return state.setTarget(new MovementState.MovementTarget(new Rotation(yawToDest, pitchToBreak), true)).setInput(Input.MOVE_FORWARD, true).setInput(Input.SPRINT, true);
+      return state.setTarget(new ControlFrame.MovementTarget(new Rotation(yawToDest, pitchToBreak), true)).setInput(Input.MOVE_FORWARD, true).setInput(Input.SPRINT, true);
     }
 
     Block fd = BlockStateInterface.get(ctx, src.below()).getBlock();
@@ -220,7 +220,7 @@ public class MovementTraverse extends Movement {
       if (notPassable && canOpen) {
         return state
           .setTarget(
-            new MovementState.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.calculateBlockCenter(ctx.world(), positionsToBreak[0]), ctx.playerRotations()), true))
+            new ControlFrame.MovementTarget(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.calculateBlockCenter(ctx.world(), positionsToBreak[0]), ctx.playerRotations()), true))
           .setInput(Input.CLICK_RIGHT, true);
       }
     }
@@ -231,7 +231,7 @@ public class MovementTraverse extends Movement {
       if (blocked != null) {
         Optional<Rotation> rotation = RotationUtils.reachable(ctx, blocked);
         if (rotation.isPresent()) {
-          return state.setTarget(new MovementState.MovementTarget(rotation.get(), true)).setInput(Input.CLICK_RIGHT, true);
+          return state.setTarget(new ControlFrame.MovementTarget(rotation.get(), true)).setInput(Input.CLICK_RIGHT, true);
         }
       }
     }
@@ -334,10 +334,10 @@ public class MovementTraverse extends Movement {
         double dist2 = Math.max(Math.abs(ctx.player().position().x - faceX), Math.abs(ctx.player().position().z - faceZ));
         if (dist2 < 0.29) { // see issue #208
           float yaw = RotationUtils.calcRotationFromVec3d(VecUtils.getBlockPosCenter(dest), ctx.playerHead(), ctx.playerRotations()).getYaw();
-          state.setTarget(new MovementState.MovementTarget(new Rotation(yaw, pitch), true));
+          state.setTarget(new ControlFrame.MovementTarget(new Rotation(yaw, pitch), true));
           state.setInput(Input.MOVE_BACK, true);
         } else {
-          state.setTarget(new MovementState.MovementTarget(backToFace, true));
+          state.setTarget(new ControlFrame.MovementTarget(backToFace, true));
         }
         if (ctx.isLookingAt(goalLook)) {
           return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
@@ -354,7 +354,7 @@ public class MovementTraverse extends Movement {
   }
 
   @Override
-  public boolean safeToCancel(MovementState state) {
+  public boolean safeToCancel(ControlFrame.Builder state) {
     // if we're in the process of breaking blocks before walking forwards
     // or if this isn't a sneak place (the block is already there)
     // then it's safe to cancel this
@@ -362,7 +362,7 @@ public class MovementTraverse extends Movement {
   }
 
   @Override
-  protected boolean prepared(MovementState state) {
+  protected boolean prepared(ControlFrame.Builder state) {
     if (ctx.playerFeet().equals(src) || ctx.playerFeet().equals(src.below())) {
       Block block = BlockStateInterface.getBlock(ctx, src.below());
       if (block == Blocks.LADDER || block == Blocks.VINE) {

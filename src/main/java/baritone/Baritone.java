@@ -13,6 +13,7 @@ import baritone.cache.WorldProvider;
 import baritone.command.manager.CommandManager;
 import baritone.event.GameEventHandler;
 import baritone.pathing.calc.PathingProfiler;
+import baritone.playtest.PlaytestHarnessBehavior;
 import baritone.process.*;
 import baritone.selection.SelectionManager;
 import baritone.utils.BlockStateInterface;
@@ -95,6 +96,9 @@ public class Baritone implements IBaritone {
       this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
       this.playerTelemetryBehavior = this.registerBehavior(PlayerTelemetryBehavior::new);
       this.registerBehavior(WaypointBehavior::new);
+      if (PlaytestHarnessBehavior.enabled()) {
+        this.registerBehavior(PlaytestHarnessBehavior::new);
+      }
     }
 
     this.pathingControlManager = new PathingControlManager(this);

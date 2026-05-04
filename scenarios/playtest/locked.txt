@@ -1,0 +1,2 @@
+# Locked playtest acceptance scenarios. One scenario JSON path per line.
+scenarios/playtest/swim_transition_straight.json

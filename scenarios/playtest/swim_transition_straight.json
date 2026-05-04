@@ -1,0 +1,36 @@
+{
+  "id": "swim_transition_straight",
+  "worldKey": "smoke",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 75.5,
+    "y": 63.0,
+    "z": -195.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 73,
+    "y": 63,
+    "z": -161
+  },
+  "setupCommands": [],
+  "loadout": [],
+  "timeoutTicks": 240,
+  "successRadius": 0.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNotInWater": true,
+    "requireNoVehicle": true,
+    "requireWaterEncountered": true,
+    "requirePathingSeen": true
+  },
+  "settings": {
+    "allowSprint": true,
+    "sprintInWater": true
+  },
+  "trace": true
+}

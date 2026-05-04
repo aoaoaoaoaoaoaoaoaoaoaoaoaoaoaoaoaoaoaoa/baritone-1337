@@ -1,0 +1,46 @@
+{
+  "id": "boat_river_curve",
+  "worldKey": "smoke",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 73.5,
+    "y": 63.0,
+    "z": -160.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 59,
+    "y": 63,
+    "z": -3
+  },
+  "setupCommands": [],
+  "loadout": [
+    {
+      "slot": 0,
+      "item": "minecraft:oak_boat",
+      "count": 1
+    }
+  ],
+  "timeoutTicks": 2400,
+  "successRadius": 0.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNotInWater": true,
+    "requireNoVehicle": true,
+    "requireWaterEncountered": true,
+    "requirePathingSeen": true,
+    "requireBoatEncountered": true,
+    "requireBoatRecovered": true
+  },
+  "settings": {
+    "allowSprint": true,
+    "sprintInWater": true,
+    "jumpPenalty": 20.0
+  },
+  "trace": true,
+  "selectedSlot": 0
+}

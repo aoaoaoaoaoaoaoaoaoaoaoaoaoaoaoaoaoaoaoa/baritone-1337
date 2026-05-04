@@ -6,7 +6,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import com.google.common.collect.ImmutableSet;
 import java.util.Set;
 import net.minecraft.world.level.block.Block;
@@ -58,7 +58,7 @@ public class MovementDownward extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     super.updateState(state);
     if (state.getStatus() != MovementStatus.RUNNING) {
       return state;

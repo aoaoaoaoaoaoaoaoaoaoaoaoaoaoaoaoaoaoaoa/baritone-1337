@@ -8,7 +8,7 @@ import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import net.minecraft.world.level.block.Blocks;
@@ -67,7 +67,7 @@ public final class MovementOblique extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     super.updateState(state);
     if (state.getStatus() != MovementStatus.RUNNING) {
       return state;
@@ -86,7 +86,7 @@ public final class MovementOblique extends Movement {
   }
 
   @Override
-  protected boolean prepared(MovementState state) {
+  protected boolean prepared(ControlFrame.Builder state) {
     return true;
   }
 

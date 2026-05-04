@@ -12,6 +12,7 @@ import baritone.api.utils.input.Input;
 import baritone.control.AngularGovernor;
 import baritone.control.ScalarGovernor;
 import baritone.control.ScalarGovernorSpec;
+import baritone.pathing.control.ControlFrame;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
@@ -28,17 +29,23 @@ public final class LiquidLocomotionController implements MovementHelper {
   private static final double SWIM_LATERAL_TOLERANCE_SQ = 1.44D;
   private static final double SWIM_VERTICAL_RECENTER_DISTANCE_SQ = 0.49D;
   private static final double SWIM_VERTICAL_LOOKAHEAD_DISTANCE_SQ = 0.25D;
-  private static final double SURFACE_GLIDE_LOW_CLEARANCE = 0.000D;
+  private static final double SURFACE_DROWNING_CLEARANCE = 0.000D;
   private static final double SURFACE_GLIDE_BUMP_CLEARANCE = 0.018D;
   private static final double SURFACE_DROWN_BUMP_CLEARANCE = 0.034D;
   private static final double SURFACE_BUMP_FLOOR = -0.250D;
   private static final double SURFACE_BUMP_CEILING = 0.040D;
   private static final double SURFACE_BUMP_MAX_UPWARD_VELOCITY = -0.002D;
-  private static final double SURFACE_NEAR_AIR_RESERVE = 0.10D;
-  private static final double SURFACE_DEEP_AIR_RESERVE = 0.30D;
+  private static final double SURFACE_GLIDE_LOW_CLEARANCE = 0.040D;
+  private static final double SURFACE_GLIDE_HIGH_CLEARANCE = 0.160D;
+  private static final double SURFACE_GLIDE_DAMP_UPWARD_VELOCITY = 0.055D;
+  private static final double SURFACE_CLIMB_PULSE_CLEARANCE = -0.650D;
+  private static final double SURFACE_CLIMB_PULSE_MAX_UPWARD_VELOCITY = 0.020D;
+  private static final double SURFACE_NEAR_AIR_RESERVE = 0.25D;
+  private static final double SURFACE_DEEP_AIR_RESERVE = 0.45D;
   private static final int SURFACE_GLIDE_BUMP_INTERVAL_TICKS = 8;
   private static final int SURFACE_DROWN_BUMP_INTERVAL_TICKS = 4;
-  private static final float SURFACE_ASCENT_PITCH = -4F;
+  private static final float SURFACE_ASCENT_PITCH = -12F;
+  private static final float SURFACE_GLIDE_DAMP_PITCH = 8F;
   private static final double SHORE_EXIT_AIM_OVERSHOOT = 0.45D;
   private static final double SHORE_EXIT_JUMP_DISTANCE_SQ = 2.56D;
   private static final double SHORE_EXIT_JUMP_Y_MARGIN = 0.08D;
@@ -64,14 +71,14 @@ public final class LiquidLocomotionController implements MovementHelper {
     this.pitch.copyFrom(source.pitch);
   }
 
-  public void apply(Movement movement, MovementState state, IPath path, int pathPosition) {
+  public ControlFrame.Builder adjust(Movement movement, ControlFrame.Builder state, IPath path, int pathPosition) {
     BlockPos feet = ctx.playerFeet();
     if (!MovementHelper.isLiquid(ctx, feet)) {
       mode = Mode.DRY;
       swimTicks = 0;
       surfaceBumpCooldown = 0;
       resetGovernors();
-      return;
+      return state;
     }
     if (!MovementHelper.isWater(ctx, feet)) {
       mode = Mode.WADE;
@@ -81,31 +88,32 @@ public final class LiquidLocomotionController implements MovementHelper {
       if (movement.getDest().y > movement.getSrc().y && ctx.player().position().y < movement.getDest().y + 0.6) {
         state.setInput(Input.JUMP, true);
       }
-      return;
+      return state;
     }
     boolean deepWater = MovementHelper.isDeepWater(ctx, feet);
     boolean verticalRise = verticalRise(movement);
     boolean waterEntry = mode == Mode.DRY || mode == Mode.WATER_EXIT;
     if (shoreExitCandidate(movement)) {
       shoreExit(movement, state);
-      return;
+      return state;
     }
     if (!deepWater) {
       if (waterEntry) {
         yaw.reset(waterEntryYaw(movement, path, pathPosition));
       }
       wade(movement, state, path, pathPosition, false);
-      return;
+      return state;
     }
     if (!verticalRise && !hasFastSwimRunway(path, pathPosition, movement)) {
       wade(movement, state, path, pathPosition, true);
-      return;
+      return state;
     }
     if (verticalRise) {
       verticalSwim(movement, state, path, pathPosition, waterEntry);
-      return;
+      return state;
     }
     swim(movement, state, path, pathPosition, feet, waterEntry);
+    return state;
   }
 
   public int projectedWaterPosition(IPath path, int pathPosition) {
@@ -127,18 +135,18 @@ public final class LiquidLocomotionController implements MovementHelper {
     return advanced;
   }
 
-  private void wade(Movement movement, MovementState state, IPath path, int pathPosition, boolean bob) {
+  private void wade(Movement movement, ControlFrame.Builder state, IPath path, int pathPosition, boolean bob) {
     mode = Mode.WADE;
     swimTicks = 0;
     state.setInput(Input.SPRINT, false);
     state.setInput(Input.SNEAK, false);
     state.setInput(Input.JUMP, bob ? ctx.player().isEyeInFluid(FluidTags.WATER) : movement.getDest().y > movement.getSrc().y && ctx.player().position().y < movement.getDest().y + 0.6);
     if (state.getInputStates().getOrDefault(Input.MOVE_FORWARD, false)) {
-      state.setTarget(new MovementState.MovementTarget(new Rotation(governYaw(yawToPath(movement, path, pathPosition)), 0F), true));
+      state.setTarget(new ControlFrame.MovementTarget(new Rotation(governYaw(yawToPath(movement, path, pathPosition)), 0F), true));
     }
   }
 
-  private void shoreExit(Movement movement, MovementState state) {
+  private void shoreExit(Movement movement, ControlFrame.Builder state) {
     switchMode(Mode.WATER_EXIT);
     Vec3 target = shoreExitTarget(movement);
     double distanceSq = horizontalDistanceSq(ctx.player().position(), target);
@@ -148,10 +156,10 @@ public final class LiquidLocomotionController implements MovementHelper {
     state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value);
     state.setInput(Input.SNEAK, false);
     state.setInput(Input.JUMP, jump);
-    state.setTarget(new MovementState.MovementTarget(new Rotation(governYaw(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), target, ctx.playerRotations()).getYaw()), 0F), true));
+    state.setTarget(new ControlFrame.MovementTarget(new Rotation(governYaw(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), target, ctx.playerRotations()).getYaw()), 0F), true));
   }
 
-  private void verticalSwim(Movement movement, MovementState state, IPath path, int pathPosition, boolean waterEntry) {
+  private void verticalSwim(Movement movement, ControlFrame.Builder state, IPath path, int pathPosition, boolean waterEntry) {
     swimTicks++;
     double clearance = ctx.player().getEyeY() - waterSurfaceY(ctx.playerFeet());
     if (mode == Mode.DRY || mode == Mode.WADE) {
@@ -166,7 +174,7 @@ public final class LiquidLocomotionController implements MovementHelper {
     state.setInput(Input.JUMP, clearance < SURFACE_BUMP_FLOOR);
   }
 
-  private void swim(Movement movement, MovementState state, IPath path, int pathPosition, BlockPos feet, boolean waterEntry) {
+  private void swim(Movement movement, ControlFrame.Builder state, IPath path, int pathPosition, BlockPos feet, boolean waterEntry) {
     swimTicks++;
     if (surfaceBumpCooldown > 0) {
       surfaceBumpCooldown--;
@@ -193,7 +201,7 @@ public final class LiquidLocomotionController implements MovementHelper {
     }
     state.setInput(Input.SNEAK, false);
     if (locomote && state.getStatus() == MovementStatus.RUNNING) {
-      state.setTarget(new MovementState.MovementTarget(new Rotation(governYaw(yawToPath(movement, path, pathPosition)), surfacePitch(clearance)), true));
+      state.setTarget(new ControlFrame.MovementTarget(new Rotation(governYaw(yawToPath(movement, path, pathPosition)), surfacePitch(clearance, ctx.player().getDeltaMovement().y)), true));
     }
   }
 
@@ -204,20 +212,23 @@ public final class LiquidLocomotionController implements MovementHelper {
       return SurfaceAction.NONE;
     }
     if (mode == Mode.SWIM_CRUISE) {
-      switchMode(eyeWet || clearance < SURFACE_GLIDE_LOW_CLEARANCE ? Mode.SWIM_SURFACE_DROWNING : Mode.SWIM_SURFACE_GLIDING);
+      switchMode(eyeWet || clearance < SURFACE_DROWNING_CLEARANCE ? Mode.SWIM_SURFACE_DROWNING : Mode.SWIM_SURFACE_GLIDING);
     }
     boolean nearSurface = clearance >= SURFACE_BUMP_FLOOR;
     boolean urgent = air <= oxygenReserve(maxAir, nearSurface);
-    if (eyeWet || clearance < SURFACE_GLIDE_LOW_CLEARANCE || urgent) {
+    if (eyeWet || clearance < SURFACE_DROWNING_CLEARANCE || urgent) {
       switchMode(Mode.SWIM_SURFACE_DROWNING);
     } else {
       switchMode(Mode.SWIM_SURFACE_GLIDING);
     }
     double bumpClearance = mode == Mode.SWIM_SURFACE_DROWNING ? SURFACE_DROWN_BUMP_CLEARANCE : SURFACE_GLIDE_BUMP_CLEARANCE;
+    double verticalVelocity = ctx.player().getDeltaMovement().y;
     boolean canBump = swimming || eyeWet && urgent;
+    boolean climbToSurface = swimming && clearance < SURFACE_BUMP_FLOOR;
+    boolean climbPulse = climbToSurface && (urgent || clearance < SURFACE_CLIMB_PULSE_CLEARANCE) && (urgent || verticalVelocity <= SURFACE_CLIMB_PULSE_MAX_UPWARD_VELOCITY) && surfaceBumpCooldown == 0;
     boolean drowningGlide = swimming && eyeWet && urgent;
     boolean breathingBandBump = (urgent || clearance < bumpClearance) && clearance < SURFACE_BUMP_CEILING;
-    boolean jump = canBump && nearSurface && (drowningGlide || breathingBandBump) && ctx.player().getDeltaMovement().y <= SURFACE_BUMP_MAX_UPWARD_VELOCITY && surfaceBumpCooldown == 0;
+    boolean jump = climbPulse || canBump && nearSurface && (drowningGlide || breathingBandBump) && (urgent || verticalVelocity <= SURFACE_BUMP_MAX_UPWARD_VELOCITY) && surfaceBumpCooldown == 0;
     if (jump) {
       surfaceBumpCooldown = urgent ? SURFACE_DROWN_BUMP_INTERVAL_TICKS : SURFACE_GLIDE_BUMP_INTERVAL_TICKS;
     }
@@ -228,10 +239,20 @@ public final class LiquidLocomotionController implements MovementHelper {
     return (int) Math.ceil(Math.max(1, maxAir) * (nearSurface ? SURFACE_NEAR_AIR_RESERVE : SURFACE_DEEP_AIR_RESERVE));
   }
 
-  private float surfacePitch(double clearance) {
+  private float surfacePitch(double clearance, double verticalVelocity) {
     boolean swimming = ctx.player().isSwimming();
     boolean eyeWet = ctx.player().isEyeInFluid(FluidTags.WATER);
-    return governPitch(swimming && (eyeWet || clearance < SURFACE_BUMP_CEILING) ? SURFACE_ASCENT_PITCH : 0F);
+    boolean underWater = ctx.player().isUnderWater();
+    if (!swimming) {
+      return governPitch(0F);
+    }
+    if (clearance > SURFACE_GLIDE_HIGH_CLEARANCE || verticalVelocity > SURFACE_GLIDE_DAMP_UPWARD_VELOCITY) {
+      return governPitch(SURFACE_GLIDE_DAMP_PITCH);
+    }
+    if (eyeWet || underWater || clearance < SURFACE_GLIDE_LOW_CLEARANCE) {
+      return governPitch(SURFACE_ASCENT_PITCH);
+    }
+    return governPitch(0F);
   }
 
   private float governPitch(float target) {

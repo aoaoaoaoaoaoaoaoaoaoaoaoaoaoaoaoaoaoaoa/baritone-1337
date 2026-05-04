@@ -1,5 +1,0 @@
-package baritone.planning;
-
-public enum CapabilityId {
-  WALK, SWIM, PLACE_BLOCK, BREAK_BLOCK, INVENTORY_MOVE, INTERACT_ENTITY, CRAFT, USE_BOAT, USE_ELYTRA, USE_PORTAL
-}

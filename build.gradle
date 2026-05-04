@@ -37,6 +37,54 @@ spotless {
   }
 }
 
+tasks.register("verifyPathingControlPurity") {
+  def scanned = files(fileTree("src/main/java/baritone/pathing") {
+    include "**/*.java"
+    exclude "control/ControlArbiter.java"
+  }, file("src/main/java/baritone/behavior/PathingBehavior.java"))
+
+  inputs.files(scanned)
+  inputs.files(fileTree("src") { include "**/*.java" })
+
+  doLast {
+    def forbidden = [
+      "getInputOverrideHandler(",
+      "getInputOverrideHandler().",
+      "updateTarget(",
+      "processRightClick(",
+      "processRightClickBlock(",
+      ".attack(",
+      ".stopRiding(",
+      "boat.setInput(",
+      ".setSelectedSlot("
+    ]
+    def offenders = []
+    scanned.files.each { f ->
+      f.readLines("UTF-8").eachWithIndex { line, idx ->
+        forbidden.each { needle ->
+          if (line.contains(needle)) {
+            offenders << "${f}:${idx + 1}: ${needle}: ${line.trim()}"
+          }
+        }
+      }
+    }
+    def deletedStateType = "Movement" + "State"
+    def deletedWaterType = "MovementWater" + "Line"
+    fileTree("src") { include "**/*.java" }.files.each { f ->
+      def text = f.getText("UTF-8")
+      if (text.contains(deletedStateType)) {
+        offenders << "${f}: references deleted ${deletedStateType}"
+      }
+      if (text.contains(deletedWaterType)) {
+        offenders << "${f}: references deleted ${deletedWaterType}"
+      }
+    }
+    if (!offenders.isEmpty()) {
+      throw new GradleException("Pathing control purity violations:\n" + offenders.join("\n"))
+    }
+  }
+}
+
 allprojects {
   apply plugin: 'java'
   apply plugin: "xyz.wagyourtail.unimined"
@@ -151,4 +199,8 @@ javadoc {
   options.encoding "UTF-8" // allow emoji in comments :^)
   source = sourceSets.api.allJava
   classpath += sourceSets.api.compileClasspath
+}
+
+tasks.named("check") {
+  dependsOn tasks.named("verifyPathingControlPurity")
 }

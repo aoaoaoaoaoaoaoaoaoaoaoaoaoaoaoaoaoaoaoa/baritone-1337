@@ -11,7 +11,7 @@ import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.movement.MovementState;
+import baritone.pathing.control.ControlFrame;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import java.util.Set;
@@ -144,7 +144,7 @@ public class MovementPillar extends Movement {
   }
 
   @Override
-  public MovementState updateState(MovementState state) {
+  public ControlFrame.Builder updateState(ControlFrame.Builder state) {
     super.updateState(state);
     if (state.getStatus() != MovementStatus.RUNNING) {
       return state;
@@ -163,7 +163,7 @@ public class MovementPillar extends Movement {
       Vec3 destCenter = VecUtils.getBlockPosCenter(dest);
       Rotation yaw =
         horizontalDistanceSq(ctx.player().position(), destCenter) > 0.04D ? RotationUtils.calcRotationFromVec3d(ctx.playerHead(), destCenter, ctx.playerRotations()) : ctx.playerRotations();
-      state.setTarget(new MovementState.MovementTarget(new Rotation(yaw.getYaw(), WATER_COLUMN_ASCENT_PITCH), true));
+      state.setTarget(new ControlFrame.MovementTarget(new Rotation(yaw.getYaw(), WATER_COLUMN_ASCENT_PITCH), true));
       state.setInput(Input.JUMP, false);
       state.setInput(Input.MOVE_FORWARD, true);
       state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value);
@@ -173,7 +173,7 @@ public class MovementPillar extends Movement {
     boolean vine = fromDown.getBlock() == Blocks.VINE;
     Rotation rotation = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(positionToPlace), ctx.playerRotations());
     if (!ladder) {
-      state.setTarget(new MovementState.MovementTarget(ctx.playerRotations().withPitch(rotation.getPitch()), true));
+      state.setTarget(new ControlFrame.MovementTarget(ctx.playerRotations().withPitch(rotation.getPitch()), true));
     }
 
     boolean blockIsThere = MovementHelper.canWalkOn(ctx, src) || ladder;
@@ -200,9 +200,11 @@ public class MovementPillar extends Movement {
       return state;
     } else {
       // Get ready to place a throwaway block
-      if (!((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, src.x, src.y, src.z)) {
+      var throwaway = ((Baritone) baritone).getInventoryBehavior().findThrowawayHotbarSlotForLocation(src.x, src.y, src.z);
+      if (throwaway.isEmpty()) {
         return state.setStatus(MovementStatus.UNREACHABLE);
       }
+      state.selectHotbarSlot(throwaway.getAsInt());
 
       state.setInput(Input.SNEAK, true);
       // since (lower down) we only right click once player.isSneaking, and that happens the tick after we request to sneak
@@ -219,7 +221,7 @@ public class MovementPillar extends Movement {
         state.setInput(Input.MOVE_FORWARD, true);
 
         // revise our target to both yaw and pitch if we're going to be moving forward
-        state.setTarget(new MovementState.MovementTarget(rotation, true));
+        state.setTarget(new ControlFrame.MovementTarget(rotation, true));
       } else if (flatMotion < 0.05) {
         // If our Y coordinate is above our goal, stop jumping
         state.setInput(Input.JUMP, ctx.player().position().y < dest.getY());
@@ -230,7 +232,7 @@ public class MovementPillar extends Movement {
         Block fr = frState.getBlock();
         // TODO: Evaluate usage of getMaterial().isReplaceable()
         if (!(fr instanceof AirBlock || frState.canBeReplaced())) {
-          RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance()).map(rot -> new MovementState.MovementTarget(rot, true)).ifPresent(state::setTarget);
+          RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance()).map(rot -> new ControlFrame.MovementTarget(rot, true)).ifPresent(state::setTarget);
           state.setInput(Input.JUMP, false); // breaking is like 5x slower when you're jumping
           state.setInput(Input.CLICK_LEFT, true);
           blockIsThere = false;
@@ -249,7 +251,7 @@ public class MovementPillar extends Movement {
   }
 
   @Override
-  protected boolean safeToCancel(MovementState state) {
+  protected boolean safeToCancel(ControlFrame.Builder state) {
     if (submergedWaterColumnAscent()) {
       return false;
     }
@@ -257,7 +259,7 @@ public class MovementPillar extends Movement {
   }
 
   @Override
-  protected boolean prepared(MovementState state) {
+  protected boolean prepared(ControlFrame.Builder state) {
     if (ctx.playerFeet().equals(src) || ctx.playerFeet().equals(src.below())) {
       Block block = BlockStateInterface.getBlock(ctx, src.below());
       if (block == Blocks.LADDER || block == Blocks.VINE) {
