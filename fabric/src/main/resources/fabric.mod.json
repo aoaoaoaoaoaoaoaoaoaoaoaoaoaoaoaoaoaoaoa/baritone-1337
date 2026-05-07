@@ -15,7 +15,8 @@
   "entrypoints": {
   },
   "mixins": [
-      "mixins.baritone.json"
+      "mixins.baritone.json",
+      "mixins.baritone.xaero.json"
   ],
   "depends": {
     "fabricloader": ">=${fabric_version}",

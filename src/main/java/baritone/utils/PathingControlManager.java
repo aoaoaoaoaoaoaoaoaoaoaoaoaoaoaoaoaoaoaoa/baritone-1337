@@ -138,10 +138,10 @@ public class PathingControlManager implements IPathingControlManager {
   public boolean forceRevalidate(Goal newGoal) {
     RouteExecutor current = baritone.getPathingBehavior().getCurrent();
     if (current != null) {
-      if (newGoal.isInGoal(current.getPath().getDest())) {
+      if (newGoal.isInGoal(current.dest())) {
         return false;
       }
-      return !newGoal.equals(current.getPath().getGoal());
+      return current.getPath() == null || !newGoal.equals(current.getPath().getGoal());
     }
     return false;
   }
@@ -149,8 +149,11 @@ public class PathingControlManager implements IPathingControlManager {
   public boolean revalidateGoal(Goal newGoal) {
     RouteExecutor current = baritone.getPathingBehavior().getCurrent();
     if (current != null) {
+      if (current.getPath() == null) {
+        return !newGoal.isInGoal(current.dest());
+      }
       Goal intended = current.getPath().getGoal();
-      BlockPos end = current.getPath().getDest();
+      BlockPos end = current.dest();
       if (intended.isInGoal(end) && !newGoal.isInGoal(end)) {
         // this path used to end in the goal
         // but the goal has changed, so there's no reason to continue...

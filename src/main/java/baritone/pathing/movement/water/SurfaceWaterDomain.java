@@ -4,7 +4,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
-import baritone.pathing.route.SurfaceLineLeg;
+import baritone.pathing.route.PathSurfaceOverlayLeg;
 import baritone.pathing.transport.TransportMode;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +12,7 @@ import java.util.Optional;
 
 public final class SurfaceWaterDomain {
   private static final double MIN_BOAT_CHAIN_COS = 0.8191520442889918D; // cos(35°)
+  private static final int SWIM_SURFACE_ACQUISITION_SCAN_MOVEMENTS = 24;
   private static final int SWIM_CANDIDATE_SCAN_MOVEMENTS = 192;
   private static final int TERMINAL_EXIT_SCAN_MOVEMENTS = 24;
   private static final SurfaceWaterMode.Boat BOAT = new SurfaceWaterMode.Boat();
@@ -19,12 +20,12 @@ public final class SurfaceWaterDomain {
   private SurfaceWaterDomain() {
   }
 
-  public static List<SurfaceLineLeg> route(CalculationContext context, List<Movement> movements) {
+  public static List<PathSurfaceOverlayLeg> route(CalculationContext context, List<Movement> movements) {
     if (movements.isEmpty()) {
       return List.of();
     }
     WaterLineProfile swim = WaterLineProfile.swim(context.costs.waterMoveCost());
-    ArrayList<SurfaceLineLeg> legs = new ArrayList<>();
+    ArrayList<PathSurfaceOverlayLeg> legs = new ArrayList<>();
     TransportMode mode = context.waterTransport.boatMounted() ? TransportMode.BOAT : TransportMode.PEDESTRIAN;
     BoatHeading previousBoat =
       context.waterTransport.boatMounted() && context.waterTransport.hasBoatHeading() ? new BoatHeading(context.waterTransport.boatHeadingX(), context.waterTransport.boatHeadingZ()) : null;
@@ -33,7 +34,7 @@ public final class SurfaceWaterDomain {
       int boatRunEnd = boatRunEnd(context, movements, i);
       Optional<Choice> mountedBoatRun = mode == TransportMode.BOAT && boatRunEnd > i ? chooseMountedBoat(context, movements, i, boatRunEnd, previousBoat) : Optional.empty();
       if (mountedBoatRun.isPresent()) {
-        legs.add(new SurfaceLineLeg(i, mountedBoatRun.get().endExclusive(), mountedBoatRun.get().segment()));
+        legs.add(new PathSurfaceOverlayLeg(i, mountedBoatRun.get().endExclusive(), mountedBoatRun.get().segment()));
         i = mountedBoatRun.get().endExclusive();
         mode = mountedBoatRun.get().segment().leg().nextMode();
         previousBoat = mode == TransportMode.BOAT ? BoatHeading.of(mountedBoatRun.get().segment()) : null;
@@ -41,7 +42,7 @@ public final class SurfaceWaterDomain {
       }
       Optional<Choice> boatEntry = mode == TransportMode.PEDESTRIAN && context.waterTransport.boatAvailable() ? chooseBoatEntry(context, movements, i) : Optional.empty();
       if (boatEntry.isPresent()) {
-        legs.add(new SurfaceLineLeg(i, boatEntry.get().endExclusive(), boatEntry.get().segment()));
+        legs.add(new PathSurfaceOverlayLeg(i, boatEntry.get().endExclusive(), boatEntry.get().segment()));
         i = boatEntry.get().endExclusive();
         mode = boatEntry.get().segment().leg().nextMode();
         previousBoat = mode == TransportMode.BOAT ? BoatHeading.of(boatEntry.get().segment()) : null;
@@ -50,7 +51,7 @@ public final class SurfaceWaterDomain {
       Optional<Choice> waterBoatEntry =
         mode == TransportMode.PEDESTRIAN && context.waterTransport.boatAvailable() && boatRunEnd > i ? chooseBoatFromWater(context, movements, i, boatRunEnd) : Optional.empty();
       if (waterBoatEntry.isPresent()) {
-        legs.add(new SurfaceLineLeg(i, waterBoatEntry.get().endExclusive(), waterBoatEntry.get().segment()));
+        legs.add(new PathSurfaceOverlayLeg(i, waterBoatEntry.get().endExclusive(), waterBoatEntry.get().segment()));
         i = waterBoatEntry.get().endExclusive();
         mode = waterBoatEntry.get().segment().leg().nextMode();
         previousBoat = mode == TransportMode.BOAT ? BoatHeading.of(waterBoatEntry.get().segment()) : null;
@@ -58,7 +59,7 @@ public final class SurfaceWaterDomain {
       }
       Optional<Choice> choice = chooseSwim(context, movements, i, swim);
       if (choice.isPresent()) {
-        legs.add(new SurfaceLineLeg(i, choice.get().endExclusive(), choice.get().segment()));
+        legs.add(new PathSurfaceOverlayLeg(i, choice.get().endExclusive(), choice.get().segment()));
         i = choice.get().endExclusive();
         mode = choice.get().segment().leg().nextMode();
         previousBoat = null;
@@ -171,7 +172,30 @@ public final class SurfaceWaterDomain {
       return Optional.of(new SwimEntry(src, src));
     }
     BetterBlockPos dest = movement.getDest();
-    return swimSurfaceNode(context, dest) && src.y >= dest.y ? Optional.of(new SwimEntry(src, dest)) : Optional.empty();
+    if (swimSurfaceNode(context, dest) && src.y >= dest.y) {
+      return Optional.of(new SwimEntry(src, dest));
+    }
+    if (!waterEnvelopeNode(context, src) && !waterEnvelopeNode(context, dest)) {
+      return Optional.empty();
+    }
+    int limit = Math.min(movements.size(), start + SWIM_SURFACE_ACQUISITION_SCAN_MOVEMENTS);
+    for (int i = start + 1; i < limit; i++) {
+      BetterBlockPos candidate = movements.get(i).getDest();
+      if (candidate.y == src.y && swimSurfaceNode(context, candidate) && waterApproach(context, movements, start, i)) {
+        return Optional.of(new SwimEntry(src, candidate));
+      }
+    }
+    return Optional.empty();
+  }
+
+  private static boolean waterApproach(CalculationContext context, List<Movement> movements, int startInclusive, int surfaceIndexInclusive) {
+    for (int i = startInclusive; i <= surfaceIndexInclusive && i < movements.size(); i++) {
+      Movement movement = movements.get(i);
+      if (!waterEnvelopeNode(context, movement.getSrc()) && !waterEnvelopeNode(context, movement.getDest())) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static Optional<Choice> chooseMountedBoat(CalculationContext context, List<Movement> movements, int start, int runEnd, BoatHeading previousBoat) {
@@ -247,6 +271,11 @@ public final class SurfaceWaterDomain {
 
   private static boolean swimSurfaceNode(CalculationContext context, BetterBlockPos pos) {
     return MovementHelper.surfaceSwimCell(context, pos.x, pos.y, pos.z);
+  }
+
+  private static boolean waterEnvelopeNode(CalculationContext context, BetterBlockPos pos) {
+    return MovementHelper.isWater(context.get(pos.x, pos.y, pos.z)) && !MovementHelper.isWater(context.get(pos.x, pos.y + 1, pos.z))
+      && MovementHelper.canMoveThrough(context, pos.x, pos.y + 1, pos.z, context.get(pos.x, pos.y + 1, pos.z));
   }
 
   private static boolean boatSurfaceNode(CalculationContext context, BetterBlockPos pos) {

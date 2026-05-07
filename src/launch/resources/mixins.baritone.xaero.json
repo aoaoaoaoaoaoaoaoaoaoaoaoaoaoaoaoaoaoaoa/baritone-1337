@@ -1,0 +1,17 @@
+{
+  "required": false,
+  "package": "baritone.launch.mixins.xaero",
+  "plugin": "baritone.launch.XaeroMixinPlugin",
+  "compatibilityLevel": "JAVA_25",
+  "verbose": false,
+  "injectors": {
+    "maxShiftBy": 2,
+    "defaultRequire": 1
+  },
+  "client": [
+    "MixinXaeroGuiMap",
+    "MixinXaeroWorldMapClientOnly"
+  ],
+  "mixins": [
+  ]
+}

@@ -38,6 +38,7 @@
     "requirePathingSeen": true
   },
   "settings": {
+    "chunkCaching": false,
     "allowSprint": true,
     "sprintAscends": true
   },

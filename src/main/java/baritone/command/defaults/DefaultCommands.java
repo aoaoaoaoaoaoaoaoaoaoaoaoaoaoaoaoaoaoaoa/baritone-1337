@@ -15,7 +15,7 @@ public final class DefaultCommands {
       new RepackCommand(baritone), new BuildCommand(baritone), new ComeCommand(baritone), new AxisCommand(baritone), new ForceCancelCommand(baritone), new GcCommand(baritone),
       new InvertCommand(baritone), new TunnelCommand(baritone), new RenderCommand(baritone), new FarmCommand(baritone), new FollowCommand(baritone), new PickupCommand(baritone),
       new ExploreFilterCommand(baritone), new ReloadAllCommand(baritone), new SaveAllCommand(baritone), new ExploreCommand(baritone), new BlacklistCommand(baritone), new FindCommand(baritone),
-      new MineCommand(baritone), new ClickCommand(baritone), new SurfaceCommand(baritone), new ThisWayCommand(baritone), new PlayerTelemetryCommand(baritone), new WaypointsCommand(baritone),
+      new MineCommand(baritone), new ClickCommand(baritone), new SurfaceCommand(baritone), new ThisWayCommand(baritone), new MocapCommand(baritone), new WaypointsCommand(baritone),
       new XaeroWaypointsCommand(baritone), new CommandAlias(baritone, "sethome", "Sets your home waypoint", "waypoints save home"),
       new CommandAlias(baritone, "home", "Path to your home waypoint", "waypoints goto home"), new SelCommand(baritone), new ElytraCommand(baritone)));
     ExecutionControlCommands prc = new ExecutionControlCommands(baritone);

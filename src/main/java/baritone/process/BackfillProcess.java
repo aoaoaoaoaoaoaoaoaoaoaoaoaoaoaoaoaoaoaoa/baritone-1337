@@ -91,6 +91,9 @@ public final class BackfillProcess extends BaritoneProcessHelper {
     if (exec == null || exec.finished() || exec.failed()) {
       return false;
     }
+    if (exec.getPath() == null) {
+      return false;
+    }
     Movement movement = (Movement) exec.getPath().movements().get(exec.getPosition());
     return Arrays.asList(movement.toBreakAll()).contains(pos);
   }

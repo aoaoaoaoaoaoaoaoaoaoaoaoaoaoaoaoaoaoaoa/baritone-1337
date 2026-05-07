@@ -1,0 +1,57 @@
+{
+  "id": "macro_biome_smoke_plan",
+  "worldKey": "smoke",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": -23.5,
+    "y": 91.0,
+    "z": -327.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "xz",
+    "x": 120,
+    "y": 100,
+    "z": 216
+  },
+  "plannerOnly": true,
+  "setupCommands": [
+    "setblock -24 90 -328 minecraft:bedrock"
+  ],
+  "loadout": [
+    {"slot": 0, "item": "minecraft:iron_pickaxe", "count": 1},
+    {"slot": 1, "item": "minecraft:iron_axe", "count": 1},
+    {"slot": 2, "item": "minecraft:iron_shovel", "count": 1},
+    {"slot": 3, "item": "minecraft:cobblestone", "count": 64},
+    {"slot": 4, "item": "minecraft:cobblestone", "count": 64}
+  ],
+  "timeoutTicks": 800,
+  "successRadius": 0.0,
+  "acceptance": {
+    "requireMacroBiomeRoute": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "maxMacroBiomeUnknownFraction": 0.05
+  },
+  "settings": {
+    "chunkCaching": false,
+    "macroPlanning": true,
+    "macroBiome": true,
+    "macroBiomePriorsFile": "scenarios/playtest/macro_dummy_priors.json",
+    "macroBiomeFactsFile": "scenarios/playtest/macro_smoke_mixed_facts.json",
+    "macroBiomeHorizonBlocks": 768,
+    "macroBiomeWaypointBlocks": 192,
+    "macroBiomeUnknownPenalty": 4.0,
+    "macroBiomeJumpWeight": 4.0,
+    "macroBiomeWaterWeight": 2.0,
+    "renderMacroPlan": true,
+    "renderMacroPlanAnchors": true,
+    "pathingEarlyIncumbentExecution": false,
+    "primaryTimeoutMS": 15000,
+    "failureTimeoutMS": 15000
+  },
+  "trace": true,
+  "selectedSlot": 0
+}

@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "minecraftVersion": "26.1.2",
+  "controllerProfile": "native-pedestrian-2-1-spoof",
+  "generatedAt": "2026-05-05T00:00:00Z",
+  "sourceResults": "spoofed macro planner field trial",
+  "biomes": {
+    "minecraft:badlands": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 1680, "totalBlocks": 480.0, "medianTicksPerBlock": 3.5, "p25TicksPerBlock": 3.4, "p75TicksPerBlock": 3.7, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.05, "sprintTicksPerBlock": 3.2, "moveForwardTicksPerBlock": 3.4, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:beach": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 1776, "totalBlocks": 480.0, "medianTicksPerBlock": 3.7, "p25TicksPerBlock": 3.6, "p75TicksPerBlock": 3.9, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.03, "sprintTicksPerBlock": 3.4, "moveForwardTicksPerBlock": 3.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:birch_forest": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 4320, "totalBlocks": 480.0, "medianTicksPerBlock": 9.0, "p25TicksPerBlock": 8.0, "p75TicksPerBlock": 11.0, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.8, "sprintTicksPerBlock": 1.8, "moveForwardTicksPerBlock": 6.0, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:dark_forest": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 6240, "totalBlocks": 480.0, "medianTicksPerBlock": 13.0, "p25TicksPerBlock": 11.0, "p75TicksPerBlock": 16.0, "failureRate": 0.03, "damageRate": 0.0, "jumpTicksPerBlock": 1.3, "sprintTicksPerBlock": 1.0, "moveForwardTicksPerBlock": 8.0, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:forest": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 4800, "totalBlocks": 480.0, "medianTicksPerBlock": 10.0, "p25TicksPerBlock": 8.5, "p75TicksPerBlock": 12.0, "failureRate": 0.01, "damageRate": 0.0, "jumpTicksPerBlock": 1.0, "sprintTicksPerBlock": 1.4, "moveForwardTicksPerBlock": 6.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:grove": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 7200, "totalBlocks": 480.0, "medianTicksPerBlock": 15.0, "p25TicksPerBlock": 12.0, "p75TicksPerBlock": 20.0, "failureRate": 0.04, "damageRate": 0.01, "jumpTicksPerBlock": 2.5, "sprintTicksPerBlock": 0.8, "moveForwardTicksPerBlock": 7.0, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:jungle": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 8160, "totalBlocks": 480.0, "medianTicksPerBlock": 17.0, "p25TicksPerBlock": 13.0, "p75TicksPerBlock": 25.0, "failureRate": 0.06, "damageRate": 0.0, "jumpTicksPerBlock": 3.0, "sprintTicksPerBlock": 0.6, "moveForwardTicksPerBlock": 8.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:meadow": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 1920, "totalBlocks": 480.0, "medianTicksPerBlock": 4.0, "p25TicksPerBlock": 3.8, "p75TicksPerBlock": 4.5, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.3, "sprintTicksPerBlock": 3.0, "moveForwardTicksPerBlock": 3.7, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:old_growth_birch_forest": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 5280, "totalBlocks": 480.0, "medianTicksPerBlock": 11.0, "p25TicksPerBlock": 9.0, "p75TicksPerBlock": 14.0, "failureRate": 0.02, "damageRate": 0.0, "jumpTicksPerBlock": 1.1, "sprintTicksPerBlock": 1.2, "moveForwardTicksPerBlock": 7.2, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:old_growth_pine_taiga": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 5760, "totalBlocks": 480.0, "medianTicksPerBlock": 12.0, "p25TicksPerBlock": 10.0, "p75TicksPerBlock": 15.0, "failureRate": 0.02, "damageRate": 0.0, "jumpTicksPerBlock": 1.2, "sprintTicksPerBlock": 1.0, "moveForwardTicksPerBlock": 7.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:plains": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 1776, "totalBlocks": 480.0, "medianTicksPerBlock": 3.7, "p25TicksPerBlock": 3.5, "p75TicksPerBlock": 4.0, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.08, "sprintTicksPerBlock": 3.4, "moveForwardTicksPerBlock": 3.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:river": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 6720, "totalBlocks": 480.0, "medianTicksPerBlock": 14.0, "p25TicksPerBlock": 10.0, "p75TicksPerBlock": 20.0, "failureRate": 0.02, "damageRate": 0.0, "jumpTicksPerBlock": 0.3, "sprintTicksPerBlock": 0.5, "moveForwardTicksPerBlock": 5.0, "waterTicksPerBlock": 8.0}
+    },
+    "minecraft:savanna": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 1728, "totalBlocks": 480.0, "medianTicksPerBlock": 3.6, "p25TicksPerBlock": 3.4, "p75TicksPerBlock": 3.9, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.06, "sprintTicksPerBlock": 3.4, "moveForwardTicksPerBlock": 3.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:swamp": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 7680, "totalBlocks": 480.0, "medianTicksPerBlock": 16.0, "p25TicksPerBlock": 12.0, "p75TicksPerBlock": 24.0, "failureRate": 0.04, "damageRate": 0.0, "jumpTicksPerBlock": 1.0, "sprintTicksPerBlock": 0.7, "moveForwardTicksPerBlock": 7.0, "waterTicksPerBlock": 4.0}
+    },
+    "minecraft:taiga": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 4320, "totalBlocks": 480.0, "medianTicksPerBlock": 9.0, "p25TicksPerBlock": 8.0, "p75TicksPerBlock": 11.0, "failureRate": 0.01, "damageRate": 0.0, "jumpTicksPerBlock": 0.8, "sprintTicksPerBlock": 1.6, "moveForwardTicksPerBlock": 6.0, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:windswept_forest": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 7680, "totalBlocks": 480.0, "medianTicksPerBlock": 16.0, "p25TicksPerBlock": 12.0, "p75TicksPerBlock": 22.0, "failureRate": 0.04, "damageRate": 0.01, "jumpTicksPerBlock": 2.8, "sprintTicksPerBlock": 0.7, "moveForwardTicksPerBlock": 7.0, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:windswept_hills": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 8640, "totalBlocks": 480.0, "medianTicksPerBlock": 18.0, "p25TicksPerBlock": 14.0, "p75TicksPerBlock": 26.0, "failureRate": 0.05, "damageRate": 0.02, "jumpTicksPerBlock": 3.4, "sprintTicksPerBlock": 0.5, "moveForwardTicksPerBlock": 7.0, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:wooded_badlands": {
+      "surfacePedestrian": {"samples": 99, "successfulSamples": 99, "successfulTicks": 4320, "totalBlocks": 480.0, "medianTicksPerBlock": 9.0, "p25TicksPerBlock": 7.0, "p75TicksPerBlock": 12.0, "failureRate": 0.01, "damageRate": 0.0, "jumpTicksPerBlock": 0.9, "sprintTicksPerBlock": 1.6, "moveForwardTicksPerBlock": 6.0, "waterTicksPerBlock": 0.0}
+    }
+  }
+}

@@ -10,6 +10,10 @@ import net.minecraft.world.level.block.state.BlockState;
 public sealed interface SurfaceWaterMode permits SurfaceWaterMode.Swim, SurfaceWaterMode.Boat {
   boolean legal(CalculationContext context, int x, int y, int z);
 
+  default boolean legalHull(CalculationContext context, int x, int y, int z) {
+    return legal(context, x, y, z);
+  }
+
   void appendValidPositions(BetterBlockPos waterCell, Collection<BetterBlockPos> positions);
 
   TransportMode transportMode();
@@ -42,6 +46,16 @@ public sealed interface SurfaceWaterMode permits SurfaceWaterMode.Swim, SurfaceW
       BlockState head = context.get(x, y + 1, z);
       BlockState canopy = context.get(x, y + 2, z);
       return context.isLoaded(x, z) && context.worldBorder.entirelyContains(x, z) && MovementHelper.isWater(water) && MovementHelper.canSwimThrough(context, water) && !MovementHelper.isWater(head)
+        && MovementHelper.canMoveThrough(context, x, y + 1, z, head) && MovementHelper.canMoveThrough(context, x, y + 2, z, canopy);
+    }
+
+    @Override
+    public boolean legalHull(CalculationContext context, int x, int y, int z) {
+      BlockState body = context.get(x, y, z);
+      BlockState head = context.get(x, y + 1, z);
+      BlockState canopy = context.get(x, y + 2, z);
+      return context.isLoaded(x, z) && context.worldBorder.entirelyContains(x, z)
+        && (MovementHelper.isWater(body) && MovementHelper.canSwimThrough(context, body) || MovementHelper.canMoveThrough(context, x, y, z, body)) && !MovementHelper.isWater(head)
         && MovementHelper.canMoveThrough(context, x, y + 1, z, head) && MovementHelper.canMoveThrough(context, x, y + 2, z, canopy);
     }
 

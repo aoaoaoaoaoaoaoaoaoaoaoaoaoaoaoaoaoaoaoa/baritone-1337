@@ -32,6 +32,7 @@ public final class PlaytestHarnessBehavior extends Behavior {
   private static final String QUIT = "baritone.playtest.quitOnFinish";
   private static final int CONNECT_RETRY_TICKS = 80;
   private static final int SETUP_CONVERGENCE_TICKS = 30;
+  private static final int SETUP_TIMEOUT_TICKS = 20 * 45;
   private static final int INACTIVE_STOP_TICKS = 40;
 
   private final Path inbox;
@@ -159,11 +160,12 @@ public final class PlaytestHarnessBehavior extends Behavior {
   }
 
   private void startSetup(TickEvent event) {
+    Pending starting = pending;
     try {
-      PlaytestScenario scenario = PlaytestScenario.load(pending.path(), pending.runId());
-      run = new PlaytestRun(scenario, results, pending.path(), event.getCount());
-      if (pending.deleteOnConsume()) {
-        Files.deleteIfExists(pending.path());
+      PlaytestScenario scenario = PlaytestScenario.load(starting.path(), starting.runId());
+      run = new PlaytestRun(scenario, results, starting.path(), event.getCount());
+      if (starting.deleteOnConsume()) {
+        Files.deleteIfExists(starting.path());
       }
       pending = null;
       dead = false;
@@ -174,7 +176,7 @@ public final class PlaytestHarnessBehavior extends Behavior {
       setupCommands = setupCommands(scenario);
       phase = Phase.SETUP;
     } catch (IOException | RuntimeException e) {
-      throw new RuntimeException("Unable to load playtest scenario " + pending.path(), e);
+      throw new RuntimeException("Unable to load playtest scenario " + (starting == null ? "<none>" : starting.path()), e);
     }
   }
 
@@ -190,12 +192,16 @@ public final class PlaytestHarnessBehavior extends Behavior {
       player.connection.sendCommand(setupCommands.get(commandIndex++));
       return;
     }
+    if (phaseTicks > setupCommands.size() + SETUP_TIMEOUT_TICKS) {
+      finish(TerminalReason.SETUP_TIMEOUT, false);
+      return;
+    }
     if (phaseTicks < setupCommands.size() + SETUP_CONVERGENCE_TICKS || !readyToRun(player)) {
       return;
     }
     player.getInventory().setSelectedSlot(runScenario().selectedSlot());
     if (runScenario().trace()) {
-      baritone.getPlayerTelemetryBehavior().start(run.tracePath());
+      baritone.getMocapBehavior().start(run.tracePath());
     }
     baritone.getCustomGoalProcess().setGoalAndPath(runScenario().baritoneGoal());
     phase = Phase.RUNNING;
@@ -206,13 +212,13 @@ public final class PlaytestHarnessBehavior extends Behavior {
   private void tickRun(Minecraft minecraft) {
     phaseTicks++;
     run.sample(baritone, minecraft);
-    boolean active = baritone.getCustomGoalProcess().isActive() || baritone.getPathingBehavior().isPathing() || baritone.getPathingBehavior().getInProgress().isPresent();
+    boolean active = baritone.getPathingBehavior().isPathing() || baritone.getPathingBehavior().getInProgress().isPresent() || baritone.getPathingBehavior().getPlanningStart().isPresent();
     inactiveTicks = active ? 0 : inactiveTicks + 1;
     if (dead) {
       finish(TerminalReason.DEATH, false);
       return;
     }
-    if (runScenario().succeeded(minecraft.player, active, run.sawWater(), run.sawBoat(), run.sawPathing(), run.tookDamage())) {
+    if (runScenario().succeeded(minecraft.player, active, run)) {
       finish(TerminalReason.SUCCESS, true);
       return;
     }
@@ -230,9 +236,9 @@ public final class PlaytestHarnessBehavior extends Behavior {
   }
 
   private void finish(TerminalReason reason, boolean success) {
-    Path telemetry = baritone.getPlayerTelemetryBehavior().output().orElse(null);
-    if (baritone.getPlayerTelemetryBehavior().active()) {
-      baritone.getPlayerTelemetryBehavior().stop();
+    Path telemetry = baritone.getMocapBehavior().output().orElse(null);
+    if (baritone.getMocapBehavior().active()) {
+      baritone.getMocapBehavior().stop();
     }
     boolean staleBefore = PlaytestRun.staleInputs(baritone);
     baritone.getPathingBehavior().forceCancel();
@@ -240,7 +246,7 @@ public final class PlaytestHarnessBehavior extends Behavior {
     boolean staleAfter = PlaytestRun.staleInputs(baritone);
     run.write(reason, success, baritone, ctx.minecraft(), telemetry, staleBefore, staleAfter);
     run = null;
-    phase = Phase.DONE;
+    phase = quitOnFinish ? Phase.DONE : Phase.IDLE;
     phaseTicks = 0;
     if (quitOnFinish) {
       ctx.minecraft().stop();
@@ -262,7 +268,9 @@ public final class PlaytestHarnessBehavior extends Behavior {
     commands.add("gamemode survival @s");
     commands.add("effect clear @s");
     commands.add("effect give @s minecraft:instant_health 1 10 true");
-    commands.add("effect give @s minecraft:saturation 1 10 true");
+    if (scenario.saturationBoost()) {
+      commands.add("effect give @s minecraft:saturation 1 10 true");
+    }
     commands.add("clear @s");
     commands.addAll(scenario.setupCommands());
     PlaytestScenario.Start start = scenario.start();

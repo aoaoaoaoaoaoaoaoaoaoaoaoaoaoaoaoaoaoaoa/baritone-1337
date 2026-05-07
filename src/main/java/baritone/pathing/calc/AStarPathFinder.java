@@ -79,14 +79,28 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
+    BestExitGoal bestExitGoal = goal instanceof BestExitGoal exit ? exit : null;
+    PathNode bestExit = null;
+    double bestExitScore = Double.POSITIVE_INFINITY;
     while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
+      if (bestExitGoal != null && bestExit != null && openSet.lowestCombinedCost() + minimumImprovement >= bestExitScore) {
+        logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; proved best local macro exit");
+        if (activeProfile != null) {
+          activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "best_exit", System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
+        }
+        return Optional.of(new Path(realStart, startNode, bestExit, numNodes, goal, calcContext));
+      }
       if ((numNodes & (timeCheckInterval - 1)) == 0) { // only call this once every 64 nodes (about half a millisecond)
         long now = System.currentTimeMillis(); // since nanoTime is slow on windows (takes many microseconds)
         if (now - failureTimeoutTime >= 0 || (!failing && now - primaryTimeoutTime >= 0)) {
           break;
         }
         if (now - nextIncumbentPublishTime >= 0) {
-          publishBestSoFar(numNodes);
+          if (bestExitGoal != null && bestExit != null) {
+            publishPathToNode(bestExit, numNodes);
+          } else {
+            publishBestSoFar(numNodes);
+          }
           nextIncumbentPublishTime = now + incumbentInterval;
         }
       }
@@ -98,6 +112,14 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       mostRecentConsidered = currentNode;
       numNodes++;
       if (goal.isInGoal(currentNode.x, currentNode.y, currentNode.z)) {
+        if (bestExitGoal != null) {
+          double score = currentNode.cost + bestExitGoal.exactGoalExitValue(currentNode.x, currentNode.y, currentNode.z);
+          if (bestExitScore - score > minimumImprovement) {
+            bestExit = currentNode;
+            bestExitScore = score;
+          }
+          continue;
+        }
         logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
         if (activeProfile != null) {
           activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "goal", System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
@@ -105,6 +127,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         return Optional.of(new Path(realStart, startNode, currentNode, numNodes, goal, calcContext));
       }
       terrainFacts.load(calcContext, currentNode.x, currentNode.y, currentNode.z);
+      boolean touchesExactBoundary = false;
       for (int primitiveIndex = 0; primitiveIndex < allMoves.length; primitiveIndex++) {
         MovementPrimitive primitive = allMoves[primitiveIndex];
         DestinationSpec spec = primitive.destinationSpec();
@@ -114,7 +137,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         int newZ = currentNode.z + probe.dz();
         if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.isLoaded(newX, newZ)) {
           // only need to check if the destination is a loaded chunk if it's in a different chunk than the start of the movement
-          if (!spec.dynamicXZ()) { // only increment the counter if the movement would have gone out of bounds guaranteed
+          touchesExactBoundary = bestExitGoal != null;
+          if (bestExitGoal == null && !spec.dynamicXZ()) { // only increment the legacy segment cutoff if this is not a scored-boundary search
             numEmptyChunk++;
           }
           continue;
@@ -247,6 +271,13 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           }
         }
       }
+      if (touchesExactBoundary) {
+        double score = currentNode.cost + bestExitGoal.exitValue(currentNode.x, currentNode.y, currentNode.z);
+        if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
+          bestExit = currentNode;
+          bestExitScore = score;
+        }
+      }
     }
     if (activeProfile != null) {
       activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(),
@@ -255,6 +286,10 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     }
     if (cancelRequested) {
       return Optional.empty();
+    }
+    if (bestExitGoal != null && bestExit != null) {
+      logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; using best local macro exit without proof");
+      return Optional.of(new Path(realStart, startNode, bestExit, numNodes, goal, calcContext));
     }
     System.out.println(numMovementsConsidered + " movements considered");
     System.out.println("Open set size: " + openSet.size());

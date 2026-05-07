@@ -166,6 +166,13 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
       return;
     }
     PathNode node = bestPublishableNode();
+    publishPathToNode(node, numNodes);
+  }
+
+  protected void publishPathToNode(PathNode node, int numNodes) {
+    if (!hasPublicationSink() || cancelRequested) {
+      return;
+    }
     if (node == null || node == lastPublishedNode) {
       return;
     }
@@ -264,7 +271,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
           if (COEFFICIENTS[i] >= 3) {
             System.out.println("Warning: cost coefficient is greater than three! Probably means that");
             System.out.println("the path I found is pretty terrible (like sneak-bridging for dozens of blocks)");
-            System.out.println("But I'm going to do it anyway, because yolo");
+            System.out.println("Executing the best available partial path.");
           }
           System.out.println("Path goes for " + Math.sqrt(dist) + " blocks");
           logDebug("A* cost coefficient " + COEFFICIENTS[i]);

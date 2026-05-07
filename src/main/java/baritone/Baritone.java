@@ -51,7 +51,7 @@ public class Baritone implements IBaritone {
   private final LookBehavior lookBehavior;
   private final InventoryBehavior inventoryBehavior;
   private final InputOverrideHandler inputOverrideHandler;
-  private final PlayerTelemetryBehavior playerTelemetryBehavior;
+  private final MocapBehavior mocapBehavior;
 
   private final FollowProcess followProcess;
   private final MineProcess mineProcess;
@@ -94,7 +94,7 @@ public class Baritone implements IBaritone {
       this.pathingBehavior = this.registerBehavior(PathingBehavior::new);
       this.inventoryBehavior = this.registerBehavior(InventoryBehavior::new);
       this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
-      this.playerTelemetryBehavior = this.registerBehavior(PlayerTelemetryBehavior::new);
+      this.mocapBehavior = this.registerBehavior(MocapBehavior::new);
       this.registerBehavior(WaypointBehavior::new);
       if (PlaytestHarnessBehavior.enabled()) {
         this.registerBehavior(PlaytestHarnessBehavior::new);
@@ -206,7 +206,7 @@ public class Baritone implements IBaritone {
 
   public PathingProfiler getPathingProfiler() { return this.pathingProfiler; }
 
-  public PlayerTelemetryBehavior getPlayerTelemetryBehavior() { return this.playerTelemetryBehavior; }
+  public MocapBehavior getMocapBehavior() { return this.mocapBehavior; }
 
   public static Settings settings() {
     return BaritoneAPI.getSettings();

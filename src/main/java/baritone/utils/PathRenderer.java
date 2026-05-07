@@ -7,7 +7,12 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.behavior.PathingBehavior;
+import baritone.pathing.macro.core.MacroCellEvidence;
+import baritone.pathing.macro.core.MacroPlan;
+import baritone.pathing.macro.core.MacroPlanVertex;
 import baritone.pathing.path.RouteExecutor;
+import baritone.pathing.route.RouteRenderPlan;
+import baritone.pathing.transport.TransportMode;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
@@ -23,6 +28,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -90,29 +96,91 @@ public final class PathRenderer implements IRenderer {
 
     //drawManySelectionBoxes(player, Collections.singletonList(behavior.pathStart()), partialTicks, Color.WHITE);
 
-    // Render the current path, if there is one
-    if (current != null && current.getPath() != null) {
-      int renderBegin = Math.max(current.getPosition() - 3, 0);
-      drawPath(view, current.getPath().positions(), renderBegin, settings.colorCurrentPath.value, settings.fadePath.value, 10, 20);
+    if (settings.renderMacroPlan.value) {
+      behavior.getRenderableMacroPlan().ifPresent(plan -> drawMacroPlan(view, ctx.player(), plan));
+    }
+    if (current != null) {
+      drawRoutePlan(view, ctx.player(), current.renderPlan(true), true);
+    }
+    if (next != null) {
+      drawRoutePlan(view, ctx.player(), next.renderPlan(false), false);
     }
 
-    if (next != null && next.getPath() != null) {
-      drawPath(view, next.getPath().positions(), 0, settings.colorNextPath.value, settings.fadePath.value, 10, 20);
+    if (!settings.renderPathCalculation.value) {
+      return;
     }
 
-    // If there is a path calculation currently running, render the path calculation process
+    // If there is a path calculation currently running, render volatile search probes. These are diagnostics, not commitments.
     behavior.getInProgress().ifPresent(currentlyRunning -> {
       behavior.getPlanningStart().ifPresent(start -> drawManySelectionBoxes(view, ctx.player(), Collections.singletonList(start), settings.colorBestPathSoFar.value));
-
       currentlyRunning.bestPathSoFar().ifPresent(p -> {
         drawPath(view, p.positions(), 0, settings.colorBestPathSoFar.value, settings.fadePath.value, 10, 20);
       });
-
       currentlyRunning.pathToMostRecentNodeConsidered().ifPresent(mr -> {
         drawPath(view, mr.positions(), 0, settings.colorMostRecentConsidered.value, settings.fadePath.value, 10, 20);
         drawManySelectionBoxes(view, ctx.player(), Collections.singletonList(mr.getDest()), settings.colorMostRecentConsidered.value);
       });
     });
+  }
+
+  private static void drawMacroPlan(RenderContext view, Entity player, MacroPlan plan) {
+    if (plan.vertices().size() >= 2) {
+      for (int i = 0; i < plan.vertices().size() - 1; i++) {
+        MacroPlanVertex a = plan.vertices().get(i);
+        MacroPlanVertex b = plan.vertices().get(i + 1);
+        drawPath(view, List.of(a.pos(), b.pos()), 0, macroEvidenceColor(b.evidence()), false, 10, 20, 0.85D);
+      }
+    } else if (plan.renderPositions().size() >= 2) {
+      drawPath(view, plan.renderPositions(), 0, settings.colorMacroBiomePlan.value, false, 10, 20, 0.85D);
+    }
+    if (settings.renderMacroPlanAnchors.value && plan.vertices().size() >= 2) {
+      ArrayList<BlockPos> cells = new ArrayList<>();
+      int stride = Math.max(1, plan.vertices().size() / 24);
+      for (int i = 0; i < plan.vertices().size(); i += stride) {
+        cells.add(plan.vertices().get(i).pos());
+      }
+      drawManySelectionBoxes(view, player, cells, settings.colorMacroRouteAnchor.value);
+    }
+  }
+
+  private static Color macroEvidenceColor(MacroCellEvidence evidence) {
+    return switch (evidence) {
+      case LIVE -> settings.colorMacroLivePlan.value;
+      case CACHED -> settings.colorMacroCachedPlan.value;
+      case PREDICTED -> settings.colorMacroPredictedPlan.value;
+      case PRIOR -> settings.colorMacroPriorPlan.value;
+    };
+  }
+
+  private static void drawRoutePlan(RenderContext view, Entity player, RouteRenderPlan plan, boolean current) {
+    for (RouteRenderPlan.Segment segment : plan.segments()) {
+      drawPath(view, segment.positions(), segment.startIndex(), routeColor(segment, current), settings.fadePath.value && current, 10, 20, routeOffset(segment));
+    }
+    if (settings.renderMacroPlanAnchors.value && current) {
+      ArrayList<BlockPos> anchors = new ArrayList<>(plan.anchors().size());
+      for (RouteRenderPlan.Anchor anchor : plan.anchors()) {
+        anchors.add(anchor.pos());
+      }
+      drawManySelectionBoxes(view, player, anchors, settings.colorMacroRouteAnchor.value);
+    }
+  }
+
+  private static Color routeColor(RouteRenderPlan.Segment segment, boolean current) {
+    if (segment.mode() == TransportMode.SWIM) {
+      return settings.colorMacroSwim.value;
+    }
+    if (segment.mode() == TransportMode.BOAT) {
+      return segment.terminal() ? settings.colorMacroBoatTerminal.value : settings.colorMacroBoatTransit.value;
+    }
+    return current ? settings.colorCurrentPath.value : settings.colorNextPath.value;
+  }
+
+  private static double routeOffset(RouteRenderPlan.Segment segment) {
+    return switch (segment.mode()) {
+      case BOAT -> 0.70D;
+      case SWIM -> 0.58D;
+      default -> 0.5D;
+    };
   }
 
   public static void drawPath(RenderContext view, List<BetterBlockPos> positions, int startIndex, Color color, boolean fadeOut, int fadeStart0, int fadeEnd0) {

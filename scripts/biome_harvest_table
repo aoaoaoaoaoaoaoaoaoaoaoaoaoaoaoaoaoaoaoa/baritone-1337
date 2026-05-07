@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import statistics
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+DEFAULT_TARGET_SUCCESSFUL_TICKS = 12_000
+DEFAULT_MINIMUM_SUCCESSFUL_SAMPLES = 12
+DEFAULT_MINIMUM_INDEPENDENT_SAMPLES = 3
+WATER_MODES = ("SWIM", "BOAT", "LEGACY_WATER")
+
+
+@dataclass(frozen=True)
+class Row:
+  biome: str
+  distance: float
+  summary: dict[str, Any]
+  scenario: dict[str, Any]
+  path: Path
+
+  @property
+  def success(self) -> bool:
+    return bool(self.summary.get("success"))
+
+  @property
+  def ticks_per_block(self) -> float:
+    return float(self.summary["elapsedTicks"]) / self.distance
+
+
+def main() -> None:
+  args = parser().parse_args()
+  root = args.root
+  results = root / "results" if (root / "results").is_dir() else root
+  target_ticks, min_samples, min_independent = budget(root, args)
+  rows = load_rows(results)
+  if not rows:
+    raise SystemExit(f"no biome-profile summary/scenario pairs under {results}")
+  print_table(rows, target_ticks, min_samples, min_independent, args.details)
+
+
+def budget(root: Path, args: argparse.Namespace) -> tuple[int, int, int]:
+  if args.target_successful_ticks is not None and args.minimum_successful_samples is not None and args.minimum_independent_samples is not None:
+    return args.target_successful_ticks, args.minimum_successful_samples, args.minimum_independent_samples
+  progress = root / "biome-profile" / "progress.json"
+  if progress.is_file():
+    data = json.loads(progress.read_text(encoding="utf-8"))
+    return (
+      args.target_successful_ticks if args.target_successful_ticks is not None else int(data.get("targetSuccessfulTicks", DEFAULT_TARGET_SUCCESSFUL_TICKS)),
+      args.minimum_successful_samples if args.minimum_successful_samples is not None else int(data.get("minimumSuccessfulSamples", DEFAULT_MINIMUM_SUCCESSFUL_SAMPLES)),
+      args.minimum_independent_samples if args.minimum_independent_samples is not None else int(data.get("minimumIndependentBiomeSamples", DEFAULT_MINIMUM_INDEPENDENT_SAMPLES)),
+    )
+  return (
+    args.target_successful_ticks if args.target_successful_ticks is not None else DEFAULT_TARGET_SUCCESSFUL_TICKS,
+    args.minimum_successful_samples if args.minimum_successful_samples is not None else DEFAULT_MINIMUM_SUCCESSFUL_SAMPLES,
+    args.minimum_independent_samples if args.minimum_independent_samples is not None else DEFAULT_MINIMUM_INDEPENDENT_SAMPLES,
+  )
+
+
+def load_rows(results: Path) -> dict[str, list[Row]]:
+  rows: dict[str, list[Row]] = {}
+  for sample_path in sorted(results.glob("*.json")):
+    try:
+      sample = json.loads(sample_path.read_text(encoding="utf-8"))
+      summary = sample["summary"]
+      scenario = sample["scenario"]
+    except (KeyError, TypeError, json.JSONDecodeError):
+      continue
+    add_row(rows, summary, scenario, sample_path)
+  for summary_path in sorted(results.rglob("summary.json")):
+    scenario_path = summary_path.with_name("scenario.json")
+    if not scenario_path.is_file():
+      continue
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
+    add_row(rows, summary, scenario, summary_path)
+  return rows
+
+
+def add_row(rows: dict[str, list[Row]], summary: dict[str, Any], scenario: dict[str, Any], path: Path) -> None:
+  profile = scenario.get("biomeProfile")
+  if not profile:
+    return
+  biome = str(profile.get("biome", "baritone:unknown"))
+  distance = float(profile.get("distance") or block_distance(scenario))
+  rows.setdefault(biome, []).append(Row(biome, distance, summary, scenario, path))
+
+
+def print_table(rows: dict[str, list[Row]], target_ticks: int, min_samples: int, min_independent: int, details: bool) -> None:
+  headers = ("biome", "samples", "ind", "ticks", "median", "p25", "p75", "min", "max", "jump/b", "sprint/b", "water/b", "damage", "fail", "done")
+  table: list[tuple[str, ...]] = [headers]
+  detail_rows: list[tuple[str, list[Row]]] = []
+  for biome, biome_rows in sorted(rows.items()):
+    successes = [row for row in biome_rows if row.success]
+    tpb = [row.ticks_per_block for row in successes]
+    successful_ticks = sum(int(row.summary.get("elapsedTicks", 0)) for row in successes)
+    independent = {independent_sample(row) for row in successes}
+    done = successful_ticks >= target_ticks and len(successes) >= min_samples and len(independent) >= min_independent
+    table.append(
+      (
+        biome,
+        f"{len(successes)}/{min_samples}",
+        f"{len(independent)}/{min_independent}",
+        f"{successful_ticks}/{target_ticks}",
+        fmt(median(tpb)),
+        fmt(percentile(tpb, 0.25)),
+        fmt(percentile(tpb, 0.75)),
+        fmt(min(tpb) if tpb else None),
+        fmt(max(tpb) if tpb else None),
+        fmt(per_block(successes, "jumpTicks"), 4),
+        fmt(per_block(successes, "sprintTicks"), 4),
+        fmt(water_per_block(successes), 4),
+        fmt(rate(biome_rows, lambda row: bool(row.summary.get("tookDamage"))), 3),
+        fmt((len(biome_rows) - len(successes)) / len(biome_rows) if biome_rows else None, 3),
+        "yes" if done else "no",
+      )
+    )
+    if details:
+      detail_rows.append((biome, sorted(biome_rows, key=lambda row: (row.success, row.ticks_per_block if row.success else math.inf), reverse=True)))
+  print_aligned(table)
+  if details:
+    for biome, biome_rows in detail_rows:
+      print()
+      print(biome)
+      for row in biome_rows:
+        start = row.scenario.get("start", {})
+        goal = row.scenario.get("goal", {})
+        status = "ok" if row.success else f"fail:{row.summary.get('terminalReason')}"
+        tpb = f"{row.ticks_per_block:.3f}" if row.success else "n/a"
+        print(
+          f"  {status} {row.summary.get('id')}: {row.distance:.1f}b {row.summary.get('elapsedTicks')}t {tpb} t/b "
+          f"ind {independent_sample(row)} y {start.get('y')}->{goal.get('y')} jump {row.summary.get('jumpTicks')} sprint {row.summary.get('sprintTicks')} damage {row.summary.get('tookDamage')}"
+        )
+
+
+def print_aligned(table: list[tuple[str, ...]]) -> None:
+  widths = [max(len(row[i]) for row in table) for i in range(len(table[0]))]
+  for r, row in enumerate(table):
+    print("  ".join(cell.ljust(widths[i]) if i == 0 else cell.rjust(widths[i]) for i, cell in enumerate(row)))
+    if r == 0:
+      print("  ".join("-" * width for width in widths))
+
+
+def block_distance(scenario: dict[str, Any]) -> float:
+  start = scenario["start"]
+  goal = scenario["goal"]
+  return math.sqrt((float(start["x"]) - float(goal["x"])) ** 2 + (float(start["y"]) - float(goal["y"])) ** 2 + (float(start["z"]) - float(goal["z"])) ** 2)
+
+
+def per_block(rows: list[Row], field: str) -> float | None:
+  total = sum(row.distance for row in rows)
+  return None if total == 0 else sum(float(row.summary.get(field, 0)) for row in rows) / total
+
+
+def water_per_block(rows: list[Row]) -> float | None:
+  total = sum(row.distance for row in rows)
+  return None if total == 0 else sum(sum(float(row.summary.get("actualModeTicks", {}).get(mode, 0)) for mode in WATER_MODES) for row in rows) / total
+
+
+def rate(rows: list[Row], predicate) -> float | None:
+  return None if not rows else sum(1 for row in rows if predicate(row)) / len(rows)
+
+
+def independent_sample(row: Row) -> str:
+  profile = row.scenario.get("biomeProfile", {})
+  return str(profile.get("independentSample", "legacy")) if isinstance(profile, dict) else "legacy"
+
+
+def median(values: list[float]) -> float | None:
+  return statistics.median(values) if values else None
+
+
+def percentile(values: list[float], q: float) -> float | None:
+  if not values:
+    return None
+  ordered = sorted(values)
+  if len(ordered) == 1:
+    return ordered[0]
+  pos = (len(ordered) - 1) * q
+  lo = math.floor(pos)
+  hi = math.ceil(pos)
+  return ordered[lo] if lo == hi else ordered[lo] * (hi - pos) + ordered[hi] * (pos - lo)
+
+
+def fmt(value: float | None, digits: int = 3) -> str:
+  return "n/a" if value is None else f"{value:.{digits}f}"
+
+
+def parser() -> argparse.ArgumentParser:
+  p = argparse.ArgumentParser(description="Print a compact empirical biome harvest table from playtest result summaries.")
+  p.add_argument("root", type=Path, help="Run root or results directory.")
+  p.add_argument("--details", action="store_true", help="Print per-run rows sorted by ticks/block.")
+  p.add_argument("--target-successful-ticks", type=int)
+  p.add_argument("--minimum-successful-samples", type=int)
+  p.add_argument("--minimum-independent-samples", type=int)
+  return p
+
+
+if __name__ == "__main__":
+  main()

@@ -8,6 +8,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.inventory.ContainerInput;
@@ -171,6 +172,16 @@ public final class InventoryBehavior extends Behavior implements Helper {
     OptionalInt slot = findBoatHotbarSlot();
     slot.ifPresent(ctx.player().getInventory()::setSelectedSlot);
     return slot.isPresent() ? Optional.of(InteractionHand.MAIN_HAND) : Optional.empty();
+  }
+
+  public boolean hasAxe() {
+    NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+    for (ItemStack stack : inv) {
+      if (!stack.isEmpty() && stack.is(ItemTags.AXES)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static boolean isBoat(ItemStack stack) {

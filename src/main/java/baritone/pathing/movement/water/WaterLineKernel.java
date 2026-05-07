@@ -4,12 +4,15 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.transport.TransportLeg;
 import baritone.pathing.transport.TransportTerminality;
-import java.util.ArrayList;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 
 public final class WaterLineKernel {
+  private static final ThreadLocal<TraceScratch> SCRATCH = ThreadLocal.withInitial(TraceScratch::new);
+
   private WaterLineKernel() {
   }
 
@@ -40,11 +43,13 @@ public final class WaterLineKernel {
     }
     LinkedHashSet<BetterBlockPos> valid = new LinkedHashSet<>();
     valid.add(src);
-    boolean clear = trace(waterStart, waterEnd, profile.halfWidth(), (x, z) -> {
-      if (!profile.mode().legal(context, x, waterStart.y, z)) {
+    boolean clear = traceCells(waterStart, waterEnd, profile.halfWidth(), (x, z, centerline) -> {
+      if (!(centerline ? profile.mode().legal(context, x, waterStart.y, z) : profile.mode().legalHull(context, x, waterStart.y, z))) {
         return false;
       }
-      profile.mode().appendValidPositions(new BetterBlockPos(x, waterStart.y, z), valid);
+      if (centerline) {
+        profile.mode().appendValidPositions(new BetterBlockPos(x, waterStart.y, z), valid);
+      }
       return true;
     });
     valid.add(dest);
@@ -52,33 +57,50 @@ public final class WaterLineKernel {
     return clear ? Optional.of(new WaterLineSegment(leg, waterEnd, profile, length, profile.cost(length), List.copyOf(valid))) : Optional.empty();
   }
 
-  private static boolean trace(BetterBlockPos src, BetterBlockPos dest, double halfWidth, CellPredicate consumer) {
-    LinkedHashSet<Cell> centerline = new LinkedHashSet<>();
-    dda(src.x + 0.5D, src.z + 0.5D, dest.x + 0.5D, dest.z + 0.5D, centerline::add);
-    LinkedHashSet<Cell> swept = new LinkedHashSet<>();
+  public static boolean traceCells(BetterBlockPos src, BetterBlockPos dest, double halfWidth, SweptCellPredicate consumer) {
+    TraceScratch scratch = SCRATCH.get();
+    if (scratch.active) {
+      return traceCells(src, dest, halfWidth, consumer, new TraceScratch());
+    }
+    scratch.active = true;
+    try {
+      return traceCells(src, dest, halfWidth, consumer, scratch);
+    } finally {
+      scratch.clear();
+      scratch.active = false;
+    }
+  }
+
+  private static boolean traceCells(BetterBlockPos src, BetterBlockPos dest, double halfWidth, SweptCellPredicate consumer, TraceScratch scratch) {
+    scratch.clear();
+    int centerlineCapacity = Math.abs(dest.x - src.x) + Math.abs(dest.z - src.z) + 1;
+    scratch.ensureCenterlineCapacity(centerlineCapacity);
+    traceCenterline(src.x + 0.5D, src.z + 0.5D, dest.x + 0.5D, dest.z + 0.5D, scratch);
     int radius = (int) Math.ceil(halfWidth + 1D);
-    for (Cell center : centerline) {
+    int diameter = radius * 2 + 1;
+    scratch.swept.ensureCapacity(scratch.centerline.size() * diameter * diameter);
+    for (int i = 0; i < scratch.centerline.size(); i++) {
+      long center = scratch.centerline.getLong(i);
+      int cx = x(center);
+      int cz = z(center);
       for (int dx = -radius; dx <= radius; dx++) {
         for (int dz = -radius; dz <= radius; dz++) {
-          int x = center.x + dx;
-          int z = center.z + dz;
-          if (segmentIntersectsExpandedCell(src, dest, x, z, halfWidth)) {
-            swept.add(new Cell(x, z));
+          int x = cx + dx;
+          int z = cz + dz;
+          long cell = pack(x, z);
+          if (!segmentIntersectsExpandedCell(src, dest, x, z, halfWidth)) {
+            continue;
+          }
+          if (scratch.swept.add(cell) && !consumer.test(x, z, scratch.centerlineCells.contains(cell))) {
+            return false;
           }
         }
-      }
-    }
-    ArrayList<Cell> ordered = new ArrayList<>(swept);
-    ordered.sort((a, b) -> Double.compare(projection(src, dest, a), projection(src, dest, b)));
-    for (Cell cell : ordered) {
-      if (!consumer.test(cell.x, cell.z)) {
-        return false;
       }
     }
     return true;
   }
 
-  private static void dda(double sx, double sz, double ex, double ez, CellConsumer consumer) {
+  private static void traceCenterline(double sx, double sz, double ex, double ez, TraceScratch scratch) {
     int x = floor(sx);
     int z = floor(sz);
     int endX = floor(ex);
@@ -92,7 +114,7 @@ public final class WaterLineKernel {
     double tMaxX = stepX == 0 ? Double.POSITIVE_INFINITY : ((stepX > 0 ? x + 1D - sx : sx - x) / Math.abs(dx));
     double tMaxZ = stepZ == 0 ? Double.POSITIVE_INFINITY : ((stepZ > 0 ? z + 1D - sz : sz - z) / Math.abs(dz));
 
-    consumer.accept(new Cell(x, z));
+    scratch.addCenterline(pack(x, z));
     while (x != endX || z != endZ) {
       if (tMaxX < tMaxZ) {
         x += stepX;
@@ -106,7 +128,7 @@ public final class WaterLineKernel {
         tMaxX += tDeltaX;
         tMaxZ += tDeltaZ;
       }
-      consumer.accept(new Cell(x, z));
+      scratch.addCenterline(pack(x, z));
     }
   }
 
@@ -148,29 +170,47 @@ public final class WaterLineKernel {
     return tMin <= tMax;
   }
 
-  private static double projection(BetterBlockPos src, BetterBlockPos dest, Cell cell) {
-    double sx = src.x + 0.5D;
-    double sz = src.z + 0.5D;
-    double dx = dest.x - src.x;
-    double dz = dest.z - src.z;
-    double lenSq = dx * dx + dz * dz;
-    return ((cell.x + 0.5D - sx) * dx + (cell.z + 0.5D - sz) * dz) / lenSq;
-  }
-
   private static int floor(double value) {
     return (int) Math.floor(value);
   }
 
-  private record Cell(int x, int z) {
+  private static long pack(int x, int z) {
+    return (long) x << 32 ^ z & 0xFFFFFFFFL;
+  }
+
+  private static int x(long packed) {
+    return (int) (packed >> 32);
+  }
+
+  private static int z(long packed) {
+    return (int) packed;
+  }
+
+  private static final class TraceScratch {
+    final LongArrayList centerline = new LongArrayList();
+    final LongOpenHashSet centerlineCells = new LongOpenHashSet();
+    final LongOpenHashSet swept = new LongOpenHashSet();
+    boolean active;
+
+    void ensureCenterlineCapacity(int capacity) {
+      centerline.ensureCapacity(capacity);
+      centerlineCells.ensureCapacity(capacity);
+    }
+
+    void addCenterline(long cell) {
+      centerline.add(cell);
+      centerlineCells.add(cell);
+    }
+
+    void clear() {
+      centerline.clear();
+      centerlineCells.clear();
+      swept.clear();
+    }
   }
 
   @FunctionalInterface
-  private interface CellConsumer {
-    void accept(Cell cell);
-  }
-
-  @FunctionalInterface
-  private interface CellPredicate {
-    boolean test(int x, int z);
+  public interface SweptCellPredicate {
+    boolean test(int x, int z, boolean centerline);
   }
 }

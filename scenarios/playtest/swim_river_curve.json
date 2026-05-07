@@ -29,6 +29,7 @@
     "requirePathingSeen": true
   },
   "settings": {
+    "chunkCaching": false,
     "allowSprint": true,
     "sprintInWater": true,
     "jumpPenalty": 20.0

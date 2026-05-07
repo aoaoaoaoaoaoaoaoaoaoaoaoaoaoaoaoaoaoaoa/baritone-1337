@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import math
+import statistics
+import sys
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+
+def main(argv: list[str] | None = None) -> int:
+  argv = sys.argv[1:] if argv is None else argv
+  if len(argv) != 1:
+    raise SystemExit("usage: scripts/telemetry_summary <mocap-or-trace.jsonl>")
+  path = Path(argv[0])
+  rows = [event for event in events(path) if event.get("type") == "tick"]
+  if len(rows) < 2:
+    raise SystemExit(f"not enough tick rows in {path}")
+  summarize(path, rows)
+  return 0
+
+
+def events(path: Path):
+  with path.open(encoding="utf-8") as file:
+    for raw in file:
+      raw = raw.strip()
+      if raw:
+        yield json.loads(raw)
+
+
+def summarize(path: Path, rows: list[dict[str, Any]]) -> None:
+  ticks = rows[-1]["sample"] - rows[0]["sample"] + 1
+  seconds = ticks / 20
+  distance = horizontal_distance(rows)
+  speeds = instantaneous_speeds(rows)
+  swim_speeds = instantaneous_speeds(rows, lambda a, b: a.get("swimming") and b.get("swimming") and a.get("inWater") and b.get("inWater"))
+  clearances = [water["clearance"] for row in rows if (water := row.get("water") or {}).get("clearance") is not None and row.get("swimming")]
+  physical = Counter()
+  forced = Counter()
+  for row in rows:
+    for name, value in (row.get("physicalInputs") or {}).items():
+      physical[name] += bool(value)
+    for name, value in (row.get("inputs") or {}).items():
+      forced[name] += bool(value)
+  print(f"recording: {path}")
+  print(f"ticks: {ticks}  seconds: {seconds:.2f}")
+  print(f"start: {block(rows[0].get('feet'))}  end: {block(rows[-1].get('feet'))}")
+  print(f"horizontal distance: {distance:.2f}  mean speed: {distance / seconds:.3f} b/s")
+  print_stats("speed", speeds)
+  print_stats("swim speed", swim_speeds)
+  print_stats("swim eye clearance", clearances)
+  print("actual modes:", dict(Counter(row.get("transport", {}).get("actual") for row in rows)))
+  print("poses:", dict(Counter(row.get("pose") for row in rows)))
+  print("physical inputs:", dict(sorted(physical.items())))
+  print("baritone-forced inputs:", dict(sorted(forced.items())))
+
+
+def horizontal_distance(rows: list[dict[str, Any]]) -> float:
+  total = 0.0
+  for a, b in zip(rows, rows[1:]):
+    total += flat_delta(a, b)
+  return total
+
+
+def instantaneous_speeds(rows: list[dict[str, Any]], predicate=None) -> list[float]:
+  speeds: list[float] = []
+  for a, b in zip(rows, rows[1:]):
+    if predicate is not None and not predicate(a, b):
+      continue
+    dt = (b.get("sample", 0) - a.get("sample", 0)) / 20
+    if dt > 0:
+      speeds.append(flat_delta(a, b) / dt)
+  return speeds
+
+
+def flat_delta(a: dict[str, Any], b: dict[str, Any]) -> float:
+  pa = a["pos"]
+  pb = b["pos"]
+  return math.hypot(pb["x"] - pa["x"], pb["z"] - pa["z"])
+
+
+def print_stats(name: str, values: list[float]) -> None:
+  if not values:
+    print(f"{name}: <none>")
+    return
+  values = sorted(values)
+  p90 = values[min(len(values) - 1, math.floor(0.9 * (len(values) - 1)))]
+  print(f"{name}: median {statistics.median(values):.3f}  mean {statistics.mean(values):.3f}  p90 {p90:.3f}  min {values[0]:.3f}  max {values[-1]:.3f}")
+
+
+def block(value: Any) -> str:
+  if not isinstance(value, dict):
+    return str(value)
+  return f"{value.get('x')} {value.get('y')} {value.get('z')}"
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

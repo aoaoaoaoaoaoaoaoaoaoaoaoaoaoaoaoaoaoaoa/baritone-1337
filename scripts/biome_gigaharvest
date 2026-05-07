@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import re
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TextIO
+
+from playtestlib import Playtest, PlaytestConfig, WorldSpec
+
+
+LARGE_BIOMES = "minecraft:large_biomes"
+
+
+@dataclass(frozen=True)
+class GigaharvestConfig:
+  repo: Path
+  stamp: str
+  root: Path
+  seeds: tuple[int, ...]
+  radius: int
+  tile_chunks: int
+  pregen_batch_tiles: int
+  max_per_biome: int
+  min_distance: int
+  max_distance: int
+  scan_stride: int
+  line_stride: int
+  endpoint_exclusion_radius: int
+  max_starts_per_biome: int
+  max_rejections_per_biome: int
+  attempts_per_heading: int
+  result_timeout: int
+  target_successful_ticks: int
+  minimum_successful_samples: int
+  minimum_independent_samples: int
+  view_distance: int
+  simulation_distance: int
+  biomes: tuple[str, ...]
+
+  @staticmethod
+  def from_env(repo: Path) -> "GigaharvestConfig":
+    stamp = os.environ.get("HARVEST_STAMP", datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    root = Path(os.environ.get("HARVEST_ROOT", repo / "run" / f"playtest-biome-gigaharvest-{stamp}"))
+    if not root.is_absolute():
+      root = repo / root
+    return GigaharvestConfig(
+      repo=repo,
+      stamp=stamp,
+      root=root.resolve(),
+      seeds=tuple(int(seed) for seed in split_words(os.environ.get("HARVEST_SEEDS", "0 1 2 3 4 5 6 7"))),
+      radius=int(os.environ.get("HARVEST_RADIUS", "2048")),
+      tile_chunks=int(os.environ.get("HARVEST_TILE_CHUNKS", "16")),
+      pregen_batch_tiles=int(os.environ.get("HARVEST_PREGEN_BATCH_TILES", "8")),
+      max_per_biome=int(os.environ.get("HARVEST_MAX_PER_BIOME", "80")),
+      min_distance=int(os.environ.get("HARVEST_MIN_DISTANCE", "200")),
+      max_distance=int(os.environ.get("HARVEST_MAX_DISTANCE", "400")),
+      scan_stride=int(os.environ.get("HARVEST_SCAN_STRIDE", "8")),
+      line_stride=int(os.environ.get("HARVEST_LINE_STRIDE", "8")),
+      endpoint_exclusion_radius=int(os.environ.get("HARVEST_ENDPOINT_EXCLUSION_RADIUS", "80")),
+      max_starts_per_biome=int(os.environ.get("HARVEST_MAX_STARTS_PER_BIOME", "4000")),
+      max_rejections_per_biome=int(os.environ.get("HARVEST_MAX_REJECTIONS_PER_BIOME", "10000")),
+      attempts_per_heading=int(os.environ.get("HARVEST_ATTEMPTS_PER_HEADING", "8")),
+      result_timeout=int(os.environ.get("HARVEST_RESULT_TIMEOUT", "900")),
+      target_successful_ticks=int(os.environ.get("HARVEST_TARGET_SUCCESSFUL_TICKS", "12000")),
+      minimum_successful_samples=int(os.environ.get("HARVEST_MIN_SUCCESSFUL_SAMPLES", "12")),
+      minimum_independent_samples=int(os.environ.get("HARVEST_MIN_INDEPENDENT_BIOME_SAMPLES", "3")),
+      view_distance=int(os.environ.get("HARVEST_VIEW_DISTANCE", "8")),
+      simulation_distance=int(os.environ.get("HARVEST_SIMULATION_DISTANCE", "4")),
+      biomes=tuple(split_words(os.environ.get("HARVEST_BIOMES", ""))),
+    )
+
+  @property
+  def profile_dir(self) -> Path:
+    return self.root / "biome-profile"
+
+  @property
+  def all_manifest(self) -> Path:
+    return self.profile_dir / "all-manifest.txt"
+
+  @property
+  def priors(self) -> Path:
+    return self.profile_dir / "biome_traversal_priors.json"
+
+  def install_playtest_env(self) -> None:
+    os.environ["PLAYTEST_ROOT"] = str(self.root)
+    os.environ["PLAYTEST_LEVEL_TYPE"] = LARGE_BIOMES
+    os.environ["PLAYTEST_VIEW_DISTANCE"] = str(self.view_distance)
+    os.environ["PLAYTEST_SIMULATION_DISTANCE"] = str(self.simulation_distance)
+    os.environ["PLAYTEST_RESULT_TIMEOUT"] = str(self.result_timeout)
+    os.environ["PLAYTEST_PREGEN_BATCH_TILES"] = str(self.pregen_batch_tiles)
+
+
+class Tee:
+  def __init__(self, *targets: TextIO):
+    self.targets = targets
+
+  def write(self, data: str) -> int:
+    for target in self.targets:
+      target.write(data)
+    return len(data)
+
+  def flush(self) -> None:
+    for target in self.targets:
+      target.flush()
+
+
+def main() -> int:
+  repo = Path(__file__).resolve().parents[1]
+  cfg = GigaharvestConfig.from_env(repo)
+  cfg.root.mkdir(parents=True, exist_ok=True)
+  cfg.profile_dir.mkdir(parents=True, exist_ok=True)
+  (cfg.root / "logs").mkdir(parents=True, exist_ok=True)
+  with (cfg.root / "logs" / "gigaharvest.log").open("a", encoding="utf-8", buffering=1) as log:
+    sys.stdout = Tee(sys.__stdout__, log)
+    sys.stderr = Tee(sys.__stderr__, log)
+    return run(cfg)
+
+
+def run(cfg: GigaharvestConfig) -> int:
+  cfg.install_playtest_env()
+  playtest = Playtest(PlaytestConfig.from_env(cfg.repo))
+  cfg.all_manifest.write_text("", encoding="utf-8")
+  print(f"biome gigaharvest root: {cfg.root}")
+  print(f"seeds: {' '.join(map(str, cfg.seeds))}")
+  print(
+    f"radius={cfg.radius} tileChunks={cfg.tile_chunks} pregenBatchTiles={cfg.pregen_batch_tiles} "
+    f"maxPerBiome={cfg.max_per_biome} endpointExclusionRadius={cfg.endpoint_exclusion_radius} targetTicks={cfg.target_successful_ticks}"
+  )
+  print(datetime.now(timezone.utc).strftime("startedAt=%Y-%m-%dT%H:%M:%SZ"))
+  status = 0
+  try:
+    for seed_index in cfg.seeds:
+      harvest_seed(cfg, playtest, seed_index)
+    dedupe_manifest(cfg.all_manifest)
+    scenario_count = manifest_count(cfg.all_manifest)
+    print()
+    print(f"scenario count: {scenario_count}")
+    if scenario_count:
+      print("=== running suite ===")
+      suite_status = playtest.run_suite(cfg.all_manifest)
+      if suite_status:
+        print("suite had failures; aggregating successes and failures anyway")
+        status = max(status, suite_status)
+    print("=== aggregating ===")
+    aggregate_status = playtest.biome_aggregate(
+      cfg.root / "results",
+      cfg.priors,
+      [
+        "--target-successful-ticks",
+        str(cfg.target_successful_ticks),
+        "--minimum-successful-samples",
+        str(cfg.minimum_successful_samples),
+        "--minimum-independent-samples",
+        str(cfg.minimum_independent_samples),
+      ],
+    )
+    status = max(status, aggregate_status)
+  finally:
+    playtest.stop()
+  print(datetime.now(timezone.utc).strftime("finishedAt=%Y-%m-%dT%H:%M:%SZ"))
+  print(f"priors: {cfg.priors}")
+  print(f"manifest: {cfg.all_manifest}")
+  return status
+
+
+def harvest_seed(cfg: GigaharvestConfig, playtest: Playtest, seed_index: int) -> None:
+  world_key = f"biome_large_{seed_index}"
+  seed = f"baritone-biome-profile-{seed_index}"
+  world = WorldSpec(world_key, seed, LARGE_BIOMES)
+  scenario_dir = cfg.profile_dir / world_key / "scenarios"
+  facts = cfg.profile_dir / world_key / "facts.json"
+  print()
+  print(f"=== seed {seed} world {world_key} ===")
+  scenario_dir.mkdir(parents=True, exist_ok=True)
+  playtest.biome_pregen(world, cfg.radius, cfg.tile_chunks)
+  playtest.biome_facts(world, facts, ["--scan-stride", str(cfg.scan_stride)])
+  playtest.biome_scan(world, scenario_dir, scan_args(cfg))
+  manifest = scenario_dir / "manifest.txt"
+  if manifest.is_file() and manifest.stat().st_size:
+    with cfg.all_manifest.open("a", encoding="utf-8") as out:
+      out.write(manifest.read_text(encoding="utf-8"))
+  playtest.stop()
+
+
+def scan_args(cfg: GigaharvestConfig) -> list[str]:
+  args = [
+    "--world-preset",
+    LARGE_BIOMES,
+    "--min-distance",
+    str(cfg.min_distance),
+    "--max-distance",
+    str(cfg.max_distance),
+    "--max-scenarios-per-biome",
+    str(cfg.max_per_biome),
+    "--endpoint-exclusion-radius",
+    str(cfg.endpoint_exclusion_radius),
+    "--scan-stride",
+    str(cfg.scan_stride),
+    "--line-stride",
+    str(cfg.line_stride),
+    "--attempts-per-heading",
+    str(cfg.attempts_per_heading),
+    "--max-starts-per-biome",
+    str(cfg.max_starts_per_biome),
+    "--max-rejections-per-biome",
+    str(cfg.max_rejections_per_biome),
+  ]
+  for biome in cfg.biomes:
+    args.extend(("--biome", biome))
+  return args
+
+
+def split_words(raw: str) -> list[str]:
+  return [word for word in re.split(r"[\s,]+", raw.strip()) if word]
+
+
+def dedupe_manifest(manifest: Path) -> None:
+  if not manifest.is_file():
+    return
+  lines = sorted({line.strip() for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()})
+  manifest.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def manifest_count(manifest: Path) -> int:
+  if not manifest.is_file():
+    return 0
+  return sum(1 for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

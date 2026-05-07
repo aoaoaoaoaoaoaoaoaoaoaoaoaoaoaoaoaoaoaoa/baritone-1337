@@ -1,0 +1,1064 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import atexit
+import contextlib
+import hashlib
+import json
+import math
+import os
+import re
+import shlex
+import signal
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable, NoReturn, TextIO
+
+from playtestlib import main as playtest_main
+
+
+SURFACE_PROFILING_BIOMES = (
+  "minecraft:forest",
+  "minecraft:plains",
+  "minecraft:river",
+  "minecraft:savanna",
+  "minecraft:taiga",
+  "minecraft:snowy_plains",
+  "minecraft:desert",
+  "minecraft:beach",
+  "minecraft:birch_forest",
+  "minecraft:snowy_taiga",
+  "minecraft:old_growth_birch_forest",
+  "minecraft:dark_forest",
+  "minecraft:jungle",
+  "minecraft:sparse_jungle",
+  "minecraft:meadow",
+  "minecraft:stony_shore",
+  "minecraft:swamp",
+  "minecraft:badlands",
+  "minecraft:frozen_river",
+  "minecraft:grove",
+  "minecraft:sunflower_plains",
+  "minecraft:wooded_badlands",
+  "minecraft:old_growth_pine_taiga",
+  "minecraft:bamboo_jungle",
+  "minecraft:flower_forest",
+  "minecraft:old_growth_spruce_taiga",
+  "minecraft:mangrove_swamp",
+  "minecraft:savanna_plateau",
+  "minecraft:snowy_slopes",
+  "minecraft:snowy_beach",
+  "minecraft:windswept_hills",
+  "minecraft:eroded_badlands",
+  "minecraft:cherry_grove",
+  "minecraft:ice_spikes",
+  "minecraft:windswept_savanna",
+  "minecraft:windswept_forest",
+  "minecraft:jagged_peaks",
+  "minecraft:frozen_peaks",
+  "minecraft:mushroom_fields",
+  "minecraft:stony_peaks",
+  "minecraft:windswept_gravelly_hills",
+  "minecraft:pale_garden",
+)
+
+DEFAULT_PROBES = (
+  "0,0",
+  "8192,0",
+  "-8192,0",
+  "0,8192",
+  "0,-8192",
+  "8192,8192",
+  "8192,-8192",
+  "-8192,8192",
+  "-8192,-8192",
+  "16384,0",
+  "-16384,0",
+  "0,16384",
+  "0,-16384",
+)
+
+LOCATE = re.compile(r"at\s+\[(-?\d+),\s*(-?\d+),\s*(-?\d+)\]")
+
+
+class Tee:
+  def __init__(self, *files):
+    self.files = files
+
+  def write(self, text: str) -> int:
+    for file in self.files:
+      file.write(text)
+      file.flush()
+    return len(text)
+
+  def flush(self) -> None:
+    for file in self.files:
+      file.flush()
+
+
+@dataclass(frozen=True)
+class Probe:
+  x: int
+  z: int
+
+  @staticmethod
+  def parse(raw: str) -> "Probe":
+    x, z = raw.split(",", 1)
+    return Probe(int(x), int(z))
+
+  def key(self) -> str:
+    return f"{self.x},{self.z}"
+
+
+@dataclass(frozen=True)
+class Anchor:
+  biome: str
+  x: int
+  y: int
+  z: int
+  probe: Probe
+
+  @staticmethod
+  def parse(line: str) -> "Anchor":
+    biome, x, y, z, px, pz = line.rstrip("\n").split("\t")
+    return Anchor(biome, int(x), int(y), int(z), Probe(int(px), int(pz)))
+
+  def tsv(self) -> str:
+    return f"{self.biome}\t{self.x}\t{self.y}\t{self.z}\t{self.probe.x}\t{self.probe.z}\n"
+
+
+@dataclass(frozen=True, order=True)
+class ChunkTile:
+  cx: int
+  cz: int
+
+  @staticmethod
+  def parse(line: str) -> "ChunkTile":
+    cx, cz = line.split()
+    return ChunkTile(int(cx), int(cz))
+
+  def block_bounds(self, tile_chunks: int) -> tuple[int, int, int, int]:
+    x1 = self.cx * 16
+    z1 = self.cz * 16
+    x2 = ((self.cx + tile_chunks - 1) * 16) + 15
+    z2 = ((self.cz + tile_chunks - 1) * 16) + 15
+    return x1, z1, x2, z2
+
+  def label(self, tile_chunks: int) -> str:
+    return f"{self.cx}..{self.cx + tile_chunks - 1} {self.cz}..{self.cz + tile_chunks - 1}"
+
+  def tsv(self) -> str:
+    return f"{self.cx} {self.cz}\n"
+
+
+@dataclass(frozen=True)
+class BiomeStats:
+  attempts: int
+  successful_samples: int
+  successful_ticks: int
+  successful_independent_samples: frozenset[str]
+  attempted_ids: frozenset[str]
+
+  def enough(self, config: "HarvestConfig") -> bool:
+    return (
+      self.successful_ticks >= config.target_successful_ticks
+      and self.successful_samples >= config.min_successful_samples
+      and len(self.successful_independent_samples) >= config.min_independent_biome_samples
+    )
+
+
+@dataclass(frozen=True)
+class HarvestConfig:
+  root: Path
+  sample_pile: Path
+  failure_repro_dir: Path
+  seeds: tuple[str, ...]
+  literal_seeds: bool
+  seed_prefix: str
+  biomes: tuple[str, ...]
+  probes: tuple[Probe, ...]
+  anchors_per_biome: int
+  window_radius: int
+  tile_chunks: int
+  pregen_batch_tiles: int
+  pregen_batch_chunks: int
+  max_per_biome: int
+  min_distance: int
+  max_distance: int
+  scan_stride: int
+  line_stride: int
+  endpoint_exclusion_radius: int
+  spawn_spiral_radius: int
+  max_starts_per_biome: int
+  max_rejections_per_biome: int
+  attempts_per_heading: int
+  result_timeout: int
+  target_successful_ticks: int
+  min_successful_samples: int
+  min_independent_biome_samples: int
+  view_distance: int
+  simulation_distance: int
+  rcon_timeout: int
+  max_tick_time: int
+  skip_suite: bool
+  export_facts_each_biome: bool
+  export_facts_at_seed_end: bool
+
+  @staticmethod
+  def from_env(repo: Path) -> "HarvestConfig":
+    stamp = os.environ.get("HARVEST_STAMP") or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    root = Path(os.environ.get("HARVEST_ROOT", repo / "run" / f"playtest-biome-targeted-{stamp}"))
+    if not root.is_absolute():
+      root = repo / root
+    sample_pile = Path(os.environ.get("HARVEST_SAMPLE_PILE", repo / "run" / "biome-sample-pile"))
+    if not sample_pile.is_absolute():
+      sample_pile = repo / sample_pile
+    failure_repro_dir = Path(os.environ.get("HARVEST_FAILURE_REPROS", repo / "run" / "biome-failure-repros"))
+    if not failure_repro_dir.is_absolute():
+      failure_repro_dir = repo / failure_repro_dir
+    literal_seed_env = os.environ.get("HARVEST_SEED_VALUES")
+    return HarvestConfig(
+      root=root.resolve(),
+      sample_pile=sample_pile.resolve(),
+      failure_repro_dir=failure_repro_dir.resolve(),
+      seeds=words(literal_seed_env or os.environ.get("HARVEST_SEEDS"), ("0",)),
+      literal_seeds=literal_seed_env is not None or env_bool("HARVEST_LITERAL_SEEDS", False),
+      seed_prefix=os.environ.get("HARVEST_SEED_PREFIX", "baritone-biome-profile"),
+      biomes=words(os.environ.get("HARVEST_BIOMES"), SURFACE_PROFILING_BIOMES),
+      probes=tuple(Probe.parse(raw) for raw in words(os.environ.get("HARVEST_LOCATE_PROBES"), DEFAULT_PROBES)),
+      anchors_per_biome=env_int("HARVEST_ANCHORS_PER_BIOME", 1),
+      window_radius=env_int("HARVEST_WINDOW_RADIUS", 512),
+      tile_chunks=env_int("HARVEST_TILE_CHUNKS", 16),
+      pregen_batch_tiles=env_int("HARVEST_PREGEN_BATCH_TILES", 8),
+      pregen_batch_chunks=env_int("HARVEST_PREGEN_BATCH_CHUNKS", 512),
+      max_per_biome=env_int("HARVEST_MAX_PER_BIOME", 80),
+      min_distance=env_int("HARVEST_MIN_DISTANCE", 200),
+      max_distance=env_int("HARVEST_MAX_DISTANCE", 400),
+      scan_stride=env_int("HARVEST_SCAN_STRIDE", 8),
+      line_stride=env_int("HARVEST_LINE_STRIDE", 8),
+      endpoint_exclusion_radius=env_int("HARVEST_ENDPOINT_EXCLUSION_RADIUS", 80),
+      spawn_spiral_radius=env_int("HARVEST_SPAWN_SPIRAL_RADIUS", 16),
+      max_starts_per_biome=env_int("HARVEST_MAX_STARTS_PER_BIOME", 4000),
+      max_rejections_per_biome=env_int("HARVEST_MAX_REJECTIONS_PER_BIOME", 50000),
+      attempts_per_heading=env_int("HARVEST_ATTEMPTS_PER_HEADING", 16),
+      result_timeout=env_int("HARVEST_RESULT_TIMEOUT", 900),
+      target_successful_ticks=env_int("HARVEST_TARGET_SUCCESSFUL_TICKS", 12000),
+      min_successful_samples=env_int("HARVEST_MIN_SUCCESSFUL_SAMPLES", 12),
+      min_independent_biome_samples=env_int("HARVEST_MIN_INDEPENDENT_BIOME_SAMPLES", 3),
+      view_distance=env_int("HARVEST_VIEW_DISTANCE", 6),
+      simulation_distance=env_int("HARVEST_SIMULATION_DISTANCE", 4),
+      rcon_timeout=env_int("HARVEST_RCON_TIMEOUT", 120),
+      max_tick_time=env_int("HARVEST_MAX_TICK_TIME", -1),
+      skip_suite=env_bool("HARVEST_SKIP_SUITE", False),
+      export_facts_each_biome=env_bool("HARVEST_EXPORT_FACTS_EACH_BIOME", False),
+      export_facts_at_seed_end=env_bool("HARVEST_EXPORT_FINAL_FACTS", True),
+    )
+
+  def install_playtest_env(self, *, seed: str | None = None) -> None:
+    os.environ.update(
+      {
+        "PLAYTEST_ROOT": str(self.root),
+        "PLAYTEST_LEVEL_TYPE": "minecraft:large_biomes",
+        "PLAYTEST_VIEW_DISTANCE": str(self.view_distance),
+        "PLAYTEST_SIMULATION_DISTANCE": str(self.simulation_distance),
+        "PLAYTEST_RESULT_TIMEOUT": str(self.result_timeout),
+        "PLAYTEST_PREGEN_BATCH_TILES": str(self.pregen_batch_tiles),
+        "PLAYTEST_RCON_TIMEOUT": str(self.rcon_timeout),
+        "PLAYTEST_MAX_TICK_TIME": str(self.max_tick_time),
+      }
+    )
+    if seed is not None:
+      os.environ["PLAYTEST_SEED"] = seed
+    else:
+      os.environ.pop("PLAYTEST_SEED", None)
+
+
+def env_int(name: str, default: int) -> int:
+  return int(os.environ.get(name, str(default)))
+
+
+def env_bool(name: str, default: bool) -> bool:
+  raw = os.environ.get(name)
+  return default if raw is None else raw.lower() in {"1", "true", "yes", "on"}
+
+
+def words(raw: str | None, default: Iterable[str]) -> tuple[str, ...]:
+  return tuple(raw.split() if raw else default)
+
+
+def now() -> str:
+  return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def safe_id(value: str) -> str:
+  return "".join(c if c.isalnum() else "_" for c in value.removeprefix("minecraft:")).strip("_")
+
+
+class OutputCapture:
+  def __init__(self, target: TextIO | None):
+    self.target = target
+    self.parts: list[str] = []
+
+  def write(self, text: str) -> int:
+    self.parts.append(text)
+    if self.target is not None:
+      self.target.write(text)
+      self.target.flush()
+    return len(text)
+
+  def flush(self) -> None:
+    if self.target is not None:
+      self.target.flush()
+
+  def text(self) -> str:
+    return "".join(self.parts)
+
+
+class Playtest:
+  def __init__(self, _repo: Path, config: HarvestConfig):
+    self.config = config
+
+  def capture(self, *args: str, seed: str | None = None, check: bool = True) -> str:
+    status, output = self.invoke(*args, seed=seed, stream=False)
+    if check and status != 0:
+      raise SystemExit(output.strip() or status)
+    return output.strip()
+
+  def stream(self, *args: str, seed: str | None = None, check: bool = True) -> int:
+    status, _ = self.stream_capture(*args, seed=seed, check=check)
+    return status
+
+  def stream_capture(self, *args: str, seed: str | None = None, check: bool = True) -> tuple[int, str]:
+    status, output = self.invoke(*args, seed=seed, stream=True)
+    if check and status != 0:
+      raise SystemExit(output.strip() or status)
+    return status, output
+
+  def invoke(self, *args: str, seed: str | None, stream: bool) -> tuple[int, str]:
+    self.config.install_playtest_env(seed=seed)
+    capture = OutputCapture(sys.stdout if stream else None)
+    with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture):
+      try:
+        status = playtest_main(list(args))
+      except SystemExit as e:
+        status = system_exit_status(e)
+    return status, capture.text()
+
+  def stop(self) -> None:
+    self.capture("stop", check=False)
+
+
+def system_exit_status(e: SystemExit) -> int:
+  if e.code is None:
+    return 0
+  if isinstance(e.code, int):
+    return e.code
+  print(e.code)
+  return 1
+
+
+def read_anchors(path: Path) -> list[Anchor]:
+  if not path.exists():
+    return []
+  return [Anchor.parse(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def write_anchors(path: Path, anchors: Iterable[Anchor]) -> None:
+  unique: dict[tuple[str, int, int], Anchor] = {}
+  for anchor in anchors:
+    unique[(anchor.biome, anchor.x, anchor.z)] = anchor
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("".join(anchor.tsv() for anchor in unique.values()), encoding="utf-8")
+
+
+def read_tiles(path: Path) -> list[ChunkTile]:
+  if not path.exists():
+    return []
+  return [ChunkTile.parse(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def write_tiles(path: Path, tiles: Iterable[ChunkTile]) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("".join(tile.tsv() for tile in sorted(set(tiles))), encoding="utf-8")
+
+
+def profile_dir(config: HarvestConfig, seed_index: str) -> Path:
+  return config.root / "biome-profile" / f"biome_target_{safe_id(seed_index)}"
+
+
+def biome_dir(config: HarvestConfig, seed_index: str, biome: str) -> Path:
+  return profile_dir(config, seed_index) / "biomes" / safe_id(biome)
+
+
+def seed_value(config: HarvestConfig, seed_index: str) -> str:
+  return seed_index if config.literal_seeds or not seed_index.lstrip("-").isdigit() else f"{config.seed_prefix}-{seed_index}"
+
+
+def world_key(seed_index: str) -> str:
+  return f"biome_target_{safe_id(seed_index)}"
+
+
+def locate_attempted(path: Path) -> set[str]:
+  if not path.exists():
+    return set()
+  attempted: set[str] = set()
+  for line in path.read_text(encoding="utf-8").splitlines():
+    parts = line.split("\t")
+    if len(parts) >= 2:
+      attempted.add(parts[1])
+  return attempted
+
+
+def append_locate(path: Path, probe: Probe, status: str, output: str, anchor: Anchor | None = None) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  payload = output.replace("\n", "\\n")
+  coords = "" if anchor is None else f"{anchor.x},{anchor.y},{anchor.z}"
+  with path.open("a", encoding="utf-8") as file:
+    file.write(f"{now()}\t{probe.key()}\t{status}\t{coords}\t{payload}\n")
+
+
+def ensure_biome_anchors(playtest: Playtest, config: HarvestConfig, seed_index: str, biome: str, seed: str, target_count: int | None = None) -> list[Anchor]:
+  target_count = target_count or config.anchors_per_biome
+  root = biome_dir(config, seed_index, biome)
+  anchors_path = root / "anchors.tsv"
+  locate_path = root / "locate.tsv"
+  anchors = read_anchors(anchors_path)
+  seen = {(anchor.x, anchor.z) for anchor in anchors}
+  attempted = locate_attempted(locate_path)
+  if len(anchors) >= target_count:
+    return anchors
+  for probe in config.probes:
+    if probe.key() in attempted:
+      continue
+    print(f"locate {biome} from {probe.x},{probe.z}")
+    output = playtest.capture("cmd", "execute", "positioned", str(probe.x), "100", str(probe.z), "run", "locate", "biome", biome, seed=seed, check=False)
+    match = LOCATE.search(output)
+    if not match:
+      if output:
+        print(output)
+      append_locate(locate_path, probe, "missing", output)
+      continue
+    x, y, z = (int(match.group(i)) for i in range(1, 4))
+    anchor = Anchor(biome, x, y, z, probe)
+    if (x, z) not in seen:
+      anchors.append(anchor)
+      seen.add((x, z))
+      print(anchor.tsv(), end="")
+      write_anchors(anchors_path, anchors)
+    append_locate(locate_path, probe, "found", output, anchor)
+    if len(anchors) >= target_count:
+      break
+  write_anchors(anchors_path, anchors)
+  return anchors
+
+
+def plan_tiles(anchors: Iterable[Anchor], config: HarvestConfig) -> list[ChunkTile]:
+  tiles: set[ChunkTile] = set()
+  for anchor in anchors:
+    min_cx = math.floor((anchor.x - config.window_radius) / 16)
+    max_cx = math.floor((anchor.x + config.window_radius) / 16)
+    min_cz = math.floor((anchor.z - config.window_radius) / 16)
+    max_cz = math.floor((anchor.z + config.window_radius) / 16)
+    start_cx = math.floor(min_cx / config.tile_chunks) * config.tile_chunks
+    start_cz = math.floor(min_cz / config.tile_chunks) * config.tile_chunks
+    for cx in range(start_cx, max_cx + 1, config.tile_chunks):
+      for cz in range(start_cz, max_cz + 1, config.tile_chunks):
+        tiles.add(ChunkTile(cx, cz))
+  return sorted(tiles)
+
+
+def pregen_tiles(playtest: Playtest, config: HarvestConfig, tiles: list[ChunkTile], seed: str) -> None:
+  print(f"targeted tile count: {len(tiles)}")
+  removals: list[tuple[str, ChunkTile]] = []
+  pending_chunks = 0
+  batch_tiles = max(1, min(config.pregen_batch_tiles, config.pregen_batch_chunks // (config.tile_chunks * config.tile_chunks)))
+  print(f"pregen batch: tiles={batch_tiles} chunks={batch_tiles * config.tile_chunks * config.tile_chunks} watchdogMaxTickTime={config.max_tick_time}")
+
+  def flush() -> None:
+    nonlocal removals, pending_chunks
+    if not removals:
+      return
+    playtest.capture("cmd", "save-all", "flush", seed=seed)
+    for command, tile in removals:
+      playtest.capture("cmd", *command.split(), seed=seed)
+      print(f"pregenerated target tile {tile.label(config.tile_chunks)}")
+    removals = []
+    pending_chunks = 0
+
+  for tile in tiles:
+    x1, z1, x2, z2 = tile.block_bounds(config.tile_chunks)
+    playtest.capture("cmd", "forceload", "add", str(x1), str(z1), str(x2), str(z2), seed=seed)
+    removals.append((f"forceload remove {x1} {z1} {x2} {z2}", tile))
+    pending_chunks += config.tile_chunks * config.tile_chunks
+    if len(removals) >= batch_tiles or pending_chunks >= config.pregen_batch_chunks:
+      flush()
+  flush()
+
+
+def biome_scan_args(config: HarvestConfig, biome: str, tiles_path: Path, anchors_path: Path) -> list[str]:
+  return [
+    "--world-preset",
+    "minecraft:large_biomes",
+    "--chunk-tile-file",
+    str(tiles_path),
+    "--anchor-file",
+    str(anchors_path),
+    "--tile-chunks",
+    str(config.tile_chunks),
+    "--min-distance",
+    str(config.min_distance),
+    "--max-distance",
+    str(config.max_distance),
+    "--max-scenarios-per-biome",
+    str(config.max_per_biome),
+    "--endpoint-exclusion-radius",
+    str(config.endpoint_exclusion_radius),
+    "--spawn-spiral-radius",
+    str(config.spawn_spiral_radius),
+    "--scan-stride",
+    str(config.scan_stride),
+    "--line-stride",
+    str(config.line_stride),
+    "--attempts-per-heading",
+    str(config.attempts_per_heading),
+    "--max-starts-per-biome",
+    str(config.max_starts_per_biome),
+    "--max-rejections-per-biome",
+    str(config.max_rejections_per_biome),
+    "--biome",
+    biome,
+  ]
+
+
+@dataclass(frozen=True)
+class ScenarioMeta:
+  biome: str
+  independent_sample: str
+
+
+@dataclass(frozen=True)
+class SampleRecord:
+  summary: dict
+  scenario: dict
+  path: Path
+  digest: str
+  meta: ScenarioMeta
+
+
+def sample_digest(summary: dict, scenario: dict) -> str:
+  payload = json.dumps({"summary": summary, "scenario": scenario}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+  return hashlib.sha256(payload).hexdigest()
+
+
+def traced_scenario(scenario: dict) -> dict:
+  traced = json.loads(json.dumps(scenario))
+  traced["trace"] = True
+  return traced
+
+
+def scenario_midpoint(scenario: dict) -> tuple[float, float] | None:
+  start = scenario.get("start")
+  goal = scenario.get("goal")
+  if not isinstance(start, dict) or not isinstance(goal, dict):
+    return None
+  try:
+    return (float(start["x"]) + float(goal["x"])) / 2, (float(start["z"]) + float(goal["z"])) / 2
+  except (KeyError, TypeError, ValueError):
+    return None
+
+
+def infer_independent_sample(config: HarvestConfig, scenario: dict, biome: str, source_root: Path | None = None) -> str:
+  world = str(scenario.get("worldKey", "unknown"))
+  anchors_path = (source_root or config.root) / "biome-profile" / world / "biomes" / safe_id(biome) / "anchors.tsv"
+  anchors = read_anchors(anchors_path)
+  midpoint = scenario_midpoint(scenario)
+  if anchors and midpoint is not None:
+    mx, mz = midpoint
+    index, anchor = min(enumerate(anchors), key=lambda entry: (mx - entry[1].x) * (mx - entry[1].x) + (mz - entry[1].z) * (mz - entry[1].z))
+    return f"anchor:{safe_id(biome)}:{world}:{index}:{anchor.x}:{anchor.y}:{anchor.z}"
+  if midpoint is not None:
+    mx, mz = midpoint
+    cell = max(1, config.window_radius * 2)
+    return f"synthetic:{safe_id(biome)}:{world}:{math.floor(mx / cell)}:{math.floor(mz / cell)}"
+  return f"legacy:{safe_id(biome)}:{world}"
+
+
+def scenario_payload_meta(config: HarvestConfig, scenario: dict, source_root: Path | None = None) -> ScenarioMeta:
+  profile = scenario.get("biomeProfile")
+  if not isinstance(profile, dict) or not isinstance(profile.get("biome"), str):
+    return ScenarioMeta("minecraft:unknown", "legacy:unknown")
+  biome = profile["biome"]
+  independent = profile.get("independentSample")
+  return ScenarioMeta(biome, independent if isinstance(independent, str) else infer_independent_sample(config, scenario, biome, source_root))
+
+
+def normalize_scenario(config: HarvestConfig, scenario: dict, source_root: Path | None = None) -> tuple[dict, ScenarioMeta]:
+  meta = scenario_payload_meta(config, scenario, source_root)
+  normalized = json.loads(json.dumps(scenario))
+  profile = normalized.setdefault("biomeProfile", {})
+  if isinstance(profile, dict):
+    profile["independentSample"] = meta.independent_sample
+  return normalized, meta
+
+
+def scenario_meta(path: Path, config: HarvestConfig, source_root: Path | None = None) -> ScenarioMeta:
+  try:
+    with path.open(encoding="utf-8") as file:
+      scenario = json.load(file)
+  except (FileNotFoundError, json.JSONDecodeError):
+    return ScenarioMeta("minecraft:unknown", "legacy:unreadable")
+  return scenario_payload_meta(config, scenario, source_root)
+
+
+def scenario_independent_sample(path: Path, config: HarvestConfig) -> str:
+  return scenario_meta(path, config).independent_sample
+
+
+def result_record(config: HarvestConfig, summary_path: Path, source_root: Path | None = None) -> SampleRecord | None:
+  scenario_path = summary_path.with_name("scenario.json")
+  if not scenario_path.exists():
+    return None
+  try:
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
+  except (FileNotFoundError, json.JSONDecodeError):
+    return None
+  scenario, meta = normalize_scenario(config, scenario, source_root)
+  return SampleRecord(summary, scenario, summary_path, sample_digest(summary, scenario), meta)
+
+
+def pile_record(config: HarvestConfig, path: Path) -> SampleRecord | None:
+  try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    summary = data["summary"]
+    scenario = data["scenario"]
+  except (FileNotFoundError, KeyError, TypeError, json.JSONDecodeError):
+    return None
+  scenario, meta = normalize_scenario(config, scenario)
+  digest = str(data.get("digest") or sample_digest(summary, scenario))
+  return SampleRecord(summary, scenario, path, digest, meta)
+
+
+def salvage_result(config: HarvestConfig, summary_path: Path, source_root: Path | None = None) -> Path | None:
+  record = result_record(config, summary_path, source_root)
+  if record is None or record.meta.biome == "minecraft:unknown":
+    return None
+  config.sample_pile.mkdir(parents=True, exist_ok=True)
+  out = config.sample_pile / f"{safe_id(record.meta.biome)}_{record.digest[:24]}.json"
+  write_failure_repro(config, record)
+  if out.exists():
+    return out
+  payload = {
+    "schema": 1,
+    "digest": record.digest,
+    "salvagedAt": now(),
+    "sourceResult": str(summary_path),
+    "sourceRoot": str(source_root or config.root),
+    "meta": {"biome": record.meta.biome, "independentSample": record.meta.independent_sample},
+    "summary": record.summary,
+    "scenario": record.scenario,
+  }
+  out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+  return out
+
+
+def write_failure_repro(config: HarvestConfig, record: SampleRecord) -> None:
+  if record.summary.get("success") is True:
+    return
+  biome_dir_path = config.failure_repro_dir / safe_id(record.meta.biome)
+  biome_dir_path.mkdir(parents=True, exist_ok=True)
+  sid = safe_id(str(record.summary.get("id") or record.scenario.get("id") or "sample"))
+  stem = f"{sid}_{record.digest[:16]}"
+  scenario_path = biome_dir_path / f"{stem}.json"
+  summary_path = biome_dir_path / f"{stem}.summary.json"
+  command_path = biome_dir_path / f"{stem}.commands.txt"
+  scenario_path.write_text(json.dumps(traced_scenario(record.scenario), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+  summary_path.write_text(json.dumps(record.summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+  stage_command = shell_command({"PLAYTEST_ROOT": str(config.root)}, "scripts/playtest", "stage", str(scenario_path), "Shmooooo")
+  run_command = shell_command({"PLAYTEST_ROOT": str(config.root)}, "scripts/playtest", "run", str(scenario_path))
+  command_path.write_text(
+    "\n".join(
+      (
+        f"biome={record.meta.biome}",
+        f"independentSample={record.meta.independent_sample}",
+        f"terminalReason={record.summary.get('terminalReason')}",
+        f"source={record.path}",
+        "",
+        "# Put your player at the scenario start and receive clickable #set/#goto commands:",
+        stage_command,
+        "",
+        "# Rerun the bot with per-tick trace enabled:",
+        run_command,
+        "",
+      )
+    ),
+    encoding="utf-8",
+  )
+
+
+def shell_command(env: dict[str, str], *argv: str) -> str:
+  prefix = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
+  command = " ".join(shlex.quote(arg) for arg in argv)
+  return f"{prefix} {command}" if prefix else command
+
+
+def salvage_results(config: HarvestConfig, source_root: Path | None = None) -> int:
+  root = source_root or config.root
+  salvaged = 0
+  for summary_path in (root / "results").glob("*/summary.json"):
+    if salvage_result(config, summary_path, root) is not None:
+      salvaged += 1
+  return salvaged
+
+
+def sample_records(config: HarvestConfig) -> list[SampleRecord]:
+  records: list[SampleRecord] = []
+  seen: set[str] = set()
+  if config.sample_pile.exists():
+    for pile_path in sorted(config.sample_pile.glob("*.json")):
+      record = pile_record(config, pile_path)
+      if record is not None and record.digest not in seen:
+        seen.add(record.digest)
+        records.append(record)
+  for summary_path in sorted((config.root / "results").glob("*/summary.json")):
+    record = result_record(config, summary_path, config.root)
+    if record is not None and record.digest not in seen:
+      seen.add(record.digest)
+      records.append(record)
+  return records
+
+
+def refresh_failure_repros(config: HarvestConfig) -> int:
+  count = 0
+  for record in sample_records(config):
+    if record.summary.get("success") is not True:
+      write_failure_repro(config, record)
+      count += 1
+  return count
+
+
+def collect_stats(config: HarvestConfig) -> dict[str, BiomeStats]:
+  attempts: dict[str, int] = {}
+  successful_samples: dict[str, int] = {}
+  successful_ticks: dict[str, int] = {}
+  successful_independent_samples: dict[str, set[str]] = {}
+  attempted_ids: dict[str, set[str]] = {}
+  for record in sample_records(config):
+    summary = record.summary
+    meta = record.meta
+    biome = meta.biome
+    sid = str(summary.get("id", record.path.parent.name))
+    attempts[biome] = attempts.get(biome, 0) + 1
+    attempted_ids.setdefault(biome, set()).add(sid)
+    if summary.get("success") is True:
+      successful_samples[biome] = successful_samples.get(biome, 0) + 1
+      successful_ticks[biome] = successful_ticks.get(biome, 0) + int(summary.get("elapsedTicks", 0))
+      successful_independent_samples.setdefault(biome, set()).add(meta.independent_sample)
+  return {
+    biome: BiomeStats(
+      attempts=attempts.get(biome, 0),
+      successful_samples=successful_samples.get(biome, 0),
+      successful_ticks=successful_ticks.get(biome, 0),
+      successful_independent_samples=frozenset(successful_independent_samples.get(biome, ())),
+      attempted_ids=frozenset(attempted_ids.get(biome, ())),
+    )
+    for biome in set(config.biomes) | set(attempts)
+  }
+
+
+def summary_path(output: str) -> Path | None:
+  paths = [Path(line.strip()) for line in output.splitlines() if line.strip().endswith("/summary.json")]
+  return paths[-1] if paths else None
+
+
+def successful_ticks(summary: Path | None) -> int:
+  if summary is None or not summary.exists():
+    return 0
+  try:
+    with summary.open(encoding="utf-8") as file:
+      data = json.load(file)
+  except json.JSONDecodeError:
+    return 0
+  return int(data.get("elapsedTicks", 0)) if data.get("success") is True else 0
+
+
+def scenario_id(path: Path) -> str:
+  try:
+    with path.open(encoding="utf-8") as file:
+      data = json.load(file)
+  except (FileNotFoundError, json.JSONDecodeError):
+    return path.stem
+  return str(data.get("id", path.stem))
+
+
+def run_biome_suite(playtest: Playtest, config: HarvestConfig, biome: str, manifest: Path) -> BiomeStats:
+  scenarios = [Path(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.exists() else []
+  while True:
+    stats = collect_stats(config).get(biome, BiomeStats(0, 0, 0, frozenset(), frozenset()))
+    if stats.enough(config):
+      print(
+        f"biome suite complete: biome={biome} successfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)} attempts={stats.attempts}"
+      )
+      return stats
+    pending = [scenario for scenario in scenarios if scenario_id(scenario) not in stats.attempted_ids]
+    if not pending:
+      print(
+        f"biome suite deficient: biome={biome} successfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)} attempts={stats.attempts} available={len(scenarios)}"
+      )
+      return stats
+    pending.sort(key=lambda scenario: (scenario_independent_sample(scenario, config) in stats.successful_independent_samples, scenario_id(scenario)))
+    scenario = pending[0]
+    print(f"playtest biome sample: {biome} {scenario}")
+    _status, output = playtest.stream_capture("run", str(scenario), check=False)
+    summary = summary_path(output)
+    if summary is not None:
+      salvage_result(config, summary, config.root)
+    gained = successful_ticks(summary)
+    stats = collect_stats(config).get(biome, BiomeStats(0, 0, 0, frozenset(), frozenset()))
+    print(
+      f"biome sample result: biome={biome} gainedSuccessfulTicks={gained} accumulatedSuccessfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)} attempts={stats.attempts}"
+    )
+
+
+def rebuild_all_manifest(config: HarvestConfig) -> Path:
+  manifest = config.root / "biome-profile" / "all-manifest.txt"
+  paths: set[str] = set()
+  for child in (config.root / "biome-profile").glob("**/scenarios/manifest.txt"):
+    paths.update(line for line in child.read_text(encoding="utf-8").splitlines() if line.strip())
+  manifest.parent.mkdir(parents=True, exist_ok=True)
+  manifest.write_text("".join(f"{path}\n" for path in sorted(paths)), encoding="utf-8")
+  return manifest
+
+
+def write_progress(config: HarvestConfig) -> None:
+  stats = collect_stats(config)
+  progress = {
+    "schema": 1,
+    "updatedAt": now(),
+    "samplePile": str(config.sample_pile),
+    "targetSuccessfulTicks": config.target_successful_ticks,
+    "minimumSuccessfulSamples": config.min_successful_samples,
+    "minimumIndependentBiomeSamples": config.min_independent_biome_samples,
+    "biomes": {},
+    "seeds": {},
+  }
+  for biome in config.biomes:
+    st = stats.get(biome, BiomeStats(0, 0, 0, frozenset(), frozenset()))
+    progress["biomes"][biome] = {
+      "attempts": st.attempts,
+      "successfulSamples": st.successful_samples,
+      "successfulTicks": st.successful_ticks,
+      "successfulIndependentSamples": len(st.successful_independent_samples),
+      "enough": st.enough(config),
+    }
+  for seed_index in config.seeds:
+    seed_entry = {}
+    for biome in config.biomes:
+      root = biome_dir(config, seed_index, biome)
+      anchors = read_anchors(root / "anchors.tsv")
+      tiles = read_tiles(root / "tiles.txt")
+      manifest = root / "scenarios" / "manifest.txt"
+      seed_entry[biome] = {
+        "anchors": len(anchors),
+        "tiles": len(tiles),
+        "pregenComplete": (root / "pregen.done").exists(),
+        "scenarios": len(manifest.read_text(encoding="utf-8").splitlines()) if manifest.exists() else 0,
+      }
+    progress["seeds"][seed_index] = seed_entry
+  (config.root / "biome-profile").mkdir(parents=True, exist_ok=True)
+  (config.root / "biome-profile" / "progress.json").write_text(json.dumps(progress, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def log_header(config: HarvestConfig) -> None:
+  print(f"targeted biome harvest root: {config.root}")
+  print(f"sample pile: {config.sample_pile}")
+  print(f"failure repros: {config.failure_repro_dir}")
+  print(f"seeds: {' '.join(config.seeds)}")
+  print(f"biomes: {' '.join(config.biomes)}")
+  print(
+    f"windowRadius={config.window_radius} tileChunks={config.tile_chunks} pregenBatchTiles={config.pregen_batch_tiles} anchorsPerBiome={config.anchors_per_biome} endpointExclusionRadius={config.endpoint_exclusion_radius} spawnSpiralRadius={config.spawn_spiral_radius} attemptsPerHeading={config.attempts_per_heading} maxRejectionsPerBiome={config.max_rejections_per_biome}"
+  )
+  print(f"factsEachBiome={config.export_facts_each_biome} factsAtSeedEnd={config.export_facts_at_seed_end}")
+  print(f"targetSuccessfulTicks={config.target_successful_ticks} minimumSuccessfulSamples={config.min_successful_samples} minimumIndependentBiomeSamples={config.min_independent_biome_samples}")
+  print(f"startedAt={now()}")
+
+
+def harvest_biome(playtest: Playtest, config: HarvestConfig, seed_index: str, biome: str, seed: str) -> None:
+  root = biome_dir(config, seed_index, biome)
+  root.mkdir(parents=True, exist_ok=True)
+  print(f"=== biome {biome} ===")
+  reused_cached_anchor_window = False
+  while True:
+    stats = collect_stats(config).get(biome, BiomeStats(0, 0, 0, frozenset(), frozenset()))
+    if stats.enough(config):
+      print(f"skip complete biome: {biome} successfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)}")
+      write_progress(config)
+      return
+    existing_manifest = root / "scenarios" / "manifest.txt"
+    if existing_manifest.exists():
+      scenarios = [Path(line) for line in existing_manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
+      pending = [scenario for scenario in scenarios if scenario_id(scenario) not in stats.attempted_ids]
+      if pending:
+        print(f"reuse existing biome scenario catalog: biome={biome} pending={len(pending)} total={len(scenarios)}")
+        if config.skip_suite:
+          print(f"suite skipped by HARVEST_SKIP_SUITE for {biome}")
+          return
+        run_biome_suite(playtest, config, biome, existing_manifest)
+        write_progress(config)
+        stats = collect_stats(config).get(biome, BiomeStats(0, 0, 0, frozenset(), frozenset()))
+        if stats.enough(config):
+          return
+
+    anchors_before = read_anchors(root / "anchors.tsv")
+    reused_this_iteration = False
+    if anchors_before and not reused_cached_anchor_window:
+      anchors = anchors_before
+      grew = False
+      scan_anchors = anchors[-config.anchors_per_biome :]
+      reused_cached_anchor_window = True
+      reused_this_iteration = True
+      print(f"reuse existing biome anchors before locating more: biome={biome} scanAnchors={len(scan_anchors)} anchors={len(anchors)}")
+    else:
+      desired_anchors = len(anchors_before) + config.anchors_per_biome
+      anchors = ensure_biome_anchors(playtest, config, seed_index, biome, seed, desired_anchors)
+      grew = len(anchors) > len(anchors_before)
+      scan_anchors = anchors[len(anchors_before):] if grew else anchors[-config.anchors_per_biome :]
+    if not scan_anchors:
+      scan_anchors = anchors
+    if not anchors:
+      print(f"biome unavailable: {biome}")
+      write_progress(config)
+      return
+
+    tiles_path = root / "tiles.txt"
+    scan_tiles_path = root / "scan-tiles.txt"
+    old_tiles = read_tiles(tiles_path)
+    old_tile_set = set(old_tiles)
+    tiles = plan_tiles(anchors, config)
+    scan_tiles = plan_tiles(scan_anchors, config)
+    pregen_done = (root / "pregen.done").exists()
+    missing_tiles = [tile for tile in scan_tiles if tile not in old_tile_set]
+    pregen_target = scan_tiles if not pregen_done else missing_tiles
+    write_tiles(tiles_path, tiles)
+    write_tiles(scan_tiles_path, scan_tiles)
+    if pregen_target:
+      pregen_tiles(playtest, config, pregen_target, seed)
+      (root / "pregen.done").write_text(f"{now()}\n", encoding="utf-8")
+      write_progress(config)
+    else:
+      print(f"skip pregenerated biome window: {biome} tiles={len(tiles)}")
+
+    if config.export_facts_each_biome:
+      playtest.stream("biome-facts", world_key(seed_index), str(root / "facts.json"), "--scan-stride", str(config.scan_stride), seed=seed)
+      write_progress(config)
+
+    scenario_dir = root / "scenarios"
+    playtest.stream("biome-scan", world_key(seed_index), str(scenario_dir), *biome_scan_args(config, biome, scan_tiles_path, root / "anchors.tsv"), seed=seed)
+    rebuild_all_manifest(config)
+    write_progress(config)
+
+    if config.skip_suite:
+      print(f"suite skipped by HARVEST_SKIP_SUITE for {biome}")
+      return
+    run_biome_suite(playtest, config, biome, scenario_dir / "manifest.txt")
+    write_progress(config)
+
+    stats = collect_stats(config).get(biome, BiomeStats(0, 0, 0, frozenset(), frozenset()))
+    if stats.enough(config):
+      return
+    if reused_this_iteration:
+      print(
+        f"cached biome window deficient; next pass may locate another anchor: biome={biome} anchors={len(anchors)} successfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)} attempts={stats.attempts}"
+      )
+      continue
+    if not grew:
+      print(
+        f"biome suite exhausted: biome={biome} anchors={len(anchors)} successfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)} attempts={stats.attempts}"
+      )
+      return
+    print(
+      f"biome suite still deficient; seeking another anchor: biome={biome} anchors={len(anchors)} successfulTicks={stats.successful_ticks} successfulSamples={stats.successful_samples} independentSamples={len(stats.successful_independent_samples)} attempts={stats.attempts}"
+    )
+
+
+def harvest_seed(playtest: Playtest, config: HarvestConfig, seed_index: str) -> None:
+  seed = seed_value(config, seed_index)
+  print()
+  print(f"=== seed {seed} world {world_key(seed_index)} ===")
+  playtest.stream("server", world_key(seed_index), seed=seed)
+  playtest.capture("cmd", "forceload", "remove", "all", seed=seed, check=False)
+  for biome in config.biomes:
+    harvest_biome(playtest, config, seed_index, biome, seed)
+  if config.export_facts_at_seed_end:
+    playtest.stream("biome-facts", world_key(seed_index), str(profile_dir(config, seed_index) / "facts.json"), "--scan-stride", str(config.scan_stride), seed=seed)
+  playtest.stop()
+
+
+def aggregate(config: HarvestConfig, playtest: Playtest) -> None:
+  print("=== aggregating ===")
+  playtest.stream(
+    "biome-aggregate",
+    str(config.sample_pile),
+    str(config.root / "biome-profile" / "biome_traversal_priors.json"),
+    "--target-successful-ticks",
+    str(config.target_successful_ticks),
+    "--minimum-successful-samples",
+    str(config.min_successful_samples),
+    "--minimum-independent-samples",
+    str(config.min_independent_biome_samples),
+    check=False,
+  )
+
+
+def install_signal_handlers(playtest: Playtest, config: HarvestConfig) -> None:
+  def stop_and_die(signum: int, _frame) -> NoReturn:
+    write_progress(config)
+    playtest.stop()
+    raise SystemExit(128 + signum)
+
+  signal.signal(signal.SIGTERM, stop_and_die)
+  signal.signal(signal.SIGINT, stop_and_die)
+
+
+def main() -> int:
+  repo = Path(__file__).resolve().parents[1]
+  config = HarvestConfig.from_env(repo)
+  config.root.mkdir(parents=True, exist_ok=True)
+  config.sample_pile.mkdir(parents=True, exist_ok=True)
+  config.failure_repro_dir.mkdir(parents=True, exist_ok=True)
+  (config.root / "biome-profile").mkdir(exist_ok=True)
+  (config.root / "logs").mkdir(exist_ok=True)
+
+  log = (config.root / "logs" / "targeted-harvest.log").open("a", encoding="utf-8")
+  sys.stdout = Tee(sys.__stdout__, log)  # type: ignore[assignment]
+  sys.stderr = Tee(sys.__stderr__, log)  # type: ignore[assignment]
+
+  playtest = Playtest(repo, config)
+  atexit.register(playtest.stop)
+  install_signal_handlers(playtest, config)
+  log_header(config)
+  salvaged = salvage_results(config)
+  if salvaged:
+    print(f"salvaged existing result summaries into pile: {salvaged}")
+  repros = refresh_failure_repros(config)
+  if repros:
+    print(f"failure repro artifacts available: {repros} in {config.failure_repro_dir}")
+  write_progress(config)
+  if env_bool("HARVEST_SALVAGE_ONLY", False):
+    return 0
+  for seed_index in config.seeds:
+    harvest_seed(playtest, config, seed_index)
+  rebuild_all_manifest(config)
+  write_progress(config)
+  aggregate(config, playtest)
+  print(f"finishedAt={now()}")
+  print(f"priors: {config.root / 'biome-profile' / 'biome_traversal_priors.json'}")
+  print(f"manifest: {config.root / 'biome-profile' / 'all-manifest.txt'}")
+  print(f"progress: {config.root / 'biome-profile' / 'progress.json'}")
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

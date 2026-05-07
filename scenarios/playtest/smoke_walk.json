@@ -25,6 +25,7 @@
   "timeoutTicks": 2400,
   "successRadius": 2.0,
   "settings": {
+    "chunkCaching": false,
     "allowSprint": true
   },
   "trace": true

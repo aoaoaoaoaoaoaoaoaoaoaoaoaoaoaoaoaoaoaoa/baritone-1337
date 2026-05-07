@@ -1,0 +1,54 @@
+{
+  "id": "distant_dark_goal_plan",
+  "worldKey": "smoke",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 20.5,
+    "y": 114.0,
+    "z": 0.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "xz",
+    "x": 1020,
+    "y": 114,
+    "z": 0
+  },
+  "plannerOnly": true,
+  "setupCommands": [
+    "fill 16 113 -4 24 113 4 minecraft:bedrock",
+    "fill 16 114 -4 24 118 4 minecraft:air"
+  ],
+  "loadout": [
+    {"slot": 0, "item": "minecraft:iron_pickaxe", "count": 1},
+    {"slot": 1, "item": "minecraft:iron_axe", "count": 1},
+    {"slot": 2, "item": "minecraft:iron_shovel", "count": 1},
+    {"slot": 3, "item": "minecraft:cobblestone", "count": 64},
+    {"slot": 4, "item": "minecraft:cobblestone", "count": 64}
+  ],
+  "timeoutTicks": 120,
+  "successRadius": 0.0,
+  "acceptance": {
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "maxTicksToPlanning": 5,
+    "maxTicksToActuation": 400,
+    "maxTicksToPathingSeen": 400
+  },
+  "settings": {
+    "chunkCaching": false,
+    "macroPlanning": true,
+    "macroBiome": true,
+    "macroBiomePriorsFile": "",
+    "macroBiomeFactsFile": "",
+    "macroWaterHorizonBlocks": 384,
+    "macroWaterMaxLaunchCandidates": 12,
+    "pathingEarlyIncumbentExecution": true,
+    "primaryTimeoutMS": 5000,
+    "failureTimeoutMS": 5000
+  },
+  "trace": true,
+  "selectedSlot": 0
+}

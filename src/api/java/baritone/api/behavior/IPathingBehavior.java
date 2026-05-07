@@ -91,7 +91,7 @@ public interface IPathingBehavior extends IBehavior {
    *
    * @return The current path
    */
-  default Optional<IPath> getPath() { return Optional.ofNullable(getCurrent()).map(IPathExecutor::getPath); }
+  default Optional<IPath> getPath() { return Optional.ofNullable(getCurrent()).map(IPathExecutor::getPath).flatMap(Optional::ofNullable); }
 
   /**
    * @return The current path finder being executed

@@ -39,6 +39,13 @@ public final class BinaryHeapOpenSet implements IOpenSet {
     return size;
   }
 
+  public double lowestCombinedCost() {
+    if (size == 0) {
+      return Double.POSITIVE_INFINITY;
+    }
+    return array[1].combinedCost;
+  }
+
   @Override
   public final void insert(PathNode value) {
     if (size >= array.length - 1) {

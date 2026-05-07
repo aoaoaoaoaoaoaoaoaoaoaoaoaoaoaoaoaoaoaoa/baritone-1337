@@ -8,6 +8,7 @@ import baritone.api.utils.IPlayerContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.RouteExecutor;
+import baritone.pathing.route.PlannedTransportState;
 import java.util.Locale;
 import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 
@@ -49,13 +50,13 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
     return MovementHelper.isWater(ctx, movement.getSrc()) || MovementHelper.isWater(ctx, movement.getDest());
   }
 
-  public record Executor(int position, int size, Plan current, String sequence) {
+  public record Executor(int position, int size, int legIndex, Plan current, String sequence) {
     private static Executor absent() {
-      return new Executor(-1, -1, null, null);
+      return new Executor(-1, -1, -1, null, null);
     }
 
     private static Executor done(int position, int size) {
-      return new Executor(position, size, null, "");
+      return new Executor(position, size, -1, null, "");
     }
 
     private static Executor capture(IPlayerContext ctx, RouteExecutor executor, int sequenceLimit) {
@@ -63,13 +64,16 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
         return absent();
       }
       IPath path = executor.getPath();
-      int size = path.movements().size();
+      int size = executor.size();
       int position = Math.max(0, Math.min(executor.getPosition(), size));
       if (position >= size) {
         return done(position, size);
       }
       Plan plan = executor.transportPlan(ctx);
-      return new Executor(position, size, plan == null ? plan(ctx, path.movements().get(position)) : plan, sequence(ctx, path, position, sequenceLimit));
+      if (plan == null && path != null && position < path.movements().size()) {
+        plan = plan(ctx, path.movements().get(position));
+      }
+      return new Executor(position, size, executor.legIndex(), plan, executor.transportSequence(ctx, sequenceLimit));
     }
 
     public boolean present() {
@@ -87,7 +91,7 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
       if (done()) {
         return "done";
       }
-      return position + "/" + size + " " + current.overlay() + " seq=" + sequence;
+      return position + "/" + size + " leg=" + legIndex + " " + current.overlay() + " seq=" + sequence;
     }
 
     private static String sequence(IPlayerContext ctx, IPath path, int position, int limit) {
@@ -103,17 +107,22 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
     }
   }
 
-  public record Plan(TransportMode mode, String movement, BetterBlockPos src, BetterBlockPos dest, String phase, boolean terminal, BetterBlockPos entry, Double progress) {
+  public record Plan(TransportMode mode, String movement, BetterBlockPos src, BetterBlockPos dest, String phase, boolean terminal, BetterBlockPos entry, Double progress, Integer componentId,
+    PlannedTransportState plannedState) {
     public static Plan pedestrian(String movement, BetterBlockPos src, BetterBlockPos dest) {
-      return new Plan(TransportMode.PEDESTRIAN, movement, src, dest, null, false, null, null);
+      return new Plan(TransportMode.PEDESTRIAN, movement, src, dest, null, false, null, null, null, null);
     }
 
     public static Plan legacyWater(String movement, BetterBlockPos src, BetterBlockPos dest) {
-      return new Plan(TransportMode.LEGACY_WATER, movement, src, dest, null, false, null, null);
+      return new Plan(TransportMode.LEGACY_WATER, movement, src, dest, null, false, null, null, null, null);
     }
 
     public static Plan transport(TransportMode mode, String movement, BetterBlockPos src, BetterBlockPos dest, String phase, boolean terminal, BetterBlockPos entry, double progress) {
-      return new Plan(mode, movement, src, dest, phase, terminal, entry, progress);
+      return new Plan(mode, movement, src, dest, phase, terminal, entry, progress, null, null);
+    }
+
+    public Plan withRoute(int componentId, PlannedTransportState plannedState) {
+      return new Plan(mode, movement, src, dest, phase, terminal, entry, progress, componentId < 0 ? null : componentId, plannedState);
     }
 
     public char token() {

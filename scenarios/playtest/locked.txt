@@ -1,2 +1,6 @@
 # Locked playtest acceptance scenarios. One scenario JSON path per line.
 scenarios/playtest/swim_transition_straight.json
+scenarios/playtest/boat_river_curve.json
+scenarios/playtest/distant_dark_goal_plan.json
+scenarios/playtest/macro_boat_unloaded_river_plan.json
+scenarios/playtest/macro_swim_unloaded_river.json

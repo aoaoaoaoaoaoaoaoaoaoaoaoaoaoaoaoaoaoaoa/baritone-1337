@@ -91,6 +91,9 @@ public final class CachedWorld implements ICachedWorld, Helper {
 
   @Override
   public final void queueForPacking(LevelChunk chunk) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return;
+    }
     if (toPackMap.put(chunk.getPos(), chunk) == null) {
       toPackQueue.add(chunk.getPos());
     }
@@ -98,6 +101,9 @@ public final class CachedWorld implements ICachedWorld, Helper {
 
   @Override
   public final boolean isCached(int blockX, int blockZ) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return false;
+    }
     CachedRegion region = getRegion(blockX >> 9, blockZ >> 9);
     if (region == null) {
       return false;
@@ -111,6 +117,9 @@ public final class CachedWorld implements ICachedWorld, Helper {
 
   @Override
   public final ArrayList<BlockPos> getLocationsOf(String block, int maximum, int centerX, int centerZ, int maxRegionDistanceSq) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return new ArrayList<>();
+    }
     ArrayList<BlockPos> res = new ArrayList<>();
     int centerRegionX = centerX >> 9;
     int centerRegionZ = centerZ >> 9;
@@ -141,7 +150,13 @@ public final class CachedWorld implements ICachedWorld, Helper {
   }
 
   private void updateCachedChunk(CachedChunk chunk) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return;
+    }
     CachedRegion region = getOrCreateRegion(chunk.x >> 5, chunk.z >> 5);
+    if (region == null) {
+      return;
+    }
     region.updateCachedChunk(chunk.x & 31, chunk.z & 31, chunk);
   }
 
@@ -225,6 +240,10 @@ public final class CachedWorld implements ICachedWorld, Helper {
 
   @Override
   public final void reloadAllFromDisk() {
+    if (!Baritone.settings().chunkCaching.value) {
+      System.out.println("Not loading from disk; chunk caching is disabled.");
+      return;
+    }
     long start = System.nanoTime() / 1000000L;
     allRegions().forEach(region -> {
       if (region != null) {
@@ -237,6 +256,9 @@ public final class CachedWorld implements ICachedWorld, Helper {
 
   @Override
   public final synchronized CachedRegion getRegion(int regionX, int regionZ) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return null;
+    }
     return cachedRegions.get(getRegionID(regionX, regionZ));
   }
 
@@ -249,6 +271,9 @@ public final class CachedWorld implements ICachedWorld, Helper {
    * @return The region located at the specified coordinates
    */
   private synchronized CachedRegion getOrCreateRegion(int regionX, int regionZ) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return null;
+    }
     return cachedRegions.computeIfAbsent(getRegionID(regionX, regionZ), id -> {
       CachedRegion newRegion = new CachedRegion(regionX, regionZ, dimension, dimensionId);
       newRegion.load(this.directory);
@@ -257,6 +282,9 @@ public final class CachedWorld implements ICachedWorld, Helper {
   }
 
   public void tryLoadFromDisk(int regionX, int regionZ) {
+    if (!Baritone.settings().chunkCaching.value) {
+      return;
+    }
     getOrCreateRegion(regionX, regionZ);
   }
 

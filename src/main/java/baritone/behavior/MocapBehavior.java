@@ -3,11 +3,12 @@ package baritone.behavior;
 import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.event.events.WorldEvent;
-import baritone.api.pathing.calc.IPath;
 import baritone.api.process.IBaritoneProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.input.Input;
+import baritone.pathing.macro.core.MacroActionInstance;
+import baritone.pathing.macro.core.MacroPlan;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.RouteExecutor;
 import baritone.pathing.transport.TransportControl;
@@ -27,9 +28,11 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
+import net.minecraft.world.item.BoatItem;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 
-public final class PlayerTelemetryBehavior extends Behavior {
+public final class MocapBehavior extends Behavior {
   private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
   private static final int SOUNDING_RADIUS = 1;
   private static final int SOUNDING_SCAN_UP = 8;
@@ -41,7 +44,7 @@ public final class PlayerTelemetryBehavior extends Behavior {
   private int samples;
   private String lastFailure;
 
-  public PlayerTelemetryBehavior(Baritone baritone) {
+  public MocapBehavior(Baritone baritone) {
     super(baritone);
   }
 
@@ -55,13 +58,13 @@ public final class PlayerTelemetryBehavior extends Behavior {
 
   public String start() {
     Path directory = baritone.getDirectory().resolve("profiles");
-    Path file = directory.resolve("player-" + FILE_TIME.format(Instant.now()) + "-" + Long.toUnsignedString(System.nanoTime(), 36) + ".jsonl");
+    Path file = directory.resolve("mocap-" + FILE_TIME.format(Instant.now()) + "-" + Long.toUnsignedString(System.nanoTime(), 36) + ".jsonl");
     return start(file);
   }
 
   public String start(Path file) {
     if (active()) {
-      return "Player telemetry already active: " + output;
+      return "Mocap already active: " + output;
     }
     try {
       Files.createDirectories(file.toAbsolutePath().getParent());
@@ -71,23 +74,23 @@ public final class PlayerTelemetryBehavior extends Behavior {
       samples = 0;
       lastFailure = null;
       event("start");
-      return "Player telemetry: " + output;
+      return "Mocap: " + output;
     } catch (IOException e) {
       lastFailure = e.toString();
       output = null;
       out = null;
-      return "Failed to start player telemetry: " + lastFailure;
+      return "Failed to start mocap: " + lastFailure;
     }
   }
 
   public String stop() {
     if (!active()) {
-      return lastFailure == null ? "Player telemetry idle" : "Player telemetry idle; last failure: " + lastFailure;
+      return lastFailure == null ? "Mocap idle" : "Mocap idle; last failure: " + lastFailure;
     }
     Path saved = output;
     event("stop", "samples", samples);
     close();
-    return "Saved player telemetry: " + saved;
+    return "Saved mocap: " + saved;
   }
 
   public String toggle() {
@@ -96,9 +99,9 @@ public final class PlayerTelemetryBehavior extends Behavior {
 
   public String status() {
     if (active()) {
-      return "Player telemetry active: " + output + " (" + samples + " ticks)";
+      return "Mocap active: " + output + " (" + samples + " ticks)";
     }
-    return lastFailure == null ? output == null ? "Player telemetry idle" : "Player telemetry idle; last output: " + output : "Player telemetry idle; last failure: " + lastFailure;
+    return lastFailure == null ? output == null ? "Mocap idle" : "Mocap idle; last output: " + output : "Mocap idle; last failure: " + lastFailure;
   }
 
   @Override
@@ -120,7 +123,6 @@ public final class PlayerTelemetryBehavior extends Behavior {
     try {
       LocalPlayer player = ctx.player();
       RouteExecutor executor = baritone.getPathingBehavior().getCurrent();
-      IPath path = executor == null ? null : executor.getPath();
       TransportSnapshot transport = baritone.getPathingBehavior().transportSnapshot();
       TransportSnapshot.Plan currentPlan = transport.current().current();
       Rotation effective = ctx.playerRotations();
@@ -152,7 +154,9 @@ public final class PlayerTelemetryBehavior extends Behavior {
       field(json, "air", player.getAirSupply()).append(',');
       field(json, "maxAir", player.getMaxAirSupply()).append(',');
       field(json, "food", player.getFoodData().getFoodLevel()).append(',');
+      field(json, "boatItems", boatItems(player)).append(',');
       field(json, "inputs", inputs()).append(',');
+      field(json, "physicalInputs", physicalInputs()).append(',');
       field(json, "water", waterState(ctx.playerFeet())).append(',');
       field(json, "soundings", soundings(ctx.playerFeet())).append(',');
       field(json, "pathing", baritone.getPathingBehavior().isPathing()).append(',');
@@ -160,11 +164,13 @@ public final class PlayerTelemetryBehavior extends Behavior {
       field(json, "command", baritone.getPathingControlManager().mostRecentCommand().map(PathingCommand::toString).orElse(null)).append(',');
       field(json, "movementControl", transport.control()).append(',');
       field(json, "pathPosition", transport.current().position()).append(',');
-      field(json, "pathLength", path == null ? null : path.length()).append(',');
+      field(json, "pathLength", executor == null ? null : executor.size()).append(',');
       field(json, "movement", currentPlan == null ? null : currentPlan.movement()).append(',');
       field(json, "movementSrc", currentPlan == null ? null : currentPlan.src()).append(',');
       field(json, "movementDest", currentPlan == null ? null : currentPlan.dest()).append(',');
       field(json, "transport", transport(transport));
+      json.append(',');
+      field(json, "macroPlan", macroPlan(baritone.getPathingBehavior().getMacroPlan().orElse(null)));
       json.append("}\n");
       out.write(json.toString());
       out.flush();
@@ -197,7 +203,7 @@ public final class PlayerTelemetryBehavior extends Behavior {
     StringBuilder json = new StringBuilder(4096);
     json.append('{');
     field(json, "schema", 1).append(',');
-    field(json, "scope", "player_tick").append(',');
+    field(json, "scope", "mocap").append(',');
     field(json, "type", type).append(',');
     field(json, "elapsedNanos", System.nanoTime() - startedNanos);
     return json;
@@ -212,6 +218,8 @@ public final class PlayerTelemetryBehavior extends Behavior {
       field(json, "planned", plan == null ? null : plan.mode()).append(',');
       field(json, "phase", plan == null ? null : plan.phase()).append(',');
       field(json, "terminal", plan == null ? null : plan.terminal()).append(',');
+      field(json, "componentId", plan == null ? null : plan.componentId()).append(',');
+      field(json, "plannedState", plan == null ? null : plan.plannedState()).append(',');
       field(json, "entry", plan == null ? null : plan.entry()).append(',');
       field(json, "progress", plan == null ? null : plan.progress()).append(',');
       field(json, "sequence", current.sequence()).append(',');
@@ -221,11 +229,129 @@ public final class PlayerTelemetryBehavior extends Behavior {
     };
   }
 
+  private Object macroPlan(MacroPlan plan) {
+    if (plan == null) {
+      return null;
+    }
+    return (JsonWritable) json -> {
+      json.append('{');
+      field(json, "src", plan.src()).append(',');
+      field(json, "dest", plan.dest()).append(',');
+      field(json, "localGoal", plan.localGoal()).append(',');
+      field(json, "estimatedTicks", plan.totalVector().timeTicks()).append(',');
+      field(json, "estimatedScore", plan.totalScore()).append(',');
+      field(json, "cellBlocks", plan.cellBlocks()).append(',');
+      field(json, "factualCells", plan.factualCells()).append(',');
+      field(json, "unknownCells", plan.unknownCells()).append(',');
+      field(json, "liveCells", plan.liveCells()).append(',');
+      field(json, "cachedCells", plan.cachedCells()).append(',');
+      field(json, "predictedCells", plan.predictedCells()).append(',');
+      field(json, "priorCells", plan.priorCells()).append(',');
+      field(json, "sequence", plan.sequence()).append(',');
+      field(json, "firstUncertifiedAction", plan.firstUncertifiedAction()).append(',');
+      field(json, "value", macroValue(plan)).append(',');
+      field(json, "actions", macroActions(plan)).append(',');
+      field(json, "vertices", macroVertices(plan)).append(',');
+      field(json, "cellVertices", macroCellVertices(plan));
+      json.append('}');
+    };
+  }
+
+  private Object macroValue(MacroPlan plan) {
+    return (JsonWritable) json -> {
+      var value = plan.valueTelemetry();
+      json.append('{');
+      field(json, "planner", value.planner()).append(',');
+      field(json, "expectedStartValue", value.expectedStartValue()).append(',');
+      field(json, "floorStartValue", value.floorStartValue()).append(',');
+      field(json, "expectedRepairPops", value.expectedRepairPops()).append(',');
+      field(json, "floorRepairPops", value.floorRepairPops()).append(',');
+      field(json, "expectedQueueSize", value.expectedQueueSize()).append(',');
+      field(json, "floorQueueSize", value.floorQueueSize()).append(',');
+      field(json, "target", value.target());
+      json.append('}');
+    };
+  }
+
+  private Object macroActions(MacroPlan plan) {
+    return (JsonWritable) json -> {
+      json.append('[');
+      int end = Math.min(plan.actions().size(), 16);
+      for (int i = 0; i < end; i++) {
+        if (i != 0) {
+          json.append(',');
+        }
+        MacroActionInstance action = plan.actions().get(i);
+        json.append('{');
+        field(json, "kind", action.kind()).append(',');
+        field(json, "score", action.score()).append(',');
+        field(json, "timeTicks", action.cost().timeTicks()).append(',');
+        field(json, "before", action.before()).append(',');
+        field(json, "after", action.after()).append(',');
+        field(json, "transition", macroTransition(action));
+        json.append('}');
+      }
+      json.append(']');
+    };
+  }
+
+  private Object macroTransition(MacroActionInstance action) {
+    if (action.surfaceTransition() == null) {
+      return null;
+    }
+    return (JsonWritable) json -> {
+      var transition = action.surfaceTransition();
+      json.append('{');
+      field(json, "mode", transition.mode()).append(',');
+      field(json, "stage", transition.stage()).append(',');
+      field(json, "componentId", transition.componentId()).append(',');
+      field(json, "distance", transition.distance()).append(',');
+      field(json, "dryStart", transition.dryStart()).append(',');
+      field(json, "waterStart", transition.waterStart()).append(',');
+      field(json, "waterEnd", transition.waterEnd()).append(',');
+      field(json, "dryEnd", transition.dryEnd());
+      json.append('}');
+    };
+  }
+
+  private Object macroVertices(MacroPlan plan) {
+    return (JsonWritable) json -> {
+      json.append('[');
+      int end = Math.min(plan.renderPositions().size(), 16);
+      for (int i = 0; i < end; i++) {
+        if (i != 0) {
+          json.append(',');
+        }
+        blockPos(json, plan.renderPositions().get(i));
+      }
+      json.append(']');
+    };
+  }
+
+  private Object macroCellVertices(MacroPlan plan) {
+    return (JsonWritable) json -> {
+      json.append('[');
+      int end = Math.min(plan.vertices().size(), 32);
+      for (int i = 0; i < end; i++) {
+        if (i != 0) {
+          json.append(',');
+        }
+        var vertex = plan.vertices().get(i);
+        json.append('{');
+        field(json, "pos", vertex.pos()).append(',');
+        field(json, "evidence", vertex.evidence());
+        json.append('}');
+      }
+      json.append(']');
+    };
+  }
+
   private Object executor(TransportSnapshot.Executor executor) {
     return (JsonWritable) json -> {
       json.append('{');
       field(json, "position", executor.position()).append(',');
       field(json, "size", executor.size()).append(',');
+      field(json, "legIndex", executor.legIndex()).append(',');
       field(json, "done", executor.done()).append(',');
       field(json, "plan", plan(executor.current())).append(',');
       field(json, "sequence", executor.sequence());
@@ -245,6 +371,8 @@ public final class PlayerTelemetryBehavior extends Behavior {
       field(json, "dest", plan.dest()).append(',');
       field(json, "phase", plan.phase()).append(',');
       field(json, "terminal", plan.terminal()).append(',');
+      field(json, "componentId", plan.componentId()).append(',');
+      field(json, "plannedState", plan.plannedState()).append(',');
       field(json, "entry", plan.entry()).append(',');
       field(json, "progress", plan.progress()).append(',');
       field(json, "token", String.valueOf(plan.token()));
@@ -263,6 +391,35 @@ public final class PlayerTelemetryBehavior extends Behavior {
         field(json, inputs[i].name(), baritone.getInputOverrideHandler().isInputForcedDown(inputs[i]));
       }
       json.append('}');
+    };
+  }
+
+  private Object physicalInputs() {
+    return (JsonWritable) json -> {
+      json.append('{');
+      Input[] inputs = Input.values();
+      for (int i = 0; i < inputs.length; i++) {
+        if (i != 0) {
+          json.append(',');
+        }
+        field(json, inputs[i].name(), physicalInput(inputs[i]));
+      }
+      json.append('}');
+    };
+  }
+
+  private boolean physicalInput(Input input) {
+    var options = ctx.minecraft().options;
+    return switch (input) {
+      case MOVE_FORWARD -> options.keyUp.isDown();
+      case MOVE_BACK -> options.keyDown.isDown();
+      case MOVE_LEFT -> options.keyLeft.isDown();
+      case MOVE_RIGHT -> options.keyRight.isDown();
+      case CLICK_LEFT -> options.keyAttack.isDown();
+      case CLICK_RIGHT -> options.keyUse.isDown();
+      case JUMP -> options.keyJump.isDown();
+      case SNEAK -> options.keyShift.isDown();
+      case SPRINT -> options.keySprint.isDown();
     };
   }
 
@@ -302,6 +459,16 @@ public final class PlayerTelemetryBehavior extends Behavior {
       }
       json.append('}');
     };
+  }
+
+  private static int boatItems(LocalPlayer player) {
+    int count = 0;
+    for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
+      if (stack.getItem() instanceof BoatItem) {
+        count += stack.getCount();
+      }
+    }
+    return count;
   }
 
   private Object soundings(BlockPos feet) {

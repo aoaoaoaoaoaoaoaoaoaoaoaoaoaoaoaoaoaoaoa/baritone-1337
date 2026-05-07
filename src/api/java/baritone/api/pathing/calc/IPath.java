@@ -102,9 +102,9 @@ public interface IPath {
    * Cuts off this path at the loaded chunk border, and returns the resulting path. Default
    * implementation just returns this path, without the intended functionality.
    * <p>
-   * The argument is supposed to be a BlockStateInterface LOL LOL LOL LOL LOL
+   * The argument is the implementation block-state lookup object.
    *
-   * @param bsi The block state lookup, highly cursed
+   * @param bsi The block state lookup
    * @return The result of this cut-off operation
    */
   default IPath cutoffAtLoadedChunks(Object bsi) {

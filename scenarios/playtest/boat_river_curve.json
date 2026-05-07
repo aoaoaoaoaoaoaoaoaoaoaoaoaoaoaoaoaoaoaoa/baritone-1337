@@ -22,6 +22,11 @@
       "slot": 0,
       "item": "minecraft:oak_boat",
       "count": 1
+    },
+    {
+      "slot": 1,
+      "item": "minecraft:iron_axe",
+      "count": 1
     }
   ],
   "timeoutTicks": 2400,
@@ -34,12 +39,29 @@
     "requireWaterEncountered": true,
     "requirePathingSeen": true,
     "requireBoatEncountered": true,
-    "requireBoatRecovered": true
+    "requireBoatRecovered": true,
+    "requireMacroRoute": true,
+    "requirePlannedBoat": true,
+    "minMacroBoatLegs": 1,
+    "minMacroBoatDistance": 100.0,
+    "maxTicksToPlanning": 20,
+    "maxTicksToActuation": 400,
+    "maxTicksToPathingSeen": 400,
+    "maxTicksToMacroPlan": 400
   },
   "settings": {
+    "chunkCaching": false,
     "allowSprint": true,
     "sprintInWater": true,
-    "jumpPenalty": 20.0
+    "jumpPenalty": 20.0,
+    "macroPlanning": true,
+    "macroWaterHorizonBlocks": 384,
+    "macroWaterMaxLaunchCandidates": 24,
+    "macroWaterMaxSegmentBlocks": 96,
+    "macroBoatRequiresWaterBelow": false,
+    "pathingEarlyIncumbentExecution": true,
+    "primaryTimeoutMS": 15000,
+    "failureTimeoutMS": 15000
   },
   "trace": true,
   "selectedSlot": 0

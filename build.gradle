@@ -79,6 +79,11 @@ tasks.register("verifyPathingControlPurity") {
         offenders << "${f}: references deleted ${deletedWaterType}"
       }
     }
+    fileTree("src/main/java/baritone/pathing/macro") { include "**/*.java" }.files.each { f ->
+      if (f.getText("UTF-8").contains("SurfaceWaterDomain")) {
+        offenders << "${f}: macro routes must not use legacy SurfaceWaterDomain overlays"
+      }
+    }
     if (!offenders.isEmpty()) {
       throw new GradleException("Pathing control purity violations:\n" + offenders.join("\n"))
     }
@@ -128,11 +133,16 @@ allprojects {
       name = 'babbaj-repo'
       url = 'https://babbaj.github.io/maven/'
     }
+    maven {
+      name = 'xaero-repo'
+      url = 'https://chocolateminecraft.com/maven/'
+    }
   }
 
   dependencies {
     compileOnly "org.spongepowered:mixin:${project.mixin_version}"
     compileOnly "org.ow2.asm:asm:${project.asm_version}"
+    compileOnly "org.ow2.asm:asm-tree:${project.asm_version}"
 
     implementation "dev.babbaj:nether-pathfinder:${project.nether_pathfinder_version}"
 
@@ -186,6 +196,9 @@ sourceSets {
 }
 
 dependencies {
+  launchCompileOnly "xaero.map:xaeroworldmap-fabric-${project.minecraft_version}:1.40.16"
+  launchCompileOnly "xaero.lib:xaerolib-fabric-${project.minecraft_version}:1.1.15"
+
   testImplementation 'junit:junit:4.13.2'
 }
 

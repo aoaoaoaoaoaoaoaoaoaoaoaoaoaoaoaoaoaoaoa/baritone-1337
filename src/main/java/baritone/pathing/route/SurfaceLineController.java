@@ -23,7 +23,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
+import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -31,6 +33,8 @@ public final class SurfaceLineController implements MovementHelper {
   private static final double SUCCESS_PROGRESS = 0.985D;
   private static final double SUCCESS_DISTANCE_SQ = 1.44D;
   private static final double LINE_TOLERANCE_SQ = 2.56D;
+  private static final double SURFACE_APPROACH_TOLERANCE_SQ = 256D;
+  private static final double SURFACE_ACQUIRE_DONE_DISTANCE_SQ = 2.25D;
   private static final double SWIM_TERMINAL_EXIT_LOOKAHEAD_BLOCKS = 4D;
   private static final double SWIM_TERMINAL_EXIT_PROGRESS_FLOOR = 0.82D;
   private static final double SWIM_TERMINAL_EXIT_DEST_DISTANCE_SQ = 16D;
@@ -42,6 +46,7 @@ public final class SurfaceLineController implements MovementHelper {
   private static final int BOAT_FORCE_DISMOUNT_TICKS = 5;
   private static final int BOAT_PICKUP_TIMEOUT_TICKS = 100;
   private static final double BOAT_PICKUP_APPROACH_DISTANCE_SQ = 6.25D;
+  private static final double BOAT_ITEM_PICKUP_DISTANCE_SQ = 1.21D;
   private static final double BOAT_SEARCH_RADIUS = 5D;
   private static final double BOAT_LAUNCH_CENTER_DISTANCE_SQ = 0.49D;
   private static final double SWIM_DRIFT_TOLERANCE_SQ = 9D;
@@ -55,23 +60,31 @@ public final class SurfaceLineController implements MovementHelper {
   private static final int BOAT_PLACE_COOLDOWN_TICKS = 4;
   private static final int BOAT_ATTACK_COOLDOWN_TICKS = 4;
   private static final double SURFACE_DIVE_CLEARANCE = -0.20D;
-  private static final double SURFACE_GLIDE_BUMP_CLEARANCE = 0.018D;
-  private static final double SURFACE_DROWN_BUMP_CLEARANCE = 0.034D;
+  private static final double SURFACE_GLIDE_TARGET_CLEARANCE = 0.115D;
+  private static final double SURFACE_FAST_GLIDE_MIN_CLEARANCE = 0.020D;
+  private static final double SURFACE_DROWN_BUMP_CLEARANCE = -0.120D;
   private static final double SURFACE_BUMP_FLOOR = -0.250D;
   private static final double SURFACE_BUMP_CEILING = 0.040D;
-  private static final double SURFACE_BUMP_MAX_UPWARD_VELOCITY = -0.002D;
-  private static final double SURFACE_GLIDE_LOW_CLEARANCE = 0.040D;
+  private static final double SURFACE_BUMP_MAX_UPWARD_VELOCITY = 0.020D;
   private static final double SURFACE_GLIDE_HIGH_CLEARANCE = 0.160D;
   private static final double SURFACE_GLIDE_DAMP_UPWARD_VELOCITY = 0.055D;
-  private static final double SURFACE_CLIMB_PULSE_CLEARANCE = -0.650D;
-  private static final double SURFACE_CLIMB_PULSE_MAX_UPWARD_VELOCITY = 0.020D;
+  private static final double SURFACE_TRIM_BUMP_CLEARANCE = 0.035D;
+  private static final double SURFACE_TRIM_BUMP_MAX_UPWARD_VELOCITY = 0.006D;
+  private static final double SURFACE_GLIDE_KICK_FLOOR = 0.100D;
+  private static final double SURFACE_GLIDE_KICK_CEILING = 0.170D;
+  private static final double SURFACE_GLIDE_KICK_MAX_UPWARD_VELOCITY = 0.004D;
+  private static final double SURFACE_CLIMB_PULSE_CLEARANCE = -0.180D;
+  private static final double SURFACE_CLIMB_PULSE_MAX_UPWARD_VELOCITY = 0.045D;
   private static final double SURFACE_NEAR_AIR_RESERVE = 0.25D;
   private static final double SURFACE_DEEP_AIR_RESERVE = 0.45D;
-  private static final int SURFACE_GLIDE_BUMP_INTERVAL_TICKS = 8;
   private static final int SURFACE_DROWN_BUMP_INTERVAL_TICKS = 4;
+  private static final int SURFACE_TRIM_BUMP_INTERVAL_TICKS = 6;
+  private static final int SURFACE_GLIDE_KICK_INTERVAL_TICKS = 12;
   private static final int SURFACE_ACQUIRE_BUMP_INTERVAL_TICKS = 3;
-  private static final float SURFACE_ASCENT_PITCH = -12F;
-  private static final float SURFACE_GLIDE_DAMP_PITCH = 8F;
+  private static final double SURFACE_GLIDE_CLEARANCE_GAIN = 190D;
+  private static final double SURFACE_GLIDE_VELOCITY_GAIN = 70D;
+  private static final float SURFACE_ASCENT_PITCH = -45F;
+  private static final float SURFACE_GLIDE_DAMP_PITCH = 12F;
   private static final float SURFACE_DIVE_PITCH = 35F;
 
   private final IBaritone baritone;
@@ -86,6 +99,7 @@ public final class SurfaceLineController implements MovementHelper {
   private int swimStrafe;
   private int surfaceDiveTicks;
   private int surfaceBumpCooldown;
+  private Vec3 lastBoatPickupTarget;
   private boolean clearingBoatForSwim;
   private SurfaceSwimEntry surfaceSwimEntry = SurfaceSwimEntry.DIVE;
   private float surfacePitch;
@@ -145,7 +159,11 @@ public final class SurfaceLineController implements MovementHelper {
       state.setStatus(MovementStatus.SUCCESS);
       return;
     }
-    if (!acceptsPathingDrift(ctx.playerFeet()) && offLineDistanceSq() > LINE_TOLERANCE_SQ) {
+    if (surfaceAcquisitionNeeded()) {
+      acquireSurfaceLine(state);
+      return;
+    }
+    if (!acceptsPathingDrift(ctx.playerFeet()) && !surfaceApproachAllowed() && offLineDistanceSq() > LINE_TOLERANCE_SQ) {
       state.setStatus(MovementStatus.UNREACHABLE);
       return;
     }
@@ -171,15 +189,34 @@ public final class SurfaceLineController implements MovementHelper {
       pickupBoatForSwim(state, boat.get());
       return;
     }
-    clearingBoatForSwim = false;
-    boatPickupTicks = 0;
-    phase = SurfaceLinePhase.SWIM;
-    updateSwim(state);
+    if (((Baritone) baritone).getInventoryBehavior().hasBoat()) {
+      clearingBoatForSwim = false;
+      boatPickupTicks = 0;
+      lastBoatPickupTarget = null;
+      phase = SurfaceLinePhase.SWIM;
+      updateSwim(state);
+      return;
+    }
+    Optional<ItemEntity> item = nearestBoatItem();
+    if (item.isPresent()) {
+      boatPickupTicks++;
+      phase = SurfaceLinePhase.PICKUP;
+      collectBoatItem(state, item.get().position());
+      return;
+    }
+    if (lastBoatPickupTarget != null && boatPickupTicks <= BOAT_PICKUP_TIMEOUT_TICKS) {
+      boatPickupTicks++;
+      phase = SurfaceLinePhase.PICKUP;
+      collectBoatItem(state, lastBoatPickupTarget);
+      return;
+    }
+    state.setStatus(MovementStatus.UNREACHABLE);
   }
 
   private void pickupBoatForSwim(ControlFrame.Builder state, AbstractBoat target) {
     phase = SurfaceLinePhase.PICKUP;
     boatPickupTicks++;
+    lastBoatPickupTarget = target.position();
     Rotation rotation = boatRotation(target);
     state.setTarget(new ControlFrame.MovementTarget(rotation, true));
     double distanceSq = horizontalDistanceSq(ctx.player().position(), target.position());
@@ -200,7 +237,7 @@ public final class SurfaceLineController implements MovementHelper {
   private void finishAfterSwim(ControlFrame.Builder state) {
     BetterBlockPos dest = segment.dest();
     boolean playerWet = ctx.player().isInWater() || waterProbe().isPresent();
-    if (!playerWet && ctx.playerFeet().equals(dest)) {
+    if (!playerWet && terminalShoreReached(dest)) {
       state.setStatus(MovementStatus.SUCCESS);
       return;
     }
@@ -213,7 +250,39 @@ public final class SurfaceLineController implements MovementHelper {
   private boolean swimTerminalComplete() {
     BetterBlockPos dest = segment.dest();
     boolean playerWet = ctx.player().isInWater() || waterProbe().isPresent();
-    return !playerWet && ctx.playerFeet().equals(dest);
+    return !playerWet && terminalShoreReached(dest);
+  }
+
+  private boolean terminalShoreReached(BetterBlockPos dest) {
+    return ctx.playerFeet().equals(dest) || horizontalDistanceSq(ctx.player().position(), VecUtils.getBlockPosCenter(dest)) <= SUCCESS_DISTANCE_SQ
+      || segment.validPositions().contains(new BetterBlockPos(ctx.playerFeet()));
+  }
+
+  private boolean surfaceApproachAllowed() {
+    return !segment.boat() && progress() < 0.20D && horizontalDistanceSq(ctx.player().position(), VecUtils.getBlockPosCenter(segment.waterStart())) <= SURFACE_APPROACH_TOLERANCE_SQ
+      && (ctx.player().isInWater() || waterProbe().isPresent());
+  }
+
+  private boolean surfaceAcquisitionNeeded() {
+    if (segment.boat() || !surfaceApproachAllowed()) {
+      return false;
+    }
+    double distanceToSurfaceStart = horizontalDistanceSq(ctx.player().position(), VecUtils.getBlockPosCenter(segment.waterStart()));
+    return distanceToSurfaceStart > SURFACE_ACQUIRE_DONE_DISTANCE_SQ && offLineDistanceSq() > SWIM_DRIFT_TOLERANCE_SQ;
+  }
+
+  private void acquireSurfaceLine(ControlFrame.Builder state) {
+    phase = SurfaceLinePhase.ACQUIRE;
+    state.setInput(Input.MOVE_FORWARD, true);
+    state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value);
+    state.setInput(Input.SNEAK, false);
+    surfaceSwim(state);
+    boolean wet = ctx.player().isInWater() || waterProbe().isPresent();
+    Rotation target = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(segment.waterStart()), ctx.playerRotations());
+    state.setTarget(new ControlFrame.MovementTarget(new Rotation(target.getYaw(), wet ? surfacePitch : target.getPitch()), wet));
+    swimStrafe = 0;
+    state.setInput(Input.MOVE_LEFT, false);
+    state.setInput(Input.MOVE_RIGHT, false);
   }
 
   private void surfaceSwim(ControlFrame.Builder state) {
@@ -256,39 +325,51 @@ public final class SurfaceLineController implements MovementHelper {
     }
     double verticalVelocity = ctx.player().getDeltaMovement().y;
     boolean nearSurface = clearance >= SURFACE_BUMP_FLOOR;
+    boolean breathing = !eyeWet && !underWater;
     boolean urgent = ctx.player().getAirSupply() <= oxygenReserve(ctx.player().getMaxAirSupply(), nearSurface);
-    double bumpClearance = urgent || eyeWet ? SURFACE_DROWN_BUMP_CLEARANCE : SURFACE_GLIDE_BUMP_CLEARANCE;
-    boolean breathingBandBump = (urgent || clearance < bumpClearance) && clearance < SURFACE_BUMP_CEILING;
     boolean acquireSwimPose = surfaceSwimEntry == SurfaceSwimEntry.ASCEND;
-    boolean climbToSurface = swimming && clearance < SURFACE_BUMP_FLOOR;
+    boolean climbToSurface = swimming && (!breathing || clearance < SURFACE_BUMP_FLOOR);
     boolean acquirePulse = acquireSwimPose && surfaceBumpCooldown == 0;
-    boolean climbPulse = climbToSurface && (urgent || clearance < SURFACE_CLIMB_PULSE_CLEARANCE) && (urgent || verticalVelocity <= SURFACE_CLIMB_PULSE_MAX_UPWARD_VELOCITY) && surfaceBumpCooldown == 0;
-    boolean bump =
-      !acquireSwimPose && (swimming || eyeWet && urgent) && nearSurface && breathingBandBump && (urgent || verticalVelocity <= SURFACE_BUMP_MAX_UPWARD_VELOCITY) && surfaceBumpCooldown == 0;
+    boolean climbPulse =
+      climbToSurface && (urgent || !breathing || clearance < SURFACE_CLIMB_PULSE_CLEARANCE) && (urgent || verticalVelocity <= SURFACE_CLIMB_PULSE_MAX_UPWARD_VELOCITY) && surfaceBumpCooldown == 0;
+    boolean bump = !acquireSwimPose && urgent && (swimming || eyeWet) && nearSurface && clearance < SURFACE_DROWN_BUMP_CLEARANCE && clearance < SURFACE_BUMP_CEILING
+      && verticalVelocity <= SURFACE_BUMP_MAX_UPWARD_VELOCITY && surfaceBumpCooldown == 0;
+    boolean trimBump = !acquireSwimPose && !urgent && swimming && breathing && nearSurface && clearance < SURFACE_TRIM_BUMP_CLEARANCE && clearance < SURFACE_BUMP_CEILING
+      && verticalVelocity <= SURFACE_TRIM_BUMP_MAX_UPWARD_VELOCITY && surfaceBumpCooldown == 0;
+    boolean glideKick = !acquireSwimPose && !urgent && swimming && breathing && clearance >= SURFACE_GLIDE_KICK_FLOOR && clearance <= SURFACE_GLIDE_KICK_CEILING
+      && verticalVelocity <= SURFACE_GLIDE_KICK_MAX_UPWARD_VELOCITY && surfaceBumpCooldown == 0;
     if (acquirePulse) {
       surfaceBumpCooldown = SURFACE_ACQUIRE_BUMP_INTERVAL_TICKS;
+    } else if (glideKick) {
+      surfaceBumpCooldown = SURFACE_GLIDE_KICK_INTERVAL_TICKS;
+    } else if (trimBump) {
+      surfaceBumpCooldown = SURFACE_TRIM_BUMP_INTERVAL_TICKS;
     } else if (climbPulse || bump) {
-      surfaceBumpCooldown = urgent || eyeWet ? SURFACE_DROWN_BUMP_INTERVAL_TICKS : SURFACE_GLIDE_BUMP_INTERVAL_TICKS;
+      surfaceBumpCooldown = SURFACE_DROWN_BUMP_INTERVAL_TICKS;
     }
     state.setInput(Input.SNEAK, false);
-    state.setInput(Input.JUMP, acquirePulse || climbPulse || bump);
-    surfacePitch = surfacePitch(acquireSwimPose, swimming, eyeWet, underWater, clearance, verticalVelocity);
+    state.setInput(Input.JUMP, acquirePulse || climbPulse || bump || trimBump || glideKick);
+    surfacePitch = surfacePitch(acquireSwimPose, swimming, breathing, urgent, clearance, verticalVelocity);
   }
 
-  private float surfacePitch(boolean acquireSwimPose, boolean swimming, boolean eyeWet, boolean underWater, double clearance, double verticalVelocity) {
+  private float surfacePitch(boolean acquireSwimPose, boolean swimming, boolean breathing, boolean urgent, double clearance, double verticalVelocity) {
     if (acquireSwimPose) {
       return SURFACE_ASCENT_PITCH;
     }
     if (!swimming) {
       return SURFACE_DIVE_PITCH;
     }
+    if (breathing && !urgent && clearance >= SURFACE_FAST_GLIDE_MIN_CLEARANCE && clearance <= SURFACE_GLIDE_HIGH_CLEARANCE && verticalVelocity <= SURFACE_GLIDE_DAMP_UPWARD_VELOCITY) {
+      return 0F;
+    }
     if (clearance > SURFACE_GLIDE_HIGH_CLEARANCE || verticalVelocity > SURFACE_GLIDE_DAMP_UPWARD_VELOCITY) {
       return SURFACE_GLIDE_DAMP_PITCH;
     }
-    if (eyeWet || underWater || clearance < SURFACE_GLIDE_LOW_CLEARANCE) {
+    if (urgent) {
       return SURFACE_ASCENT_PITCH;
     }
-    return 0F;
+    double ascentDemand = (SURFACE_GLIDE_TARGET_CLEARANCE - clearance) * SURFACE_GLIDE_CLEARANCE_GAIN - verticalVelocity * SURFACE_GLIDE_VELOCITY_GAIN;
+    return (float) Math.max(SURFACE_ASCENT_PITCH, Math.min(SURFACE_GLIDE_DAMP_PITCH, -ascentDemand));
   }
 
   private void swimTrackTrim(ControlFrame.Builder state) {
@@ -469,17 +550,29 @@ public final class SurfaceLineController implements MovementHelper {
     phase = SurfaceLinePhase.PICKUP;
     boatPickupTicks++;
     Optional<AbstractBoat> boat = nearestBoat();
-    if (boat.isEmpty()) {
+    if (boat.isPresent()) {
+      attackBoatForPickup(state, boat.get());
+      return;
+    }
+    if (((Baritone) baritone).getInventoryBehavior().hasBoat()) {
       phase = SurfaceLinePhase.FINISH;
       finishAfterBoat(state);
       return;
     }
-    if (boatPickupTicks > BOAT_PICKUP_TIMEOUT_TICKS) {
-      phase = SurfaceLinePhase.FINISH;
-      finishAfterBoat(state);
+    Optional<ItemEntity> item = nearestBoatItem();
+    if (item.isPresent()) {
+      collectBoatItem(state, item.get().position());
       return;
     }
-    AbstractBoat target = boat.get();
+    if (lastBoatPickupTarget != null && boatPickupTicks <= BOAT_PICKUP_TIMEOUT_TICKS) {
+      collectBoatItem(state, lastBoatPickupTarget);
+      return;
+    }
+    state.setStatus(MovementStatus.UNREACHABLE);
+  }
+
+  private void attackBoatForPickup(ControlFrame.Builder state, AbstractBoat target) {
+    lastBoatPickupTarget = target.position();
     Rotation rotation = boatRotation(target);
     state.setTarget(new ControlFrame.MovementTarget(rotation, true));
     double distanceSq = horizontalDistanceSq(ctx.player().position(), target.position());
@@ -495,6 +588,17 @@ public final class SurfaceLineController implements MovementHelper {
         boatAttackCooldown = BOAT_ATTACK_COOLDOWN_TICKS;
       }
     }
+  }
+
+  private void collectBoatItem(ControlFrame.Builder state, Vec3 target) {
+    lastBoatPickupTarget = target;
+    Rotation rotation = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), target.add(0D, 0.15D, 0D), ctx.playerRotations());
+    state.setTarget(new ControlFrame.MovementTarget(rotation, true));
+    double distanceSq = horizontalDistanceSq(ctx.player().position(), target);
+    state.setInput(Input.MOVE_FORWARD, distanceSq > BOAT_ITEM_PICKUP_DISTANCE_SQ);
+    state.setInput(Input.JUMP, distanceSq > BOAT_ITEM_PICKUP_DISTANCE_SQ && MovementHelper.isWater(ctx, ctx.playerFeet()));
+    state.setInput(Input.SPRINT, false);
+    state.setInput(Input.SNEAK, false);
   }
 
   private void finishAfterBoat(ControlFrame.Builder state) {
@@ -521,6 +625,12 @@ public final class SurfaceLineController implements MovementHelper {
     AABB area = ctx.player().getBoundingBox().inflate(BOAT_SEARCH_RADIUS, 2D, BOAT_SEARCH_RADIUS);
     return ctx.world().getEntitiesOfClass(AbstractBoat.class, area, boat -> !boat.isRemoved() && (!boat.isVehicle() || boat.hasPassenger(ctx.player()))).stream()
       .min(Comparator.comparingDouble(boat -> horizontalDistanceSq(ctx.player().position(), boat.position())));
+  }
+
+  private Optional<ItemEntity> nearestBoatItem() {
+    AABB area = ctx.player().getBoundingBox().inflate(BOAT_SEARCH_RADIUS, 2D, BOAT_SEARCH_RADIUS);
+    return ctx.world().getEntitiesOfClass(ItemEntity.class, area, item -> !item.isRemoved() && item.getItem().getItem() instanceof BoatItem).stream()
+      .min(Comparator.comparingDouble(item -> horizontalDistanceSq(ctx.player().position(), item.position())));
   }
 
   private void lookAtBoat(ControlFrame.Builder state, AbstractBoat boat) {
@@ -584,7 +694,11 @@ public final class SurfaceLineController implements MovementHelper {
   private Vec3 lookaheadTarget() {
     Vec3 start = VecUtils.getBlockPosCenter(segment.waterStart());
     Vec3 end = VecUtils.getBlockPosCenter(segment.waterEnd());
-    double t = Math.max(progress(), 0D);
+    double progress = progress();
+    if (progress < 0D) {
+      return start;
+    }
+    double t = Math.max(progress, 0D);
     double lookahead = Math.min(1D, t + 12D / Math.max(1D, segment.length()));
     return start.lerp(end, lookahead);
   }

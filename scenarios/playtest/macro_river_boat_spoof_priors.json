@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "minecraftVersion": "26.1.2",
+  "controllerProfile": "macro-river-boat-spoof",
+  "generatedAt": "2026-05-06T00:00:00Z",
+  "sourceResults": "controlled macro-water acceptance spoof",
+  "biomes": {
+    "minecraft:beach": {
+      "surfacePedestrian": {"samples": 32, "successfulSamples": 32, "successfulTicks": 1856, "totalBlocks": 512.0, "medianTicksPerBlock": 3.7, "p25TicksPerBlock": 3.5, "p75TicksPerBlock": 4.1, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.03, "sprintTicksPerBlock": 3.4, "moveForwardTicksPerBlock": 3.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:forest": {
+      "surfacePedestrian": {"samples": 32, "successfulSamples": 32, "successfulTicks": 5120, "totalBlocks": 512.0, "medianTicksPerBlock": 10.0, "p25TicksPerBlock": 8.5, "p75TicksPerBlock": 12.0, "failureRate": 0.01, "damageRate": 0.0, "jumpTicksPerBlock": 1.0, "sprintTicksPerBlock": 1.4, "moveForwardTicksPerBlock": 6.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:plains": {
+      "surfacePedestrian": {"samples": 32, "successfulSamples": 32, "successfulTicks": 1894, "totalBlocks": 512.0, "medianTicksPerBlock": 3.7, "p25TicksPerBlock": 3.5, "p75TicksPerBlock": 4.0, "failureRate": 0.0, "damageRate": 0.0, "jumpTicksPerBlock": 0.08, "sprintTicksPerBlock": 3.4, "moveForwardTicksPerBlock": 3.5, "waterTicksPerBlock": 0.0}
+    },
+    "minecraft:river": {
+      "surfacePedestrian": {"samples": 32, "successfulSamples": 32, "successfulTicks": 7168, "totalBlocks": 512.0, "medianTicksPerBlock": 14.0, "p25TicksPerBlock": 10.0, "p75TicksPerBlock": 20.0, "failureRate": 0.02, "damageRate": 0.0, "jumpTicksPerBlock": 0.3, "sprintTicksPerBlock": 0.5, "moveForwardTicksPerBlock": 5.0, "waterTicksPerBlock": 8.0}
+    },
+    "minecraft:windswept_hills": {
+      "surfacePedestrian": {"samples": 32, "successfulSamples": 32, "successfulTicks": 9216, "totalBlocks": 512.0, "medianTicksPerBlock": 18.0, "p25TicksPerBlock": 14.0, "p75TicksPerBlock": 26.0, "failureRate": 0.05, "damageRate": 0.02, "jumpTicksPerBlock": 3.4, "sprintTicksPerBlock": 0.5, "moveForwardTicksPerBlock": 7.0, "waterTicksPerBlock": 0.0}
+    }
+  }
+}

@@ -5,6 +5,7 @@ import baritone.api.pathing.goals.Goal;
 import baritone.api.process.ICustomGoalProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
+import baritone.pathing.goal.GoalTerminalPolicy;
 import baritone.transport.TransportModeSelector;
 import baritone.utils.BaritoneProcessHelper;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -83,7 +84,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
           onLostControl();
           yield new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
-        if (goal.isInGoal(ctx.playerFeet()) && goal.isInGoal(baritone.getPathingBehavior().pathStart())) {
+        if (GoalTerminalPolicy.satisfied(baritone, ctx, goal, ctx.playerFeet()) && GoalTerminalPolicy.satisfied(baritone, ctx, goal, baritone.getPathingBehavior().pathStart())) {
           onLostControl(); // we're there xd
           if (Baritone.settings().disconnectOnArrival.value) {
             if (ctx.world() instanceof ClientLevel clientLevel) {

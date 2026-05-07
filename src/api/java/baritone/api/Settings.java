@@ -542,6 +542,101 @@ public final class Settings {
   public final Setting<Boolean> transportDebugOverlay = new Setting<>(false);
 
   /**
+   * Enable route-level macro candidate producers.
+   */
+  public final Setting<Boolean> macroPlanning = new Setting<>(true);
+
+  /**
+   * Enable empirical-biome hierarchical route guidance. This is inert until {@link #macroBiomePriorsFile} points at a measured prior table.
+   */
+  public final Setting<Boolean> macroBiome = new Setting<>(true);
+
+  /**
+   * JSON table emitted by {@code scripts/playtest biome-aggregate}. Relative paths resolve from the process working directory.
+   */
+  public final Setting<String> macroBiomePriorsFile = new Setting<>("");
+
+  /**
+   * Optional chunk-biome fact atlas emitted by {@code scripts/playtest biome-facts}. This is the first seam for seedless biome extrapolators and persistent world memory.
+   */
+  public final Setting<String> macroBiomeFactsFile = new Setting<>("");
+
+  /**
+   * Chunk-grid cell size for biome macro planning when no fact atlas dictates one.
+   */
+  public final Setting<Integer> macroBiomeCellBlocks = new Setting<>(16);
+
+  /**
+   * Maximum radius for one biome macro graph search.
+   */
+  public final Setting<Integer> macroBiomeHorizonBlocks = new Setting<>(2048);
+
+  /**
+   * Distance to advance along the macro route before handing control back to local A*.
+   */
+  public final Setting<Integer> macroBiomeWaypointBlocks = new Setting<>(192);
+
+  /**
+   * Extra uncertainty charged when a macro cell has no concrete biome fact and must use the empirical fallback prior.
+   */
+  public final Setting<Double> macroBiomeUnknownPenalty = new Setting<>(1D);
+
+  /**
+   * Weight for elapsed ticks in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeTimeWeight = new Setting<>(1D);
+
+  /**
+   * Weight for jump ticks in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeJumpWeight = new Setting<>(0D);
+
+  /**
+   * Weight for sprint ticks in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeSprintWeight = new Setting<>(0D);
+
+  /**
+   * Weight for incidental water ticks in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeWaterWeight = new Setting<>(0D);
+
+  /**
+   * Weight for empirical damage rate in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeDamageRiskWeight = new Setting<>(1000D);
+
+  /**
+   * Weight for empirical failure rate in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeFailureRiskWeight = new Setting<>(400D);
+
+  /**
+   * Weight for prior uncertainty in macro traversal scoring.
+   */
+  public final Setting<Double> macroBiomeUncertaintyWeight = new Setting<>(20D);
+
+  /**
+   * Maximum macro water atlas radius in blocks.
+   */
+  public final Setting<Integer> macroWaterHorizonBlocks = new Setting<>(384);
+
+  /**
+   * Maximum number of candidate launch anchors to certify.
+   */
+  public final Setting<Integer> macroWaterMaxLaunchCandidates = new Setting<>(12);
+
+  /**
+   * Maximum straight certified water segment length before route-level receding-horizon cuts.
+   */
+  public final Setting<Integer> macroWaterMaxSegmentBlocks = new Setting<>(96);
+
+  /**
+   * Require boat macro cells to have water below the surface cell, avoiding shallow bank fringes.
+   */
+  public final Setting<Boolean> macroBoatRequiresWaterBelow = new Setting<>(false);
+
+  /**
    * How far are you allowed to fall onto solid ground (without a water bucket)?
    * 3 won't deal any damage. But if you just want to get down the mountain quickly and you have
    * Feather Falling IV, you might set it a bit higher, like 4 or 5.
@@ -617,7 +712,9 @@ public final class Settings {
   public final Setting<Boolean> doDeathWaypoints = new Setting<>(true);
 
   /**
-   * The big one. Download all chunks in simplified 2-bit format and save them for better very-long-distance pathing.
+   * The big one. Download all chunks in simplified 2-bit format, keep them in RAM, save them, and use them for better very-long-distance pathing.
+   * <p>
+   * When disabled, cached chunks are neither packed nor used as pathing facts.
    */
   public final Setting<Boolean> chunkCaching = new Setting<>(true);
 
@@ -685,6 +782,23 @@ public final class Settings {
    * Render selection boxes
    */
   public final Setting<Boolean> renderSelectionBoxes = new Setting<>(true);
+
+  /**
+   * Render route-level macro leg plans instead of only legacy path positions.
+   */
+  public final Setting<Boolean> renderMacroPlan = new Setting<>(true);
+
+  /**
+   * Render volatile A* worker internals: best-so-far and most-recent-considered paths.
+   * <p>
+   * Off by default because these are diagnostic search probes, not committed executable routes.
+   */
+  public final Setting<Boolean> renderPathCalculation = new Setting<>(false);
+
+  /**
+   * Render macro route anchors such as water launch and terminal points.
+   */
+  public final Setting<Boolean> renderMacroPlanAnchors = new Setting<>(true);
 
   /**
    * Ignore depth when rendering the goal
@@ -1292,6 +1406,51 @@ public final class Settings {
    * The color of the next path
    */
   public final Setting<Color> colorNextPath = new Setting<>(Color.MAGENTA);
+
+  /**
+   * The color of macro swim legs.
+   */
+  public final Setting<Color> colorMacroSwim = new Setting<>(Color.CYAN);
+
+  /**
+   * The color of macro boat transit legs.
+   */
+  public final Setting<Color> colorMacroBoatTransit = new Setting<>(new Color(0, 128, 255));
+
+  /**
+   * The color of macro boat terminal legs.
+   */
+  public final Setting<Color> colorMacroBoatTerminal = new Setting<>(new Color(0, 64, 255));
+
+  /**
+   * The color of macro route anchors.
+   */
+  public final Setting<Color> colorMacroRouteAnchor = new Setting<>(Color.ORANGE);
+
+  /**
+   * The color of empirical-biome macro route guidance.
+   */
+  public final Setting<Color> colorMacroBiomePlan = new Setting<>(new Color(255, 220, 64));
+
+  /**
+   * The color of macro cells grounded in currently loaded chunks.
+   */
+  public final Setting<Color> colorMacroLivePlan = new Setting<>(new Color(64, 255, 96));
+
+  /**
+   * The color of macro cells grounded in persisted cached facts.
+   */
+  public final Setting<Color> colorMacroCachedPlan = new Setting<>(new Color(80, 160, 255));
+
+  /**
+   * The color of macro cells grounded in generator/seed prediction.
+   */
+  public final Setting<Color> colorMacroPredictedPlan = new Setting<>(new Color(255, 220, 64));
+
+  /**
+   * The color of macro cells scored from priors only.
+   */
+  public final Setting<Color> colorMacroPriorPlan = new Setting<>(new Color(120, 120, 120));
 
   /**
    * The color of the blocks to break

@@ -51,6 +51,9 @@
 -dontwarn baritone.utils.schematic.schematica.**
 -dontwarn baritone.utils.schematic.litematica.**
 
+# Optional Xaero bridge classes are only loaded when Xaero's World Map is present.
+-dontwarn xaero.**
+
 # nether-pathfinder uses JNI to acess its own classes
 # and some of our builds include it before running proguard
 # conservatively keep all of it, even though only PathSegment.<init> is needed

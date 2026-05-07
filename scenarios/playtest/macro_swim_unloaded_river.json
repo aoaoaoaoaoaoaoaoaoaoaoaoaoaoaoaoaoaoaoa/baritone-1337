@@ -1,0 +1,59 @@
+{
+  "id": "macro_swim_unloaded_river",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 404.5,
+    "y": 63.0,
+    "z": -6.5,
+    "yaw": 135.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "xz",
+    "x": 653,
+    "y": 63,
+    "z": 135
+  },
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "loadout": [],
+  "timeoutTicks": 1400,
+  "successRadius": 20.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNotInWater": true,
+    "requireNoVehicle": true,
+    "requireWaterEncountered": true,
+    "requirePathingSeen": true,
+    "requireMacroBiomeRoute": true,
+    "requireMacroPlanSurfaceTransition": true,
+    "minMacroPlanSurfaceActions": 1,
+    "minMacroPlanSurfaceDistance": 48.0,
+    "maxMacroBiomeUnknownFraction": 0.45
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowSprint": true,
+    "sprintInWater": true,
+    "jumpPenalty": 1000.0,
+    "macroPlanning": true,
+    "macroBiome": true,
+    "macroBiomePriorsFile": "scenarios/playtest/macro_river_boat_spoof_priors.json",
+    "macroBiomeFactsFile": "scenarios/playtest/macro_river_boat_spoof_facts.json",
+    "macroBiomeHorizonBlocks": 512,
+    "macroBiomeWaypointBlocks": 256,
+    "macroWaterHorizonBlocks": 512,
+    "macroWaterMaxLaunchCandidates": 32,
+    "macroWaterMaxSegmentBlocks": 128,
+    "macroBoatRequiresWaterBelow": false,
+    "pathingEarlyIncumbentExecution": false,
+    "chatDebug": true,
+    "primaryTimeoutMS": 20000,
+    "failureTimeoutMS": 20000
+  },
+  "trace": true,
+  "selectedSlot": 0
+}

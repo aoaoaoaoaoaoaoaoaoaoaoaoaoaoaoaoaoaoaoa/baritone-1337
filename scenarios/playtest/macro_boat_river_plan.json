@@ -1,0 +1,62 @@
+{
+  "id": "macro_boat_river_plan",
+  "worldKey": "smoke",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 145.5,
+    "y": 63.0,
+    "z": -76.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 59,
+    "y": 63,
+    "z": -3
+  },
+  "plannerOnly": true,
+  "setupCommands": [],
+  "loadout": [
+    {
+      "slot": 0,
+      "item": "minecraft:oak_boat",
+      "count": 1
+    },
+    {
+      "slot": 1,
+      "item": "minecraft:iron_axe",
+      "count": 1
+    }
+  ],
+  "timeoutTicks": 500,
+  "successRadius": 0.0,
+  "acceptance": {
+    "requireMacroBiomeRoute": true,
+    "requireMacroPlanSurfaceTransition": true,
+    "requireMacroPlanBoat": true,
+    "minMacroPlanBoatActions": 1,
+    "minMacroPlanBoatDistance": 24.0,
+    "minMacroPlanSurfaceActions": 1,
+    "minMacroPlanSurfaceDistance": 24.0,
+    "maxMacroBiomeUnknownFraction": 0.2
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowSprint": true,
+    "sprintInWater": true,
+    "jumpPenalty": 1000.0,
+    "chatDebug": true,
+    "macroPlanning": true,
+    "macroWaterHorizonBlocks": 256,
+    "macroWaterMaxLaunchCandidates": 24,
+    "macroWaterMaxSegmentBlocks": 96,
+    "macroBoatRequiresWaterBelow": false,
+    "pathingEarlyIncumbentExecution": false,
+    "primaryTimeoutMS": 15000,
+    "failureTimeoutMS": 15000
+  },
+  "trace": true,
+  "selectedSlot": 0
+}

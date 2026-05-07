@@ -3,6 +3,7 @@ package baritone.playtest;
 import baritone.api.BaritoneAPI;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.utils.SettingsUtil;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -22,7 +23,7 @@ import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.phys.Vec3;
 
 public record PlaytestScenario(String id, String runId, String worldKey, String seed, String dimension, Start start, GoalSpec goal, List<LoadoutItem> loadout, List<String> setupCommands,
-  int selectedSlot, int timeoutTicks, double successRadius, Acceptance acceptance, Map<String, String> settings, boolean trace) {
+  int selectedSlot, int timeoutTicks, double successRadius, boolean plannerOnly, boolean saturationBoost, Acceptance acceptance, Map<String, String> settings, boolean trace) {
   private static final int DEFAULT_TIMEOUT_TICKS = 20 * 120;
   private static final double DEFAULT_SUCCESS_RADIUS = 1.5D;
 
@@ -40,11 +41,13 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
       int selectedSlot = integer(json, "selectedSlot", loadout.stream().filter(i -> i.slot() >= 0).mapToInt(LoadoutItem::slot).findFirst().orElse(0));
       int timeoutTicks = integer(json, "timeoutTicks", DEFAULT_TIMEOUT_TICKS);
       double successRadius = decimal(json, "successRadius", DEFAULT_SUCCESS_RADIUS);
+      boolean plannerOnly = bool(json, "plannerOnly", false);
+      boolean saturationBoost = bool(json, "saturationBoost", true);
       Acceptance acceptance = Acceptance.parse(object(json, "acceptance"));
       Map<String, String> settings = settings(json.getAsJsonObject("settings"));
       boolean trace = bool(json, "trace", true);
-      return new PlaytestScenario(id, runId, worldKey, seed, dimension, start, goal, List.copyOf(loadout), List.copyOf(setupCommands), selectedSlot, timeoutTicks, successRadius, acceptance,
-        Map.copyOf(settings), trace);
+      return new PlaytestScenario(id, runId, worldKey, seed, dimension, start, goal, List.copyOf(loadout), List.copyOf(setupCommands), selectedSlot, timeoutTicks, successRadius, plannerOnly,
+        saturationBoost, acceptance, Map.copyOf(settings), trace);
     }
   }
 
@@ -52,8 +55,8 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
     return goal.toGoal();
   }
 
-  public boolean succeeded(LocalPlayer player, boolean pathingActive, boolean waterEncountered, boolean boatEncountered, boolean pathingSeen, boolean tookDamage) {
-    return goal.succeeded(player.position(), successRadius) && acceptance.satisfied(player, pathingActive, waterEncountered, boatEncountered, pathingSeen, tookDamage);
+  public boolean succeeded(LocalPlayer player, boolean pathingActive, PlaytestRun run) {
+    return (plannerOnly || goal.succeeded(player.position(), successRadius)) && acceptance.satisfied(player, pathingActive, run, goal);
   }
 
   public void applySettings() {
@@ -74,6 +77,7 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
     Goal toGoal() {
       return switch (type.toLowerCase(Locale.US)) {
         case "block" -> new GoalBlock(x, y, z);
+        case "xz", "goalxz", "pointxz" -> new GoalXZ(x, z);
         default -> throw new IllegalArgumentException("Unsupported playtest goal type: " + type);
       };
     }
@@ -83,9 +87,19 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
         return toGoal().isInGoal((int) Math.floor(position.x), (int) Math.floor(position.y), (int) Math.floor(position.z));
       }
       double dx = position.x - (x + 0.5D);
-      double dy = position.y - y;
       double dz = position.z - (z + 0.5D);
+      if (xz()) {
+        return dx * dx + dz * dz <= radius * radius;
+      }
+      double dy = position.y - y;
       return dx * dx + dy * dy + dz * dz <= radius * radius;
+    }
+
+    boolean xz() {
+      return switch (type.toLowerCase(Locale.US)) {
+        case "xz", "goalxz", "pointxz" -> true;
+        default -> false;
+      };
     }
   }
 
@@ -93,17 +107,33 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
   }
 
   public record Acceptance(boolean requirePathComplete, boolean requireOnGround, boolean requireNotInWater, boolean requireNoVehicle, boolean requireWaterEncountered, boolean requireBoatEncountered,
-    boolean requireBoatRecovered, boolean requirePathingSeen, boolean requireNoDamage) {
+    boolean requireBoatRecovered, boolean requirePathingSeen, boolean requireNoDamage, boolean requireMacroRoute, boolean requirePlannedBoat, int minMacroBoatLegs, double minMacroBoatDistance,
+    double maxRouteDestDistance, boolean requireMacroBiomeRoute, boolean requireMacroPlanBoat, int minMacroPlanBoatActions, double minMacroPlanBoatDistance, boolean requireMacroPlanSurfaceTransition,
+    int minMacroPlanSurfaceActions, double minMacroPlanSurfaceDistance, double maxMacroBiomeUnknownFraction, int maxTicksToPlanning, int maxTicksToActuation, int maxTicksToPathingSeen,
+    int maxTicksToMacroPlan) {
     static Acceptance parse(JsonObject json) {
       return new Acceptance(bool(json, "requirePathComplete", false), bool(json, "requireOnGround", false), bool(json, "requireNotInWater", false), bool(json, "requireNoVehicle", false),
         bool(json, "requireWaterEncountered", false), bool(json, "requireBoatEncountered", false), bool(json, "requireBoatRecovered", false), bool(json, "requirePathingSeen", false),
-        bool(json, "requireNoDamage", true));
+        bool(json, "requireNoDamage", true), bool(json, "requireMacroRoute", false), bool(json, "requirePlannedBoat", false), integer(json, "minMacroBoatLegs", 0),
+        decimal(json, "minMacroBoatDistance", 0D), decimal(json, "maxRouteDestDistance", -1D), bool(json, "requireMacroBiomeRoute", false), bool(json, "requireMacroPlanBoat", false),
+        integer(json, "minMacroPlanBoatActions", 0), decimal(json, "minMacroPlanBoatDistance", 0D), bool(json, "requireMacroPlanSurfaceTransition", false),
+        integer(json, "minMacroPlanSurfaceActions", 0), decimal(json, "minMacroPlanSurfaceDistance", 0D), decimal(json, "maxMacroBiomeUnknownFraction", 1D), integer(json, "maxTicksToPlanning", -1),
+        integer(json, "maxTicksToActuation", -1), integer(json, "maxTicksToPathingSeen", -1), integer(json, "maxTicksToMacroPlan", -1));
     }
 
-    boolean satisfied(LocalPlayer player, boolean pathingActive, boolean waterEncountered, boolean boatEncountered, boolean pathingSeen, boolean tookDamage) {
+    boolean satisfied(LocalPlayer player, boolean pathingActive, PlaytestRun run, GoalSpec goal) {
       return (!requirePathComplete || !pathingActive) && (!requireOnGround || player.onGround()) && (!requireNotInWater || !(player.isInWater() || player.isUnderWater() || player.isSwimming()))
-        && (!requireNoVehicle || player.getVehicle() == null) && (!requireWaterEncountered || waterEncountered) && (!requireBoatEncountered || boatEncountered)
-        && (!requireBoatRecovered || hasBoat(player)) && (!requirePathingSeen || pathingSeen) && (!requireNoDamage || !tookDamage);
+        && (!requireNoVehicle || player.getVehicle() == null) && (!requireWaterEncountered || run.sawWater()) && (!requireBoatEncountered || run.sawBoat())
+        && (!requireBoatRecovered || hasBoat(player)) && (!requirePathingSeen || run.sawPathing()) && (!requireNoDamage || !run.tookDamage()) && (!requireMacroRoute || run.sawMacroRoute())
+        && (!requirePlannedBoat || run.sawPlannedBoat()) && run.maxMacroBoatLegs() >= minMacroBoatLegs && run.maxMacroBoatDistance() + 1.0E-4D >= minMacroBoatDistance
+        && (maxRouteDestDistance < 0D || run.routeDestDistance(goal) <= maxRouteDestDistance) && (!requireMacroBiomeRoute || run.sawMacroBiomeRoute())
+        && (!requireMacroPlanBoat || run.sawMacroPlanBoat()) && run.maxMacroPlanBoatActions() >= minMacroPlanBoatActions && run.maxMacroPlanBoatDistance() + 1.0E-4D >= minMacroPlanBoatDistance
+        && (!requireMacroPlanSurfaceTransition || run.sawMacroPlanSurfaceTransition()) && run.maxMacroPlanSurfaceActions() >= minMacroPlanSurfaceActions
+        && run.maxMacroPlanSurfaceDistance() + 1.0E-4D >= minMacroPlanSurfaceDistance && run.macroBiomeUnknownFraction() <= maxMacroBiomeUnknownFraction
+        && (maxTicksToPlanning < 0 || run.firstPlanningTick() >= 0 && run.firstPlanningTick() <= maxTicksToPlanning)
+        && (maxTicksToActuation < 0 || run.firstActuationTick() >= 0 && run.firstActuationTick() <= maxTicksToActuation)
+        && (maxTicksToPathingSeen < 0 || run.firstPathingTick() >= 0 && run.firstPathingTick() <= maxTicksToPathingSeen)
+        && (maxTicksToMacroPlan < 0 || run.firstMacroPlanTick() >= 0 && run.firstMacroPlanTick() <= maxTicksToMacroPlan);
     }
 
     private static boolean hasBoat(LocalPlayer player) {

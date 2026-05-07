@@ -101,6 +101,9 @@ public class BlockStateInterface {
         return getFromChunk(chunk, x, y, z);
       }
     }
+    if (!Baritone.settings().chunkCaching.value) {
+      return AIR;
+    }
     // same idea here, skip the Long2ObjectOpenHashMap.get if at all possible
     // except here, it's 512x512 tiles instead of 16x16, so even better repetition
     CachedRegion cached = prevCached;
@@ -131,6 +134,9 @@ public class BlockStateInterface {
     if (prevChunk != null && !prevChunk.isEmpty()) {
       prev = prevChunk;
       return true;
+    }
+    if (!Baritone.settings().chunkCaching.value) {
+      return false;
     }
     CachedRegion prevRegion = prevCached;
     if (prevRegion != null && prevRegion.getX() == x >> 9 && prevRegion.getZ() == z >> 9) {
