@@ -179,7 +179,7 @@ public interface MovementHelper extends ActionCosts, Helper {
     if (block instanceof SnowLayerBlock) {
       // if they're cached as a top block, we don't know their metadata
       // default to true (mostly because it would otherwise make long distance pathing through snowy biomes impossible)
-      if (!bsi.worldContainsLoadedChunk(x, z)) {
+      if (!bsi.hasLivePathingData(x, z)) {
         return true;
       }
       // the check in BlockSnow.isPassable is layers < 5
@@ -300,7 +300,7 @@ public interface MovementHelper extends ActionCosts, Helper {
 
   static boolean replaceablePosition(int x, int z, BlockState state, BlockStateInterface bsi) {
     // as before, default to true (mostly because it would otherwise make long distance pathing through snowy biomes impossible)
-    if (!bsi.worldContainsLoadedChunk(x, z)) {
+    if (!bsi.hasLivePathingData(x, z)) {
       return true;
     }
     return state.getValue(SnowLayerBlock.LAYERS) == 1;

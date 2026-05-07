@@ -13,9 +13,8 @@ public class MacroSurfaceSessionsTest {
     BetterBlockPos start = new BetterBlockPos(543, 63, 145);
     BetterBlockPos goal = new BetterBlockPos(499, 64, 179);
     List<MacroActionInstance> loop = List.of(
-      action(MacroSurfaceTransition.enter(TransportMode.SWIM, new BetterBlockPos(568, 63, 136), new BetterBlockPos(567, 62, 137), 1)),
-      action(MacroSurfaceTransition.transit(TransportMode.SWIM, new BetterBlockPos(567, 62, 137), new BetterBlockPos(544, 62, 144), 1,
-        List.of(new BetterBlockPos(567, 62, 137), new BetterBlockPos(544, 62, 144)), 32D)),
+      action(MacroSurfaceTransition.enter(TransportMode.SWIM, new BetterBlockPos(568, 63, 136), new BetterBlockPos(567, 62, 137), 1)), action(MacroSurfaceTransition.transit(TransportMode.SWIM,
+        new BetterBlockPos(567, 62, 137), new BetterBlockPos(544, 62, 144), 1, List.of(new BetterBlockPos(567, 62, 137), new BetterBlockPos(544, 62, 144)), 32D)),
       action(MacroSurfaceTransition.exit(TransportMode.SWIM, new BetterBlockPos(544, 62, 144), start, 1)));
 
     assertEquals(-1, MacroSurfaceSessions.firstUsefulEnter(loop, start, goal));
@@ -26,8 +25,7 @@ public class MacroSurfaceSessionsTest {
   public void acceptsSurfaceRunsThatActuallyAdvanceTowardGoal() {
     BetterBlockPos start = new BetterBlockPos(653, 63, 135);
     BetterBlockPos goal = new BetterBlockPos(403, 62, -7);
-    List<MacroActionInstance> forward = List.of(
-      action(MacroSurfaceTransition.enter(TransportMode.SWIM, new BetterBlockPos(592, 63, 159), new BetterBlockPos(591, 62, 160), 2)),
+    List<MacroActionInstance> forward = List.of(action(MacroSurfaceTransition.enter(TransportMode.SWIM, new BetterBlockPos(592, 63, 159), new BetterBlockPos(591, 62, 160), 2)),
       action(MacroSurfaceTransition.transit(TransportMode.SWIM, new BetterBlockPos(591, 62, 160), new BetterBlockPos(567, 62, 137), 2,
         List.of(new BetterBlockPos(591, 62, 160), new BetterBlockPos(567, 62, 137)), 35D)),
       action(MacroSurfaceTransition.exit(TransportMode.SWIM, new BetterBlockPos(567, 62, 137), new BetterBlockPos(568, 63, 136), 2)));

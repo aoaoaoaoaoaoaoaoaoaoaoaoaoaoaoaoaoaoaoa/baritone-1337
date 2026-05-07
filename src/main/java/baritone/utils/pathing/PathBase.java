@@ -12,14 +12,14 @@ import net.minecraft.core.BlockPos;
 public abstract class PathBase implements IPath {
 
   @Override
-  public PathBase cutoffAtLoadedChunks(Object bsi0) {
+  public PathBase cutoffAtLiveChunks(Object bsi0) {
     if (!Baritone.settings().cutoffAtLoadBoundary.value) {
       return this;
     }
     BlockStateInterface bsi = (BlockStateInterface) bsi0;
     for (int i = 0; i < positions().size(); i++) {
       BlockPos pos = positions().get(i);
-      if (!bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ())) {
+      if (!bsi.hasLiveChunk(pos.getX(), pos.getZ())) {
         return new CutoffPath(this, i);
       }
     }

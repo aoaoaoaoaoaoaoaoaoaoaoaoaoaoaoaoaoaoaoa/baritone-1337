@@ -113,7 +113,7 @@ public final class BiomeFactAtlas {
   public static Optional<BiomeMacroCell> live(CalculationContext context, int cellX, int cellZ, int cellBlocks, int fallbackY) {
     int x = cellX * cellBlocks + cellBlocks / 2;
     int z = cellZ * cellBlocks + cellBlocks / 2;
-    if (!context.isLoaded(x, z)) {
+    if (!context.hasLiveChunk(x, z)) {
       return Optional.empty();
     }
     int surfaceY = Math.max(context.world.getMinY(), context.world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z));

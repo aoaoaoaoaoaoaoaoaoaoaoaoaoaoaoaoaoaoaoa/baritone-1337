@@ -65,7 +65,7 @@ public final class GoalTerminalPolicy {
   }
 
   private static OptionalInt surfaceWaterY(CalculationContext context, int x, int z) {
-    if (!context.isLoaded(x, z)) {
+    if (!context.hasPathingData(x, z)) {
       return OptionalInt.empty();
     }
     for (int y = context.world.getMaxY() - 2; y >= context.world.getMinY() + 1; y--) {
@@ -77,7 +77,7 @@ public final class GoalTerminalPolicy {
   }
 
   private static OptionalInt surfaceWaterY(IPlayerContext ctx, BlockStateInterface bsi, int x, int z) {
-    if (!bsi.isLoaded(x, z)) {
+    if (!bsi.hasPathingData(x, z)) {
       return OptionalInt.empty();
     }
     int minY = ctx.world().dimensionType().minY();
@@ -138,7 +138,7 @@ public final class GoalTerminalPolicy {
   }
 
   private static BetterBlockPos choose(CalculationContext context, int waterX, int waterY, int waterZ, int x, int z, BetterBlockPos incumbent, int incumbentDistance) {
-    if (!context.isLoaded(x, z)) {
+    if (!context.hasPathingData(x, z)) {
       return incumbent;
     }
     for (int dy : DRY_Y_OFFSETS_FROM_WATER) {
@@ -152,7 +152,7 @@ public final class GoalTerminalPolicy {
   }
 
   private static BetterBlockPos choose(BlockStateInterface bsi, int waterX, int waterY, int waterZ, int x, int z, BetterBlockPos incumbent, int incumbentDistance) {
-    if (!bsi.isLoaded(x, z)) {
+    if (!bsi.hasPathingData(x, z)) {
       return incumbent;
     }
     for (int dy : DRY_Y_OFFSETS_FROM_WATER) {

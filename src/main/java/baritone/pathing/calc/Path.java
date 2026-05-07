@@ -164,7 +164,7 @@ class Path extends PathBase {
       }
       return res;
     }
-    movements.forEach(m -> m.checkLoadedChunk(context));
+    movements.forEach(m -> m.recordFactProvenance(context));
     // more post processing here
     sanityCheck();
     return this;

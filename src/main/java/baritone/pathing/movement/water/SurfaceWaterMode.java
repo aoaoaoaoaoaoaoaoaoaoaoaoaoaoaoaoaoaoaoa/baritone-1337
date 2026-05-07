@@ -25,7 +25,7 @@ public sealed interface SurfaceWaterMode permits SurfaceWaterMode.Swim, SurfaceW
   record Swim() implements SurfaceWaterMode {
     @Override
     public boolean legal(CalculationContext context, int x, int y, int z) {
-      return context.isLoaded(x, z) && context.worldBorder.entirelyContains(x, z) && MovementHelper.surfaceSwimCell(context, x, y, z);
+      return context.hasPathingData(x, z) && context.worldBorder.entirelyContains(x, z) && MovementHelper.surfaceSwimCell(context, x, y, z);
     }
 
     @Override
@@ -45,8 +45,8 @@ public sealed interface SurfaceWaterMode permits SurfaceWaterMode.Swim, SurfaceW
       BlockState water = context.get(x, y, z);
       BlockState head = context.get(x, y + 1, z);
       BlockState canopy = context.get(x, y + 2, z);
-      return context.isLoaded(x, z) && context.worldBorder.entirelyContains(x, z) && MovementHelper.isWater(water) && MovementHelper.canSwimThrough(context, water) && !MovementHelper.isWater(head)
-        && MovementHelper.canMoveThrough(context, x, y + 1, z, head) && MovementHelper.canMoveThrough(context, x, y + 2, z, canopy);
+      return context.hasPathingData(x, z) && context.worldBorder.entirelyContains(x, z) && MovementHelper.isWater(water) && MovementHelper.canSwimThrough(context, water)
+        && !MovementHelper.isWater(head) && MovementHelper.canMoveThrough(context, x, y + 1, z, head) && MovementHelper.canMoveThrough(context, x, y + 2, z, canopy);
     }
 
     @Override
@@ -54,7 +54,7 @@ public sealed interface SurfaceWaterMode permits SurfaceWaterMode.Swim, SurfaceW
       BlockState body = context.get(x, y, z);
       BlockState head = context.get(x, y + 1, z);
       BlockState canopy = context.get(x, y + 2, z);
-      return context.isLoaded(x, z) && context.worldBorder.entirelyContains(x, z)
+      return context.hasPathingData(x, z) && context.worldBorder.entirelyContains(x, z)
         && (MovementHelper.isWater(body) && MovementHelper.canSwimThrough(context, body) || MovementHelper.canMoveThrough(context, x, y, z, body)) && !MovementHelper.isWater(head)
         && MovementHelper.canMoveThrough(context, x, y + 1, z, head) && MovementHelper.canMoveThrough(context, x, y + 2, z, canopy);
     }

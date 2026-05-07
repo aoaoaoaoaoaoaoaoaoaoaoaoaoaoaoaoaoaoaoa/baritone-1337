@@ -156,13 +156,13 @@ public final class MacroAtlas {
     int maxZ = minZ + cellBlocks - 1;
     int midX = minX + cellBlocks / 2;
     int midZ = minZ + cellBlocks / 2;
-    return context.isLoaded(midX, midZ) || context.isLoaded(minX, minZ) || context.isLoaded(maxX, minZ) || context.isLoaded(minX, maxZ) || context.isLoaded(maxX, maxZ);
+    return context.hasPathingData(midX, midZ) || context.hasPathingData(minX, minZ) || context.hasPathingData(maxX, minZ) || context.hasPathingData(minX, maxZ) || context.hasPathingData(maxX, maxZ);
   }
 
   private Optional<BiomeMacroCell> liveBiomeFact(int cellX, int cellZ) {
     int x = cellX * cellBlocks + cellBlocks / 2;
     int z = cellZ * cellBlocks + cellBlocks / 2;
-    if (!context.isLoaded(x, z)) {
+    if (!context.hasLiveChunk(x, z)) {
       return Optional.empty();
     }
     int surfaceY = Math.max(context.world.getMinY(), context.world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z));

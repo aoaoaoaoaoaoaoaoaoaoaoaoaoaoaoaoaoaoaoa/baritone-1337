@@ -21,7 +21,7 @@ final class MacroGoals {
     };
   }
 
-  static boolean destinationChunkLoaded(CalculationContext context, Goal goal) {
-    return pos(goal).filter(pos -> context.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ())).isPresent();
+  static boolean destinationChunkLive(CalculationContext context, Goal goal) {
+    return pos(goal).filter(pos -> context.bsi.hasLiveChunk(pos.getX(), pos.getZ())).isPresent();
   }
 }

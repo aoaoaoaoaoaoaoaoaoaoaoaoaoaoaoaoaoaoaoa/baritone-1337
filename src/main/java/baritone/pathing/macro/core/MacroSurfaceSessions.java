@@ -13,7 +13,8 @@ final class MacroSurfaceSessions {
   static int firstUsefulEnter(List<MacroActionInstance> actions, BetterBlockPos start, BetterBlockPos goal) {
     for (int i = 0; i < actions.size(); i++) {
       MacroSurfaceTransition transition = actions.get(i).surfaceTransition();
-      if (transition != null && transition.stage() == MacroSurfaceTransitionStage.ENTER && completeRunDistance(actions, i) >= MIN_USEFUL_DISTANCE && runProgress(actions, i, start, goal) >= MIN_USEFUL_PROGRESS) {
+      if (transition != null && transition.stage() == MacroSurfaceTransitionStage.ENTER && completeRunDistance(actions, i) >= MIN_USEFUL_DISTANCE
+        && runProgress(actions, i, start, goal) >= MIN_USEFUL_PROGRESS) {
         return i;
       }
     }

@@ -1,6 +1,8 @@
 .DS_Store
 **/*.swp
 *.class
+__pycache__/
+*.py[cod]
 
 .gradle/
 build/

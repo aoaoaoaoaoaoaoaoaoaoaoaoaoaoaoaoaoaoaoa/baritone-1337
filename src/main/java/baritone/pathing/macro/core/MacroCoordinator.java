@@ -13,7 +13,7 @@ public final class MacroCoordinator {
   }
 
   public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal) {
-    if (MacroGoals.destinationChunkLoaded(context, goal)) {
+    if (MacroGoals.destinationChunkLive(context, goal)) {
       return Optional.empty();
     }
     Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal);

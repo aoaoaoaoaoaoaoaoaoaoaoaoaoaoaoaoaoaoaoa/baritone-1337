@@ -415,7 +415,7 @@ public final class Settings {
 
   // a bunch of obscure internal A* settings that you probably don't want to change
   /**
-   * The maximum number of times it will fetch outside loaded or cached chunks before assuming that
+   * The maximum number of times it may touch the boundary of known pathing facts before assuming that
    * pathing has reached the end of the known area, and should therefore stop.
    */
   public final Setting<Integer> pathingMaxChunkBorderFetch = new Setting<>(50);
@@ -474,8 +474,8 @@ public final class Settings {
   public final Setting<Boolean> enterPortal = new Setting<>(true);
 
   /**
-   * After calculating a path (potentially through cached chunks), artificially cut it off to just the part that is
-   * entirely within currently loaded chunks. Improves path safety because cached chunks are heavily simplified.
+   * After calculating a path through live and cached pathing facts, artificially cut it off to the prefix that is
+   * entirely within currently live chunks. Improves path safety because cached chunks are heavily simplified.
    * <p>
    * This is much safer to leave off now, and makes pathing more efficient. More explanation in the issue.
    *
@@ -659,7 +659,7 @@ public final class Settings {
   public final Setting<Boolean> allowOvershootDiagonalDescend = new Setting<>(true);
 
   /**
-   * If your goal is a GoalBlock in an unloaded chunk, assume it's far enough away that the Y coord
+   * If your goal is a GoalBlock in a chunk without live facts, assume it's far enough away that the Y coord
    * doesn't matter yet, and replace it with a GoalXZ to the same place before calculating a path.
    * Once a segment ends within chunk load range of the GoalBlock, it will go back to normal behavior
    * of considering the Y coord. The reasoning is that if your X and Z are 10,000 blocks away,
@@ -1042,7 +1042,7 @@ public final class Settings {
   public final Setting<Boolean> exploreForBlocks = new Setting<>(true);
 
   /**
-   * While exploring the world, offset the closest unloaded chunk by this much in both axes.
+   * While exploring the world, offset the closest unlive chunk by this much in both axes.
    * <p>
    * This can result in more efficient loading, if you set this to the render distance.
    */
@@ -1433,7 +1433,7 @@ public final class Settings {
   public final Setting<Color> colorMacroBiomePlan = new Setting<>(new Color(255, 220, 64));
 
   /**
-   * The color of macro cells grounded in currently loaded chunks.
+   * The color of macro cells grounded in live chunk facts.
    */
   public final Setting<Color> colorMacroLivePlan = new Setting<>(new Color(64, 255, 96));
 

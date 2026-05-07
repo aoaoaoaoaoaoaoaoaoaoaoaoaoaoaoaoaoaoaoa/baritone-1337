@@ -50,7 +50,7 @@ public abstract class Movement implements IMovement, MovementHelper {
 
   private Set<BetterBlockPos> validPositionsCached = null;
 
-  private Boolean calculatedWhileLoaded;
+  private Boolean calculatedFromLiveFacts;
 
   protected Movement(IBaritone baritone, BetterBlockPos src, BetterBlockPos dest, BetterBlockPos[] toBreak, BetterBlockPos toPlace) {
     this.baritone = baritone;
@@ -291,13 +291,13 @@ public abstract class Movement implements IMovement, MovementHelper {
   @Override
   public BlockPos getDirection() { return getDest().subtract(getSrc()); }
 
-  public void checkLoadedChunk(CalculationContext context) {
-    calculatedWhileLoaded = context.bsi.worldContainsLoadedChunk(dest.x, dest.z);
+  public void recordFactProvenance(CalculationContext context) {
+    calculatedFromLiveFacts = context.bsi.hasLivePathingData(dest.x, dest.z);
   }
 
   @Override
-  public boolean calculatedWhileLoaded() {
-    return calculatedWhileLoaded;
+  public boolean calculatedFromLiveFacts() {
+    return calculatedFromLiveFacts;
   }
 
   @Override

@@ -135,8 +135,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         int newX = currentNode.x + probe.dx();
         int newY = currentNode.y + probe.dy();
         int newZ = currentNode.z + probe.dz();
-        if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.isLoaded(newX, newZ)) {
-          // only need to check if the destination is a loaded chunk if it's in a different chunk than the start of the movement
+        if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
+          // only need to check if the destination is a live chunk if it's in a different chunk than the start of the movement
           touchesExactBoundary = bestExitGoal != null;
           if (bestExitGoal == null && !spec.dynamicXZ()) { // only increment the legacy segment cutoff if this is not a scored-boundary search
             numEmptyChunk++;

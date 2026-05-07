@@ -121,7 +121,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
   private PathCalculationResult materialize(Optional<IPath> rawPath, boolean profilePhases, boolean logPhases) {
     long postProcessNanos = 0;
-    long loadedChunkCutoffNanos = 0;
+    long liveChunkCutoffNanos = 0;
     long staticCutoffNanos = 0;
     IPath path = null;
     if (rawPath.isPresent()) {
@@ -136,16 +136,16 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     }
     int previousLength = path.length();
     long phaseStart = profilePhases && profile != null ? System.nanoTime() : 0;
-    path = path.cutoffAtLoadedChunks(context.bsi);
+    path = path.cutoffAtLiveChunks(context.bsi);
     if (profilePhases && profile != null) {
-      loadedChunkCutoffNanos = System.nanoTime() - phaseStart;
+      liveChunkCutoffNanos = System.nanoTime() - phaseStart;
     }
     if (logPhases) {
       if (path.length() < previousLength) {
-        Helper.HELPER.logDebug("Cutting off path at edge of loaded chunks");
+        Helper.HELPER.logDebug("Cutting off path at edge of live chunks");
         Helper.HELPER.logDebug("Length decreased by " + (previousLength - path.length()));
       } else {
-        Helper.HELPER.logDebug("Path ends within loaded chunks");
+        Helper.HELPER.logDebug("Path ends within live chunks");
       }
     }
     previousLength = path.length();
@@ -153,7 +153,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     path = path.staticCutoff(goal);
     if (profilePhases && profile != null) {
       staticCutoffNanos = System.nanoTime() - phaseStart;
-      profile.finishPathPhases(postProcessNanos, loadedChunkCutoffNanos, staticCutoffNanos);
+      profile.finishPathPhases(postProcessNanos, liveChunkCutoffNanos, staticCutoffNanos);
     }
     if (logPhases && path.length() < previousLength) {
       Helper.HELPER.logDebug("Static cutoff " + previousLength + " to " + path.length());

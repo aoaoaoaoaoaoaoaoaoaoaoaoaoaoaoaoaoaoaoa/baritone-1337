@@ -145,7 +145,7 @@ public final class PathingProfiler {
     private long heapNanos;
     private long nodeMapNanos;
     private long postProcessNanos;
-    private long loadedChunkCutoffNanos;
+    private long liveChunkCutoffNanos;
     private long staticCutoffNanos;
     private String searchStopReason = "not_recorded";
 
@@ -203,9 +203,9 @@ public final class PathingProfiler {
       this.nodeMapNanos = nodeMapNanos;
     }
 
-    public void finishPathPhases(long postProcessNanos, long loadedChunkCutoffNanos, long staticCutoffNanos) {
+    public void finishPathPhases(long postProcessNanos, long liveChunkCutoffNanos, long staticCutoffNanos) {
       this.postProcessNanos = postProcessNanos;
-      this.loadedChunkCutoffNanos = loadedChunkCutoffNanos;
+      this.liveChunkCutoffNanos = liveChunkCutoffNanos;
       this.staticCutoffNanos = staticCutoffNanos;
     }
 
@@ -244,7 +244,7 @@ public final class PathingProfiler {
       inlineField(json, "heapNanos", heapNanos).append(", ");
       inlineField(json, "nodeMapNanos", nodeMapNanos).append(", ");
       inlineField(json, "postProcessNanos", postProcessNanos).append(", ");
-      inlineField(json, "loadedChunkCutoffNanos", loadedChunkCutoffNanos).append(", ");
+      inlineField(json, "liveChunkCutoffNanos", liveChunkCutoffNanos).append(", ");
       inlineField(json, "staticCutoffNanos", staticCutoffNanos);
       json.append("},\n");
       json.append("  \"moves\": [\n");

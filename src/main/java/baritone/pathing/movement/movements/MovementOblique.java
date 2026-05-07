@@ -107,7 +107,7 @@ public final class MovementOblique extends Movement {
   }
 
   private static FlatCell clearFlatCell(CalculationContext context, int x, int y, int z) {
-    if (!context.isLoaded(x, z) || !context.worldBorder.entirelyContains(x, z)) {
+    if (!context.hasPathingData(x, z) || !context.worldBorder.entirelyContains(x, z)) {
       return FlatCell.BLOCKED;
     }
     BlockState feet = context.get(x, y, z);

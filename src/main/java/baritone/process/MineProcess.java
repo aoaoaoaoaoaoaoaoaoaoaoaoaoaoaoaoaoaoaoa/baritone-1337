@@ -391,8 +391,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     });
     List<BlockPos> locs = locs2.stream().distinct()
 
-      // remove any that are within loaded chunks that aren't actually what we want
-      .filter(pos -> !ctx.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ()) || filter.has(ctx.get(pos.getX(), pos.getY(), pos.getZ())) || dropped.contains(pos))
+      // remove any that are within live chunks that aren't actually what we want
+      .filter(pos -> !ctx.bsi.hasLiveChunk(pos.getX(), pos.getZ()) || filter.has(ctx.get(pos.getX(), pos.getY(), pos.getZ())) || dropped.contains(pos))
 
       // remove any that are implausible to mine (encased in bedrock, or touching lava)
       .filter(pos -> MineProcess.plausibleToBreak(ctx, pos))

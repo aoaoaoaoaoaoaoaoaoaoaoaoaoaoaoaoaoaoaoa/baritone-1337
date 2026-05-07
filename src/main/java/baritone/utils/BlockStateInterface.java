@@ -6,6 +6,7 @@ import baritone.cache.CachedRegion;
 import baritone.cache.WorldData;
 import baritone.utils.accessor.IClientChunkProvider;
 import baritone.utils.pathing.BetterWorldBorder;
+import baritone.utils.pathing.ChunkFactState;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
@@ -17,11 +18,6 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
-/**
- * Wraps get for chuck caching capability
- *
- * @author leijurv
- */
 public class BlockStateInterface {
 
   private final ClientChunkCache provider;
@@ -59,8 +55,23 @@ public class BlockStateInterface {
     this.access = new BlockStateInterfaceAccessWrapper(this);
   }
 
-  public boolean worldContainsLoadedChunk(int blockX, int blockZ) {
-    return provider.hasChunk(blockX >> 4, blockZ >> 4);
+  public ChunkFactState chunkFactState(int blockX, int blockZ) {
+    if (livePathingChunk(blockX, blockZ) != null) {
+      return ChunkFactState.LIVE;
+    }
+    return cachedChunk(blockX, blockZ) ? ChunkFactState.CACHED : ChunkFactState.ABSENT;
+  }
+
+  public boolean hasLiveChunk(int blockX, int blockZ) {
+    return liveChunk(blockX, blockZ) != null;
+  }
+
+  public boolean hasLivePathingData(int blockX, int blockZ) {
+    return chunkFactState(blockX, blockZ).live();
+  }
+
+  public boolean hasPathingData(int blockX, int blockZ) {
+    return chunkFactState(blockX, blockZ).pathingData();
   }
 
   public static Block getBlock(IPlayerContext ctx, BlockPos pos) { // won't be called from the pathing thread because the pathing thread doesn't make a single blockpos pog
@@ -84,39 +95,18 @@ public class BlockStateInterface {
       return AIR;
     }
 
-    if (useTheRealWorld) {
-      LevelChunk cached = prev;
-      // there's great cache locality in block state lookups
-      // generally it's within each movement
-      // if it's the same chunk as last time
-      // we can just skip the mc.world.getChunk lookup
-      // which is a Long2ObjectOpenHashMap.get
-      // see issue #113
-      if (cached != null && cached.getPos().x() == x >> 4 && cached.getPos().z() == z >> 4) {
-        return getFromChunk(cached, x, y, z);
-      }
-      LevelChunk chunk = provider.getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
-      if (chunk != null && !chunk.isEmpty()) {
-        prev = chunk;
-        return getFromChunk(chunk, x, y, z);
-      }
+    LevelChunk live = livePathingChunk(x, z);
+    if (live != null) {
+      return getFromChunk(live, x, y, z);
     }
     if (!Baritone.settings().chunkCaching.value) {
       return AIR;
     }
     // same idea here, skip the Long2ObjectOpenHashMap.get if at all possible
     // except here, it's 512x512 tiles instead of 16x16, so even better repetition
-    CachedRegion cached = prevCached;
-    if (cached == null || cached.getX() != x >> 9 || cached.getZ() != z >> 9) {
-      if (worldData == null) {
-        return AIR;
-      }
-      CachedRegion region = worldData.cache.getRegion(x >> 9, z >> 9);
-      if (region == null) {
-        return AIR;
-      }
-      prevCached = region;
-      cached = region;
+    CachedRegion cached = cachedRegion(x, z);
+    if (cached == null) {
+      return AIR;
     }
     BlockState type = cached.getBlock(x & 511, y + world.dimensionType().minY(), z & 511);
     if (type == null) {
@@ -125,32 +115,48 @@ public class BlockStateInterface {
     return type;
   }
 
-  public boolean isLoaded(int x, int z) {
-    LevelChunk prevChunk = prev;
-    if (prevChunk != null && prevChunk.getPos().x() == x >> 4 && prevChunk.getPos().z() == z >> 4) {
-      return true;
+  private LevelChunk livePathingChunk(int x, int z) {
+    if (!useTheRealWorld) {
+      return null;
     }
-    prevChunk = provider.getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
-    if (prevChunk != null && !prevChunk.isEmpty()) {
-      prev = prevChunk;
-      return true;
+    return liveChunk(x, z);
+  }
+
+  private LevelChunk liveChunk(int x, int z) {
+    LevelChunk cached = prev;
+    if (cached != null && cached.getPos().x() == x >> 4 && cached.getPos().z() == z >> 4) {
+      return cached;
     }
+    LevelChunk chunk = provider.getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
+    if (chunk == null || chunk.isEmpty()) {
+      return null;
+    }
+    prev = chunk;
+    return chunk;
+  }
+
+  private boolean cachedChunk(int x, int z) {
+    CachedRegion region = cachedRegion(x, z);
+    return region != null && region.isCached(x & 511, z & 511);
+  }
+
+  private CachedRegion cachedRegion(int x, int z) {
     if (!Baritone.settings().chunkCaching.value) {
-      return false;
+      return null;
     }
     CachedRegion prevRegion = prevCached;
     if (prevRegion != null && prevRegion.getX() == x >> 9 && prevRegion.getZ() == z >> 9) {
-      return prevRegion.isCached(x & 511, z & 511);
+      return prevRegion;
     }
     if (worldData == null) {
-      return false;
+      return null;
     }
     prevRegion = worldData.cache.getRegion(x >> 9, z >> 9);
     if (prevRegion == null) {
-      return false;
+      return null;
     }
     prevCached = prevRegion;
-    return prevRegion.isCached(x & 511, z & 511);
+    return prevRegion;
   }
 
   // get the block at x,y,z from this chunk WITHOUT creating a single blockpos object

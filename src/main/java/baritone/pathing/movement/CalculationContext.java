@@ -11,6 +11,7 @@ import baritone.pathing.movement.water.WaterTransportPolicy;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
+import baritone.utils.pathing.ChunkFactState;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -103,8 +104,20 @@ public class CalculationContext {
     return bsi.get0(x, y, z); // laughs maniacally
   }
 
-  public boolean isLoaded(int x, int z) {
-    return bsi.isLoaded(x, z);
+  public ChunkFactState chunkFactState(int x, int z) {
+    return bsi.chunkFactState(x, z);
+  }
+
+  public boolean hasLiveChunk(int x, int z) {
+    return bsi.hasLiveChunk(x, z);
+  }
+
+  public boolean hasLivePathingData(int x, int z) {
+    return bsi.hasLivePathingData(x, z);
+  }
+
+  public boolean hasPathingData(int x, int z) {
+    return bsi.hasPathingData(x, z);
   }
 
   public BlockState get(BlockPos pos) {

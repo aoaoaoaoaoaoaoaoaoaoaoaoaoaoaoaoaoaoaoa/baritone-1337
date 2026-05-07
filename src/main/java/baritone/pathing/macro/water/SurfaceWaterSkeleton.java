@@ -170,7 +170,7 @@ public final class SurfaceWaterSkeleton {
   }
 
   private static boolean currentWaterborne(MacroExpansionContext context, BetterBlockPos start) {
-    if (!context.calculation().worldBorder.entirelyContains(start.x, start.z) || !context.calculation().isLoaded(start.x, start.z)) {
+    if (!context.calculation().worldBorder.entirelyContains(start.x, start.z) || !context.calculation().hasPathingData(start.x, start.z)) {
       return false;
     }
     for (int dy = -1; dy <= 1; dy++) {
@@ -182,7 +182,7 @@ public final class SurfaceWaterSkeleton {
   }
 
   private static boolean currentDryStable(MacroExpansionContext context, BetterBlockPos start) {
-    if (!context.calculation().worldBorder.entirelyContains(start.x, start.z) || !context.calculation().isLoaded(start.x, start.z)) {
+    if (!context.calculation().worldBorder.entirelyContains(start.x, start.z) || !context.calculation().hasPathingData(start.x, start.z)) {
       return false;
     }
     BlockState feet = context.calculation().get(start.x, start.y, start.z);
@@ -283,7 +283,7 @@ public final class SurfaceWaterSkeleton {
         return true;
       }
     }
-    if (!context.calculation().worldBorder.entirelyContains(x, z) || !context.calculation().isLoaded(x, z)) {
+    if (!context.calculation().worldBorder.entirelyContains(x, z) || !context.calculation().hasPathingData(x, z)) {
       return false;
     }
     BlockState feet = context.calculation().get(x, dryY, z);

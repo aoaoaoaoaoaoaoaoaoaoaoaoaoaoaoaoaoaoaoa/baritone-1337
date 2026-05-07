@@ -273,11 +273,12 @@ public final class SurfaceWaterAtlas {
   }
 
   private static boolean knownChunk(CalculationContext context, int minX, int maxX, int minZ, int maxZ) {
-    if (context.bsi.worldContainsLoadedChunk(minX, minZ)) {
+    if (context.hasPathingData(minX, minZ)) {
       return true;
     }
     int centerX = Math.floorDiv(minX + maxX, 2);
     int centerZ = Math.floorDiv(minZ + maxZ, 2);
-    return context.isLoaded(centerX, centerZ) || context.isLoaded(minX, minZ) || context.isLoaded(maxX, minZ) || context.isLoaded(minX, maxZ) || context.isLoaded(maxX, maxZ);
+    return context.hasPathingData(centerX, centerZ) || context.hasPathingData(minX, minZ) || context.hasPathingData(maxX, minZ) || context.hasPathingData(minX, maxZ)
+      || context.hasPathingData(maxX, maxZ);
   }
 }

@@ -337,7 +337,7 @@ public final class MacroPlanner {
       for (int dz = -SURFACE_WATER_RESCUE_RADIUS; dz <= SURFACE_WATER_RESCUE_RADIUS; dz++) {
         int x = start.x + dx;
         int z = start.z + dz;
-        if (!context.worldBorder.entirelyContains(x, z) || !context.isLoaded(x, z)) {
+        if (!context.worldBorder.entirelyContains(x, z) || !context.hasPathingData(x, z)) {
           continue;
         }
         for (int y = minY; y <= maxY; y++) {

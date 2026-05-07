@@ -246,8 +246,8 @@ final class PathRouteLegController implements RouteLegController, Helper {
       }*/
       if (pathPosition < path.movements().size() - 1) {
         IMovement next = path.movements().get(pathPosition + 1);
-        if (!behavior.baritone.bsi.worldContainsLoadedChunk(next.getDest().x, next.getDest().z)) {
-          logDebug("Pausing since destination is at edge of loaded chunks");
+        if (!behavior.baritone.bsi.hasLiveChunk(next.getDest().x, next.getDest().z)) {
+          logDebug("Pausing since destination is at edge of live chunks");
           clearKeys();
           return true;
         }
@@ -271,8 +271,8 @@ final class PathRouteLegController implements RouteLegController, Helper {
         cancel();
         return true;
       }
-      if (!movement.calculatedWhileLoaded() && currentCost - currentMovementOriginalCostEstimate > policy.maxCostIncrease() && canCancel) {
-        // don't do this if the movement was calculated while loaded
+      if (!movement.calculatedFromLiveFacts() && currentCost - currentMovementOriginalCostEstimate > policy.maxCostIncrease() && canCancel) {
+        // don't do this if the movement was calculated from live facts
         // that means that this isn't a cache error, it's just part of the path interfering with a later part
         logDebug("Original cost " + currentMovementOriginalCostEstimate + " current cost " + currentCost + ". Cancelling.");
         cancel();

@@ -855,8 +855,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (current == null || current.getPath() != null || next == null || next.src().equals(current.dest())) {
       return false;
     }
-    logDebug("Discarding non-frontier queued tail while executing certified surface route: next=" + next.src() + "->" + next.dest() + ", current=" + current.src() + "->" + current.dest()
-      + ", feet=" + ctx.playerFeet());
+    logDebug("Discarding non-frontier queued tail while executing certified surface route: next=" + next.src() + "->" + next.dest() + ", current=" + current.src() + "->" + current.dest() + ", feet="
+      + ctx.playerFeet());
     queuePathEvent(PathEvent.DISCARD_NEXT);
     next = null;
     lastTailPlanTicket = null;
@@ -877,8 +877,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         if (planningFrom(start)) {
           return true;
         }
-        logDebug(dirty ? "Preempting future-anchor calculation; certified route facts changed near " + start
-          : "Preempting future-anchor calculation; improving route after new facts from " + start);
+        logDebug(dirty ? "Preempting future-anchor calculation; certified route facts changed near " + start : "Preempting future-anchor calculation; improving route after new facts from " + start);
         cancelPlanningCalculation();
       }
       if (dirty) {
@@ -890,8 +889,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       lastOpportunityPlanEpoch = worldFactEpoch;
       lastOpportunityPlanTick = ticksElapsedSoFar;
       lastOpportunityPlanStart = start;
-      logDebug(dirty ? "Recertifying current route because its factual footprint changed near " + start + "..."
-        : "Opportunistically refining current route after new facts from " + start + "...");
+      logDebug(dirty ? "Recertifying current route because its factual footprint changed near " + start + "..." : "Opportunistically refining current route after new facts from " + start + "...");
       queuePathEvent(PathEvent.NEXT_SEGMENT_CALC_STARTED);
       findPathInNewThread(start, false, context);
       return true;
@@ -1230,7 +1228,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
     if (Baritone.settings().simplifyUnloadedYCoord.value && terminalGoal instanceof IGoalRenderPos) {
       BlockPos pos = ((IGoalRenderPos) terminalGoal).getGoalPos();
-      if (transformed == terminalGoal && !context.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ())) {
+      if (transformed == terminalGoal && !context.bsi.hasLiveChunk(pos.getX(), pos.getZ())) {
         transformed = new GoalXZ(pos.getX(), pos.getZ());
       }
     }
