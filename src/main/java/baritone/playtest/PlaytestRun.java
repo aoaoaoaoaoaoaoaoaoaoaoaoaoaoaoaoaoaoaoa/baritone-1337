@@ -75,6 +75,8 @@ final class PlaytestRun {
   private boolean sawMacroPlanSurfaceTransition;
   private int maxMacroPlanSurfaceActions;
   private double maxMacroPlanSurfaceDistance;
+  private boolean sawMacroPlanPortal;
+  private int maxMacroPlanPortalActions;
   private int maxMacroBiomeFactualCells;
   private int maxMacroBiomeUnknownCells;
   private int maxMacroBiomeLiveCells;
@@ -256,6 +258,14 @@ final class PlaytestRun {
     return maxMacroPlanSurfaceDistance;
   }
 
+  boolean sawMacroPlanPortal() {
+    return sawMacroPlanPortal;
+  }
+
+  int maxMacroPlanPortalActions() {
+    return maxMacroPlanPortalActions;
+  }
+
   double routeDestDistance(PlaytestScenario.GoalSpec goal) {
     return bestRouteDestDistance;
   }
@@ -382,12 +392,15 @@ final class PlaytestRun {
     double boatDistance = plan.boatDistance();
     int surfaceActions = plan.surfaceTransitionActions();
     double surfaceDistance = plan.surfaceTransitionDistance();
+    int portalActions = plan.portalActions();
     sawMacroPlanBoat |= boatActions > 0;
     sawMacroPlanSurfaceTransition |= surfaceActions > 0;
+    sawMacroPlanPortal |= portalActions > 0;
     maxMacroPlanBoatActions = Math.max(maxMacroPlanBoatActions, boatActions);
     maxMacroPlanBoatDistance = Math.max(maxMacroPlanBoatDistance, boatDistance);
     maxMacroPlanSurfaceActions = Math.max(maxMacroPlanSurfaceActions, surfaceActions);
     maxMacroPlanSurfaceDistance = Math.max(maxMacroPlanSurfaceDistance, surfaceDistance);
+    maxMacroPlanPortalActions = Math.max(maxMacroPlanPortalActions, portalActions);
     maxMacroBiomeFactualCells = Math.max(maxMacroBiomeFactualCells, plan.factualCells());
     maxMacroBiomeUnknownCells = Math.max(maxMacroBiomeUnknownCells, plan.unknownCells());
     maxMacroBiomeLiveCells = Math.max(maxMacroBiomeLiveCells, plan.liveCells());
@@ -491,6 +504,8 @@ final class PlaytestRun {
       json.addProperty("sawMacroPlanSurfaceTransition", sawMacroPlanSurfaceTransition);
       json.addProperty("maxMacroPlanSurfaceActions", maxMacroPlanSurfaceActions);
       json.addProperty("maxMacroPlanSurfaceDistance", maxMacroPlanSurfaceDistance);
+      json.addProperty("sawMacroPlanPortal", sawMacroPlanPortal);
+      json.addProperty("maxMacroPlanPortalActions", maxMacroPlanPortalActions);
       json.addProperty("maxMacroBiomeFactualCells", maxMacroBiomeFactualCells);
       json.addProperty("maxMacroBiomeUnknownCells", maxMacroBiomeUnknownCells);
       json.addProperty("maxMacroBiomeLiveCells", maxMacroBiomeLiveCells);

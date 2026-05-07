@@ -109,16 +109,17 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
   public record Acceptance(boolean requirePathComplete, boolean requireOnGround, boolean requireNotInWater, boolean requireNoVehicle, boolean requireWaterEncountered, boolean requireBoatEncountered,
     boolean requireBoatRecovered, boolean requirePathingSeen, boolean requireNoDamage, boolean requireMacroRoute, boolean requirePlannedBoat, int minMacroBoatLegs, double minMacroBoatDistance,
     double maxRouteDestDistance, boolean requireMacroBiomeRoute, boolean requireMacroPlanBoat, int minMacroPlanBoatActions, double minMacroPlanBoatDistance, boolean requireMacroPlanSurfaceTransition,
-    int minMacroPlanSurfaceActions, double minMacroPlanSurfaceDistance, double maxMacroBiomeUnknownFraction, int maxTicksToPlanning, int maxTicksToActuation, int maxTicksToPathingSeen,
-    int maxTicksToMacroPlan) {
+    int minMacroPlanSurfaceActions, double minMacroPlanSurfaceDistance, boolean requireMacroPlanPortal, int minMacroPlanPortalActions, double maxMacroBiomeUnknownFraction, int maxTicksToPlanning,
+    int maxTicksToActuation, int maxTicksToPathingSeen, int maxTicksToMacroPlan) {
     static Acceptance parse(JsonObject json) {
       return new Acceptance(bool(json, "requirePathComplete", false), bool(json, "requireOnGround", false), bool(json, "requireNotInWater", false), bool(json, "requireNoVehicle", false),
         bool(json, "requireWaterEncountered", false), bool(json, "requireBoatEncountered", false), bool(json, "requireBoatRecovered", false), bool(json, "requirePathingSeen", false),
         bool(json, "requireNoDamage", true), bool(json, "requireMacroRoute", false), bool(json, "requirePlannedBoat", false), integer(json, "minMacroBoatLegs", 0),
         decimal(json, "minMacroBoatDistance", 0D), decimal(json, "maxRouteDestDistance", -1D), bool(json, "requireMacroBiomeRoute", false), bool(json, "requireMacroPlanBoat", false),
         integer(json, "minMacroPlanBoatActions", 0), decimal(json, "minMacroPlanBoatDistance", 0D), bool(json, "requireMacroPlanSurfaceTransition", false),
-        integer(json, "minMacroPlanSurfaceActions", 0), decimal(json, "minMacroPlanSurfaceDistance", 0D), decimal(json, "maxMacroBiomeUnknownFraction", 1D), integer(json, "maxTicksToPlanning", -1),
-        integer(json, "maxTicksToActuation", -1), integer(json, "maxTicksToPathingSeen", -1), integer(json, "maxTicksToMacroPlan", -1));
+        integer(json, "minMacroPlanSurfaceActions", 0), decimal(json, "minMacroPlanSurfaceDistance", 0D), bool(json, "requireMacroPlanPortal", false), integer(json, "minMacroPlanPortalActions", 0),
+        decimal(json, "maxMacroBiomeUnknownFraction", 1D), integer(json, "maxTicksToPlanning", -1), integer(json, "maxTicksToActuation", -1), integer(json, "maxTicksToPathingSeen", -1),
+        integer(json, "maxTicksToMacroPlan", -1));
     }
 
     boolean satisfied(LocalPlayer player, boolean pathingActive, PlaytestRun run, GoalSpec goal) {
@@ -129,7 +130,8 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
         && (maxRouteDestDistance < 0D || run.routeDestDistance(goal) <= maxRouteDestDistance) && (!requireMacroBiomeRoute || run.sawMacroBiomeRoute())
         && (!requireMacroPlanBoat || run.sawMacroPlanBoat()) && run.maxMacroPlanBoatActions() >= minMacroPlanBoatActions && run.maxMacroPlanBoatDistance() + 1.0E-4D >= minMacroPlanBoatDistance
         && (!requireMacroPlanSurfaceTransition || run.sawMacroPlanSurfaceTransition()) && run.maxMacroPlanSurfaceActions() >= minMacroPlanSurfaceActions
-        && run.maxMacroPlanSurfaceDistance() + 1.0E-4D >= minMacroPlanSurfaceDistance && run.macroBiomeUnknownFraction() <= maxMacroBiomeUnknownFraction
+        && run.maxMacroPlanSurfaceDistance() + 1.0E-4D >= minMacroPlanSurfaceDistance && (!requireMacroPlanPortal || run.sawMacroPlanPortal())
+        && run.maxMacroPlanPortalActions() >= minMacroPlanPortalActions && run.macroBiomeUnknownFraction() <= maxMacroBiomeUnknownFraction
         && (maxTicksToPlanning < 0 || run.firstPlanningTick() >= 0 && run.firstPlanningTick() <= maxTicksToPlanning)
         && (maxTicksToActuation < 0 || run.firstActuationTick() >= 0 && run.firstActuationTick() <= maxTicksToActuation)
         && (maxTicksToPathingSeen < 0 || run.firstPathingTick() >= 0 && run.firstPathingTick() <= maxTicksToPathingSeen)

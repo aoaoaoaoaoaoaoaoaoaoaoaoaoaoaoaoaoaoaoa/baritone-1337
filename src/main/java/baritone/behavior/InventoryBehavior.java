@@ -16,6 +16,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.Block;
@@ -182,6 +183,32 @@ public final class InventoryBehavior extends Behavior implements Helper {
       }
     }
     return false;
+  }
+
+  public int obsidianBlocks() {
+    int obsidian = 0;
+    for (ItemStack stack : portalInventoryStacks()) {
+      if (stack.is(Items.OBSIDIAN)) {
+        obsidian += stack.getCount();
+      }
+    }
+    return obsidian;
+  }
+
+  public int portalIgnitionUses() {
+    int ignitionUses = 0;
+    for (ItemStack stack : portalInventoryStacks()) {
+      if (stack.is(Items.FLINT_AND_STEEL)) {
+        ignitionUses += Math.max(0, stack.getMaxDamage() - stack.getDamageValue());
+      }
+    }
+    return ignitionUses;
+  }
+
+  private java.util.List<ItemStack> portalInventoryStacks() {
+    ArrayList<ItemStack> stacks = new ArrayList<>(ctx.player().getInventory().getNonEquipmentItems());
+    stacks.add(ctx.player().getItemBySlot(EquipmentSlot.OFFHAND));
+    return stacks;
   }
 
   private static boolean isBoat(ItemStack stack) {

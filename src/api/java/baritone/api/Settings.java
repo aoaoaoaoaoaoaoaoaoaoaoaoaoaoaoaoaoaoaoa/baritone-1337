@@ -637,6 +637,31 @@ public final class Settings {
   public final Setting<Boolean> macroBoatRequiresWaterBelow = new Setting<>(false);
 
   /**
+   * Enable Nether portal overlay options in macro routing.
+   */
+  public final Setting<Boolean> macroNether = new Setting<>(true);
+
+  /**
+   * Fallback Nether traversal ticks per block until the empirical Nether study supersedes it.
+   */
+  public final Setting<Double> macroNetherTicksPerBlock = new Setting<>(6D);
+
+  /**
+   * Fixed tick cost for waiting through a portal transition.
+   */
+  public final Setting<Double> macroNetherPortalUseCost = new Setting<>(120D);
+
+  /**
+   * Fixed tick/resource penalty for constructing and lighting one Nether portal.
+   */
+  public final Setting<Double> macroNetherPortalBuildCost = new Setting<>(2400D);
+
+  /**
+   * Live/cached portal and obsidian-frame scan radius for macro portal sites.
+   */
+  public final Setting<Integer> macroNetherPortalScanBlocks = new Setting<>(96);
+
+  /**
    * How far are you allowed to fall onto solid ground (without a water bucket)?
    * 3 won't deal any damage. But if you just want to get down the mountain quickly and you have
    * Feather Falling IV, you might set it a bit higher, like 4 or 5.

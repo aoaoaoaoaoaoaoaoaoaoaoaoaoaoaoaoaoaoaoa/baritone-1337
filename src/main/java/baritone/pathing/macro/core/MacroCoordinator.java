@@ -15,6 +15,15 @@ public final class MacroCoordinator {
   public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal) {
     if (!MacroGoals.destinationChunkLive(context, goal)) {
       Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal);
+      if (multimodal.filter(plan -> plan.portalActions() > 0).isPresent()) {
+        MacroPlan plan = multimodal.get();
+        Optional<RoutePlan> route = materialize(context, plan, null);
+        if (route.isPresent()) {
+          return Optional.of(MacroDirective.certified(plan, route.get()));
+        }
+        Helper.HELPER.logDebug("Using portal macro plan as local directive: " + plan.sequence());
+        return Optional.of(MacroDirective.localGoal(plan));
+      }
       if (multimodal.filter(plan -> plan.surfaceTransitionActions() > 0 && usefulSurfacePlan(context, plan)).isPresent()) {
         MacroPlan plan = multimodal.get();
         Optional<RoutePlan> route = materialize(context, plan, null);

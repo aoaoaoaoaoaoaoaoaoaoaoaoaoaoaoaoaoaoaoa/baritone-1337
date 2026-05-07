@@ -24,6 +24,16 @@ public record MacroPlan(BetterBlockPos src, BetterBlockPos dest, Goal localGoal,
     return count;
   }
 
+  public int portalActions() {
+    int count = 0;
+    for (MacroActionInstance action : actions) {
+      if (action.kind().portal()) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   public int surfaceTransitionActions() {
     int count = 0;
     for (MacroActionInstance action : actions) {

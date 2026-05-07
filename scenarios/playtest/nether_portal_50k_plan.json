@@ -1,0 +1,56 @@
+{
+  "id": "nether_portal_50k_plan",
+  "worldKey": "nether_macro",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 20.5,
+    "y": 114.0,
+    "z": 0.5,
+    "yaw": 90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "xz",
+    "x": 50020,
+    "y": 114,
+    "z": 0
+  },
+  "plannerOnly": true,
+  "setupCommands": [
+    "execute in minecraft:overworld run fill 16 113 -4 28 113 4 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 16 114 -4 28 118 4 minecraft:air",
+    "execute in minecraft:overworld run fill 23 114 -1 23 116 0 minecraft:nether_portal[axis=z]"
+  ],
+  "loadout": [
+    {"slot": 0, "item": "minecraft:flint_and_steel", "count": 1},
+    {"slot": 1, "item": "minecraft:obsidian", "count": 10},
+    {"slot": 2, "item": "minecraft:iron_pickaxe", "count": 1},
+    {"slot": 3, "item": "minecraft:cobblestone", "count": 64}
+  ],
+  "timeoutTicks": 600,
+  "successRadius": 0.0,
+  "acceptance": {
+    "requireMacroBiomeRoute": true,
+    "requireMacroPlanPortal": true,
+    "minMacroPlanPortalActions": 2,
+    "maxTicksToMacroPlan": 400,
+    "maxTicksToPathingSeen": 400
+  },
+  "settings": {
+    "chunkCaching": false,
+    "macroPlanning": true,
+    "macroBiome": true,
+    "macroNether": true,
+    "macroBiomePriorsFile": "",
+    "macroBiomeFactsFile": "",
+    "macroBiomeHorizonBlocks": 4096,
+    "macroBiomeWaypointBlocks": 512,
+    "macroNetherPortalScanBlocks": 64,
+    "pathingEarlyIncumbentExecution": false,
+    "primaryTimeoutMS": 20000,
+    "failureTimeoutMS": 20000
+  },
+  "trace": true,
+  "selectedSlot": 0
+}

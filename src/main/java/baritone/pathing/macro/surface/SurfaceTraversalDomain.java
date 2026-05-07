@@ -1,5 +1,6 @@
 package baritone.pathing.macro.surface;
 
+import baritone.Baritone;
 import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.macro.biome.BiomeSurfaceCost;
 import baritone.pathing.macro.core.MacroActionKind;
@@ -42,12 +43,19 @@ public final class SurfaceTraversalDomain implements MacroDomain {
         BetterBlockPos from = context.atlas().center(x, z);
         BetterBlockPos to = context.atlas().center(nx, nz);
         double distance = Math.hypot(to.x - from.x, to.z - from.z);
-        BiomeSurfaceCost prior = context.atlas().surfaceCost(nx, nz);
-        MacroCostVector cost = MacroCostVector.surfacePerBlock(prior).times(distance);
-        long next = MacroNodeKey.cell(context.calculation().world.dimension(), MacroStratum.SURFACE, context.atlas().scale(), nx, nz);
+        MacroCostVector cost = cost(context, label.node(), nx, nz, distance);
+        long next = MacroNodeKey.siblingCell(label.node(), nx, nz);
         MacroAgentState state = label.state();
         out.accept(new MacroOption(MacroActionKind.SURFACE_TRAVERSE, next, state, cost, List.of(from, to), null));
       }
     }
+  }
+
+  private static MacroCostVector cost(MacroExpansionContext context, long node, int nx, int nz, double distance) {
+    if (MacroNodeKey.dimensionId(node) == MacroNodeKey.DIMENSION_NETHER) {
+      return MacroCostVector.fixedTime(distance * Baritone.settings().macroNetherTicksPerBlock.value);
+    }
+    BiomeSurfaceCost prior = context.atlas().surfaceCost(nx, nz);
+    return MacroCostVector.surfacePerBlock(prior).times(distance);
   }
 }
