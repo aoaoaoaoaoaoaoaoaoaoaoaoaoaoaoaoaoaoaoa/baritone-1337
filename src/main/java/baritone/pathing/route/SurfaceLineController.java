@@ -216,22 +216,7 @@ public final class SurfaceLineController implements MovementHelper {
   private void pickupBoatForSwim(ControlFrame.Builder state, AbstractBoat target) {
     phase = SurfaceLinePhase.PICKUP;
     boatPickupTicks++;
-    lastBoatPickupTarget = target.position();
-    Rotation rotation = boatRotation(target);
-    state.setTarget(new ControlFrame.MovementTarget(rotation, true));
-    double distanceSq = horizontalDistanceSq(ctx.player().position(), target.position());
-    state.setInput(Input.MOVE_FORWARD, distanceSq > BOAT_PICKUP_APPROACH_DISTANCE_SQ);
-    state.setInput(Input.JUMP, distanceSq > BOAT_PICKUP_APPROACH_DISTANCE_SQ && MovementHelper.isWater(ctx, ctx.playerFeet()));
-    state.setInput(Input.SPRINT, false);
-    state.setInput(Input.SNEAK, false);
-    if (distanceSq <= BOAT_PICKUP_APPROACH_DISTANCE_SQ && rotationClose(ctx.playerRotations(), rotation)) {
-      if (boatAttackCooldown > 0) {
-        boatAttackCooldown--;
-      } else {
-        state.attackEntity(target);
-        boatAttackCooldown = BOAT_ATTACK_COOLDOWN_TICKS;
-      }
-    }
+    attackBoatForPickup(state, target);
   }
 
   private void finishAfterSwim(ControlFrame.Builder state) {

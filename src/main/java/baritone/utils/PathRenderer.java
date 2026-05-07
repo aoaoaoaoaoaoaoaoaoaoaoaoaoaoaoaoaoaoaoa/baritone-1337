@@ -229,11 +229,11 @@ public final class PathRenderer implements IRenderer {
   private static void emitPathLine(BufferBuilder bufferBuilder, RenderContext view, double x1, double y1, double z1, double x2, double y2, double z2, double offset) {
     final double extraOffset = offset + 0.03D;
 
-    boolean renderPathAsFrickinThingy = !settings.renderPathAsLine.value;
+    boolean renderPathBox = !settings.renderPathAsLine.value;
 
     IRenderer.emitLine(bufferBuilder, view.stack(), view.x(x1 + offset), view.y(y1 + offset), view.z(z1 + offset), view.x(x2 + offset), view.y(y2 + offset), view.z(z2 + offset),
       settings.pathRenderLineWidthPixels.value);
-    if (renderPathAsFrickinThingy) {
+    if (renderPathBox) {
       IRenderer.emitLine(bufferBuilder, view.stack(), view.x(x2 + offset), view.y(y2 + offset), view.z(z2 + offset), view.x(x2 + offset), view.y(y2 + extraOffset), view.z(z2 + offset),
         settings.pathRenderLineWidthPixels.value);
       IRenderer.emitLine(bufferBuilder, view.stack(), view.x(x2 + offset), view.y(y2 + extraOffset), view.z(z2 + offset), view.x(x1 + offset), view.y(y1 + extraOffset), view.z(z1 + offset),
@@ -296,7 +296,7 @@ public final class PathRenderer implements IRenderer {
         y2 -= 0.5;
         maxY--;
       }
-      drawDankLitGoalBox(bufferBuilder, view.stack(), color, minX, maxX, minZ, maxZ, minY, maxY, y1, y2, setupRender);
+      drawGoalBox(bufferBuilder, view.stack(), color, minX, maxX, minZ, maxZ, minY, maxY, y1, y2, setupRender);
     } else if (goal instanceof GoalXZ) {
       GoalXZ goalPos = (GoalXZ) goal;
       minY = ctx.world().getMinY();
@@ -311,7 +311,7 @@ public final class PathRenderer implements IRenderer {
       y2 = 0;
       minY = view.y(minY);
       maxY = view.y(maxY);
-      drawDankLitGoalBox(bufferBuilder, view.stack(), color, minX, maxX, minZ, maxZ, minY, maxY, y1, y2, setupRender);
+      drawGoalBox(bufferBuilder, view.stack(), color, minX, maxX, minZ, maxZ, minY, maxY, y1, y2, setupRender);
       drawGoalXZBeacon(view, ctx, (GoalXZ) goal, minY, maxY, color);
     } else if (goal instanceof GoalComposite) {
       // Simple way to determine if goals can be batched, without having some sort of GoalRenderer
@@ -338,12 +338,12 @@ public final class PathRenderer implements IRenderer {
       maxY = minY + 2;
       y1 = view.y(1 + y + goalpos.level);
       y2 = view.y(1 - y + goalpos.level);
-      drawDankLitGoalBox(bufferBuilder, view.stack(), color, minX, maxX, minZ, maxZ, minY, maxY, y1, y2, setupRender);
+      drawGoalBox(bufferBuilder, view.stack(), color, minX, maxX, minZ, maxZ, minY, maxY, y1, y2, setupRender);
     }
   }
 
-  private static void drawDankLitGoalBox(BufferBuilder bufferBuilder, PoseStack stack, Color colorIn, double minX, double maxX, double minZ, double maxZ, double minY, double maxY, double y1,
-    double y2, boolean setupRender) {
+  private static void drawGoalBox(BufferBuilder bufferBuilder, PoseStack stack, Color colorIn, double minX, double maxX, double minZ, double maxZ, double minY, double maxY, double y1, double y2,
+    boolean setupRender) {
     if (setupRender) {
       bufferBuilder = IRenderer.startLines(colorIn);
     }

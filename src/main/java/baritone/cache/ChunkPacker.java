@@ -28,8 +28,6 @@ public final class ChunkPacker {
   }
 
   public static CachedChunk pack(LevelChunk chunk) {
-    //long start = System.nanoTime() / 1000000L;
-
     Map<String, List<BlockPos>> specialBlocks = new HashMap<>();
     final int height = chunk.getLevel().dimensionType().height();
     BitSet bitSet = new BitSet(CachedChunk.size(height));
@@ -71,27 +69,24 @@ public final class ChunkPacker {
     } catch (Exception e) {
       e.printStackTrace();
     }
-    //long end = System.nanoTime() / 1000000L;
-    //System.out.println("Chunk packing took " + (end - start) + "ms for " + chunk.x + "," + chunk.z);
     BlockState[] blocks = new BlockState[256];
 
-    // get top block in columns
-    // @formatter:off
-        for (int z = 0; z < 16; z++) {
-            https://www.ibm.com/developerworks/library/j-perry-writing-good-java-code/index.html
-            for (int x = 0; x < 16; x++) {
-                for (int y = height - 1; y >= 0; y--) {
-                    int index = CachedChunk.getPositionIndex(x, y, z);
-                    if (bitSet.get(index) || bitSet.get(index + 1)) {
-                        blocks[z << 4 | x] = getFromChunk(chunk, x, y, z);
-                        continue https;
-                    }
-                }
-                blocks[z << 4 | x] = Blocks.AIR.defaultBlockState();
-            }
-        }
-        // @formatter:on
+    for (int z = 0; z < 16; z++) {
+      for (int x = 0; x < 16; x++) {
+        blocks[z << 4 | x] = topPathingBlock(chunk, bitSet, height, x, z);
+      }
+    }
     return new CachedChunk(chunk.getPos().x(), chunk.getPos().z(), height, bitSet, blocks, specialBlocks, System.currentTimeMillis());
+  }
+
+  private static BlockState topPathingBlock(LevelChunk chunk, BitSet bitSet, int height, int x, int z) {
+    for (int y = height - 1; y >= 0; y--) {
+      int index = CachedChunk.getPositionIndex(x, y, z);
+      if (bitSet.get(index) || bitSet.get(index + 1)) {
+        return getFromChunk(chunk, x, y, z);
+      }
+    }
+    return Blocks.AIR.defaultBlockState();
   }
 
   private static PathingBlockType getPathingBlockType(BlockState state, LevelChunk chunk, int x, int y, int z) {
@@ -132,24 +127,19 @@ public final class ChunkPacker {
   }
 
   public static BlockState pathingTypeToBlock(PathingBlockType type, DimensionType dimension, ResourceKey<Level> dimensionId) {
-    switch (type) {
-      case AIR :
-        return Blocks.AIR.defaultBlockState();
-      case WATER :
-        return Blocks.WATER.defaultBlockState();
-      case AVOID :
-        return Blocks.LAVA.defaultBlockState();
-      case SOLID :
-        // Dimension solid types
+    return switch (type) {
+      case AIR -> Blocks.AIR.defaultBlockState();
+      case WATER -> Blocks.WATER.defaultBlockState();
+      case AVOID -> Blocks.LAVA.defaultBlockState();
+      case SOLID -> {
         if (dimensionId == Level.NETHER) {
-          return Blocks.NETHERRACK.defaultBlockState();
-        } else if (dimensionId == Level.END) {
-          return Blocks.END_STONE.defaultBlockState();
-        } else { // overworld, or some custom dimension
-          return Blocks.STONE.defaultBlockState();
+          yield Blocks.NETHERRACK.defaultBlockState();
         }
-      default :
-        return null;
-    }
+        if (dimensionId == Level.END) {
+          yield Blocks.END_STONE.defaultBlockState();
+        }
+        yield Blocks.STONE.defaultBlockState();
+      }
+    };
   }
 }

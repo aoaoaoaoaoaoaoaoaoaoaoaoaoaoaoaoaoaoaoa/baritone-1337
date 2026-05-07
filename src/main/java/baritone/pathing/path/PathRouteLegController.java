@@ -174,7 +174,6 @@ final class PathRouteLegController implements RouteLegController, Helper {
             if (i - pathPosition > 2) {
               logDebug("Skipping forward " + (i - pathPosition) + " steps, to " + i);
             }
-            //System.out.println("Double skip sundae");
             pathPosition = i - 1;
             onChangeInPathPosition();
             revised = true;
@@ -190,7 +189,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
       double immediatePathTolerance = Math.max(MAX_MAX_DIST_FROM_PATH, movement.immediatePathDistanceTolerance());
       if (possiblyOffPath(status, sustainedPathTolerance)) {
         ticksAway++;
-        System.out.println("FAR AWAY FROM PATH FOR " + ticksAway + " TICKS. Current distance: " + status.distance() + ". Threshold: " + sustainedPathTolerance);
+        logDebug("Far away from path for " + ticksAway + " ticks. Current distance: " + status.distance() + ". Threshold: " + sustainedPathTolerance);
         if (ticksAway > MAX_TICKS_AWAY) {
           logDebug("Too far away from path for too long, cancelling path");
           cancel();
@@ -240,10 +239,6 @@ final class PathRouteLegController implements RouteLegController, Helper {
         toWalkInto = newWalkInto;
         recalcBP = false;
       }
-      /*long end = System.nanoTime() / 1000000L;
-      if (end - start > 0) {
-          System.out.println("Recalculating break and place took " + (end - start) + "ms");
-      }*/
       if (pathPosition < path.movements().size() - 1) {
         IMovement next = path.movements().get(pathPosition + 1);
         if (!behavior.baritone.bsi.hasLiveChunk(next.getDest().x, next.getDest().z)) {
@@ -293,7 +288,6 @@ final class PathRouteLegController implements RouteLegController, Helper {
         return true;
       }
       if (movementStatus == SUCCESS) {
-        //System.out.println("Movement done, next path");
         pathPosition++;
         onChangeInPathPosition();
         continue;

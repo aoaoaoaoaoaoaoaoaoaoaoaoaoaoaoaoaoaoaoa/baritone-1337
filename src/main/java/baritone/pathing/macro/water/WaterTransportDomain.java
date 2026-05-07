@@ -469,7 +469,7 @@ public final class WaterTransportDomain implements MacroDomain {
         targetByNode.put(target.node(), target);
         acceptRoute(bestCost, secondCost, bestNext, secondNext, bestTarget, secondTarget, open, water, target.node(), targetPotential(context, target), Long.MIN_VALUE);
       }
-      LongOpenHashSet closed = new LongOpenHashSet();
+      Long2ObjectOpenHashMap<LongOpenHashSet> closed = new Long2ObjectOpenHashMap<>();
       CalculationContext calculation = context.calculation();
       double costPerBlock = component.mode() == TransportMode.BOAT ? calculation.waterTransport.boatCostPerBlock() : calculation.costs.waterMoveCost();
       while (!open.isEmpty()) {
@@ -477,7 +477,7 @@ public final class WaterTransportDomain implements MacroDomain {
         long packed = route.packed();
         long target = route.target();
         double hereCost = route.f();
-        if (routeCost(bestCost, secondCost, bestTarget, secondTarget, packed, target) != hereCost || !closed.add(routeKey(packed, target))) {
+        if (routeCost(bestCost, secondCost, bestTarget, secondTarget, packed, target) != hereCost || !closeRoute(closed, packed, target)) {
           continue;
         }
         BetterBlockPos here = pos(packed);
@@ -488,7 +488,7 @@ public final class WaterTransportDomain implements MacroDomain {
             }
             BetterBlockPos there = new BetterBlockPos(here.x + dx, here.y, here.z + dz);
             long neighbor = there.asLong();
-            if (closed.contains(routeKey(neighbor, target)) || !surfaceCell(atlas, neighbor, component.componentId(), component.mode()) || !surfaceEdge(atlas, here, there, component)) {
+            if (routeClosed(closed, neighbor, target) || !surfaceCell(atlas, neighbor, component.componentId(), component.mode()) || !surfaceEdge(atlas, here, there, component)) {
               continue;
             }
             double tentative = hereCost + Math.hypot(dx, dz) * costPerBlock + bankPressure(atlas, neighbor, component.componentId(), component.mode());
@@ -551,8 +551,18 @@ public final class WaterTransportDomain implements MacroDomain {
       return secondTarget.get(cell) == target ? secondCost.get(cell) : Double.POSITIVE_INFINITY;
     }
 
-    private static long routeKey(long cell, long target) {
-      return cell * 0x9E3779B97F4A7C15L ^ target;
+    private static boolean closeRoute(Long2ObjectOpenHashMap<LongOpenHashSet> closedByTarget, long cell, long target) {
+      LongOpenHashSet cells = closedByTarget.get(target);
+      if (cells == null) {
+        cells = new LongOpenHashSet();
+        closedByTarget.put(target, cells);
+      }
+      return cells.add(cell);
+    }
+
+    private static boolean routeClosed(Long2ObjectOpenHashMap<LongOpenHashSet> closedByTarget, long cell, long target) {
+      LongOpenHashSet cells = closedByTarget.get(target);
+      return cells != null && cells.contains(cell);
     }
 
     private static boolean surfaceEdge(SurfaceWaterAtlas atlas, BetterBlockPos here, BetterBlockPos there, SurfaceWaterSkeleton.ComponentKey component) {

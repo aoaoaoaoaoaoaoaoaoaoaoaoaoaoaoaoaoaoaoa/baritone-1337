@@ -242,7 +242,6 @@ public class MovementTraverse extends Movement {
     if (feet.getY() != dest.getY() && !ladder && !waterTraverse) {
       logDebug("Wrong Y coordinate");
       if (feet.getY() < dest.getY()) {
-        System.out.println("In movement traverse");
         return state.setInput(Input.JUMP, true);
       }
       return state;

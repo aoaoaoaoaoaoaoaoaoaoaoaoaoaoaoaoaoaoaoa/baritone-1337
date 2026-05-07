@@ -2,18 +2,75 @@ package baritone.pathing.macro.core;
 
 import baritone.api.pathing.goals.Goal;
 import baritone.pathing.route.RoutePlan;
+import java.util.Objects;
 import java.util.Optional;
 
-public record MacroDirective(Goal localGoal, MacroPlan plan, Optional<RoutePlan> certifiedRoute, boolean deferred) {
-  public static MacroDirective localGoal(MacroPlan plan) {
-    return new MacroDirective(plan.localGoal(), plan, Optional.empty(), false);
+public sealed interface MacroDirective permits MacroDirective.LocalGoal, MacroDirective.Certified, MacroDirective.Deferred {
+  Goal localGoal();
+
+  MacroPlan plan();
+
+  default Optional<RoutePlan> certifiedRoute() {
+    return Optional.empty();
   }
 
-  public static MacroDirective certified(MacroPlan plan, RoutePlan route) {
-    return new MacroDirective(plan.localGoal(), plan, Optional.of(route), false);
+  default boolean deferred() {
+    return false;
   }
 
-  public static MacroDirective deferred(MacroPlan plan) {
-    return new MacroDirective(plan.localGoal(), plan, Optional.empty(), true);
+  static MacroDirective localGoal(MacroPlan plan) {
+    return new LocalGoal(plan);
+  }
+
+  static MacroDirective certified(MacroPlan plan, RoutePlan route) {
+    return new Certified(plan, route);
+  }
+
+  static MacroDirective deferred(MacroPlan plan) {
+    return new Deferred(plan);
+  }
+
+  record LocalGoal(MacroPlan plan) implements MacroDirective {
+    public LocalGoal {
+      Objects.requireNonNull(plan);
+    }
+
+    @Override
+    public Goal localGoal() {
+      return plan.localGoal();
+    }
+  }
+
+  record Certified(MacroPlan plan, RoutePlan route) implements MacroDirective {
+    public Certified {
+      Objects.requireNonNull(plan);
+      Objects.requireNonNull(route);
+    }
+
+    @Override
+    public Goal localGoal() {
+      return plan.localGoal();
+    }
+
+    @Override
+    public Optional<RoutePlan> certifiedRoute() {
+      return Optional.of(route);
+    }
+  }
+
+  record Deferred(MacroPlan plan) implements MacroDirective {
+    public Deferred {
+      Objects.requireNonNull(plan);
+    }
+
+    @Override
+    public Goal localGoal() {
+      return plan.localGoal();
+    }
+
+    @Override
+    public boolean deferred() {
+      return true;
+    }
   }
 }

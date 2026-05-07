@@ -195,8 +195,9 @@ public final class RouteExecutor implements IPathExecutor, Helper {
       if (i != legIndex) {
         sequence.append('>');
       }
-      if (i == legIndex && activeController != null && activeController.transportPlan(ctx) != null) {
-        sequence.append(activeController.transportPlan(ctx).token());
+      TransportSnapshot.Plan activePlan = i == legIndex && activeController != null ? activeController.transportPlan(ctx) : null;
+      if (activePlan != null) {
+        sequence.append(activePlan.token());
       } else if (leg instanceof SurfaceRouteLeg surface) {
         sequence.append(surface.segment().mode() == TransportMode.BOAT ? surface.segment().terminal() ? 'B' : 'b' : 'S');
       } else {

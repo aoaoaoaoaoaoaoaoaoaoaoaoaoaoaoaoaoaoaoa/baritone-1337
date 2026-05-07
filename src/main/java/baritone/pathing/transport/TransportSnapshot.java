@@ -94,17 +94,6 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
       return position + "/" + size + " leg=" + legIndex + " " + current.overlay() + " seq=" + sequence;
     }
 
-    private static String sequence(IPlayerContext ctx, IPath path, int position, int limit) {
-      StringBuilder sequence = new StringBuilder(limit * 2);
-      int end = Math.min(path.movements().size(), position + limit);
-      for (int i = position; i < end; i++) {
-        if (i != position) {
-          sequence.append('>');
-        }
-        sequence.append(plan(ctx, path.movements().get(i)).token());
-      }
-      return sequence.toString();
-    }
   }
 
   public record Plan(TransportMode mode, String movement, BetterBlockPos src, BetterBlockPos dest, String phase, boolean terminal, BetterBlockPos entry, Double progress, Integer componentId,

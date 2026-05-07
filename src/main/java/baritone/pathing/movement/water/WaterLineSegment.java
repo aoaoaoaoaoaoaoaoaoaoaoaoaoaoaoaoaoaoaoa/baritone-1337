@@ -6,6 +6,16 @@ import baritone.pathing.transport.TransportMode;
 import java.util.List;
 
 public record WaterLineSegment(TransportLeg leg, BetterBlockPos waterEnd, WaterLineProfile profile, double length, double cost, List<BetterBlockPos> validPositions) {
+  public WaterLineSegment {
+    validPositions = List.copyOf(validPositions);
+    if (length < 0D || !Double.isFinite(length)) {
+      throw new IllegalArgumentException("water line length must be finite and nonnegative: " + length);
+    }
+    if (cost < 0D || !Double.isFinite(cost)) {
+      throw new IllegalArgumentException("water line cost must be finite and nonnegative: " + cost);
+    }
+  }
+
   public BetterBlockPos src() {
     return leg.src();
   }

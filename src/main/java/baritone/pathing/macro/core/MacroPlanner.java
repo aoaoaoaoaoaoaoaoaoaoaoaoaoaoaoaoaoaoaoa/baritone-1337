@@ -24,21 +24,20 @@ import net.minecraft.world.level.levelgen.Heightmap;
 
 public final class MacroPlanner {
   private static final int MAX_EXPANSIONS = 250_000;
-  private static final int MIN_WATER_MACRO_CELLS = 3;
   private static final int SURFACE_WATER_RESCUE_RADIUS = 4;
 
   private MacroPlanner() {
   }
 
   public static Optional<MacroPlan> plan(CalculationContext calculation, BetterBlockPos start, Goal goal) {
-    return plan(calculation, start, goal, true, false);
+    return plan(calculation, start, goal, MacroPlanningMode.PREDICTIVE);
   }
 
   public static Optional<MacroPlan> factualSurfacePrefix(CalculationContext calculation, BetterBlockPos start, Goal goal) {
-    return plan(calculation, start, goal, false, true);
+    return plan(calculation, start, goal, MacroPlanningMode.FACTUAL_SURFACE_PREFIX);
   }
 
-  private static Optional<MacroPlan> plan(CalculationContext calculation, BetterBlockPos start, Goal goal, boolean predictedWaterAllowed, boolean forceSurfaceTransition) {
+  private static Optional<MacroPlan> plan(CalculationContext calculation, BetterBlockPos start, Goal goal, MacroPlanningMode planningMode) {
     if (!Baritone.settings().macroPlanning.value || calculation.world.dimension() != Level.OVERWORLD) {
       return Optional.empty();
     }
@@ -54,7 +53,7 @@ public final class MacroPlanner {
     int cellBlocks = atlas.cellBlocks();
     int waypointBlocks = Baritone.settings().macroBiomeWaypointBlocks.value;
     double fullDistance = Math.hypot(goalPos.get().getX() - start.x, goalPos.get().getZ() - start.z);
-    double minimumDistance = forceSurfaceTransition ? cellBlocks * (double) MIN_WATER_MACRO_CELLS : Math.max(cellBlocks * (double) MIN_WATER_MACRO_CELLS, waypointBlocks);
+    double minimumDistance = planningMode.minimumDistance(cellBlocks, waypointBlocks);
     if (fullDistance < minimumDistance) {
       return Optional.empty();
     }
@@ -73,7 +72,7 @@ public final class MacroPlanner {
     long dst = MacroNodeKey.cell(calculation.world.dimension(), MacroStratum.SURFACE, atlas.scale(), gx, gz);
     MacroCapabilities capabilities = MacroCapabilities.physical(calculation);
     MacroExpansionContext expansion = new MacroExpansionContext(calculation, atlas, goal, start, policy, capabilities, Math.min(sx, gx) - radius, Math.max(sx, gx) + radius, Math.min(sz, gz) - radius,
-      Math.max(sz, gz) + radius, gx, gz, predictedWaterAllowed);
+      Math.max(sz, gz) + radius, gx, gz, planningMode);
     ArrayList<MacroDomain> domains = new ArrayList<>();
     domains.add(new SurfaceTraversalDomain());
     WaterTransportDomain waterDomain = null;
@@ -98,7 +97,7 @@ public final class MacroPlanner {
     if (!hasWaterDomain && atlas.empiricalPriors() && Baritone.settings().macroBiome.value) {
       return Optional.empty();
     }
-    boolean requiresSurfaceTransition = forceSurfaceTransition || !atlas.empiricalPriors() || !Baritone.settings().macroBiome.value;
+    boolean requiresSurfaceTransition = planningMode.requiresSurfaceTransition(atlas);
     if (requiresSurfaceTransition && !hasWaterDomain) {
       return Optional.empty();
     }

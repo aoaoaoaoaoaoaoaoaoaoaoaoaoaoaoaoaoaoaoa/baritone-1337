@@ -10,6 +10,12 @@ public record MacroAgentState(int bits) {
   private static final int MODE_BOAT = 1;
   private static final int MODE_SWIM = 2;
 
+  public MacroAgentState {
+    if ((bits & ~MODE_MASK) != 0 || (bits & MODE_MASK) > MODE_SWIM) {
+      throw new IllegalArgumentException("invalid macro agent-state bits: " + bits);
+    }
+  }
+
   public static MacroAgentState physical(CalculationContext context) {
     if (context.waterTransport.boatMounted()) {
       return boat();
@@ -31,9 +37,10 @@ public record MacroAgentState(int bits) {
 
   public TransportMode mode() {
     return switch (bits & MODE_MASK) {
+      case MODE_PEDESTRIAN -> TransportMode.PEDESTRIAN;
       case MODE_BOAT -> TransportMode.BOAT;
       case MODE_SWIM -> TransportMode.SWIM;
-      default -> TransportMode.PEDESTRIAN;
+      default -> throw new IllegalStateException("invalid macro agent-state mode: " + bits);
     };
   }
 

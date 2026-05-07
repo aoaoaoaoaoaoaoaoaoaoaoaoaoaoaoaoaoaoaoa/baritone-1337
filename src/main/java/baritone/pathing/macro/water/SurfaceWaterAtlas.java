@@ -278,7 +278,6 @@ public final class SurfaceWaterAtlas {
     }
     int centerX = Math.floorDiv(minX + maxX, 2);
     int centerZ = Math.floorDiv(minZ + maxZ, 2);
-    return context.hasPathingData(centerX, centerZ) || context.hasPathingData(minX, minZ) || context.hasPathingData(maxX, minZ) || context.hasPathingData(minX, maxZ)
-      || context.hasPathingData(maxX, maxZ);
+    return context.hasPathingData(centerX, centerZ) || context.hasPathingData(maxX, minZ) || context.hasPathingData(minX, maxZ) || context.hasPathingData(maxX, maxZ);
   }
 }
