@@ -59,6 +59,7 @@ class Harvest:
     env["PLAYTEST_RESULT_TIMEOUT"] = os.environ.get("PLAYTEST_RESULT_TIMEOUT", "2400")
     env["PLAYTEST_PREGEN_BATCH_TILES"] = os.environ.get("PLAYTEST_PREGEN_BATCH_TILES", "1")
     env["PLAYTEST_MUTE_CLIENT"] = os.environ.get("PLAYTEST_MUTE_CLIENT", "true")
+    env["PLAYTEST_MAX_TICK_TIME"] = os.environ.get("PLAYTEST_MAX_TICK_TIME", "600000")
     return env
 
 

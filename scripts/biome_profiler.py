@@ -417,7 +417,7 @@ class WorldReader:
     return None
 
   @lru_cache(maxsize=1_000_000)
-  def legacy_standing_surface(self, x: int, z: int) -> Surface | None:
+  def standing_surface_top(self, x: int, z: int) -> Surface | None:
     chunk = self.chunk(math.floor(x / 16), math.floor(z / 16))
     if chunk is None:
       return None
@@ -431,13 +431,35 @@ class WorldReader:
         return Surface(x, feet_y, z, chunk.biome(x, feet_y, z))
     return None
 
+  @lru_cache(maxsize=1_000_000)
+  def standing_surface_bottom(self, x: int, z: int) -> Surface | None:
+    chunk = self.chunk(math.floor(x / 16), math.floor(z / 16))
+    if chunk is None:
+      return None
+    top = min(chunk.max_sy * 16 + 15, self.max_surface_y)
+    bottom = max(chunk.min_sy * 16, self.min_surface_y)
+    for feet_y in range(bottom, top + 1):
+      floor = self.block(x, feet_y - 1, z)
+      feet = self.block(x, feet_y, z)
+      head = self.block(x, feet_y + 1, z)
+      if stable_floor(floor) and airlike(feet) and not fluid(feet) and airlike(head) and not fluid(head):
+        return Surface(x, feet_y, z, chunk.biome(x, feet_y, z))
+    return None
+
+  def standing_surface_alternating(self, x: int, z: int) -> Surface | None:
+    return self.standing_surface_top(x, z) if (((x >> 3) ^ (z >> 3)) & 1) == 0 else self.standing_surface_bottom(x, z)
+
 
 def switch_surface(world: WorldReader, x: int, z: int, chunk: Chunk, profile: str) -> Surface | None:
   match profile:
     case "exterior":
       return world.exterior_surface(x, z, chunk)
     case "standing":
-      return world.legacy_standing_surface(x, z)
+      return world.standing_surface_alternating(x, z)
+    case "standing-top":
+      return world.standing_surface_top(x, z)
+    case "standing-bottom":
+      return world.standing_surface_bottom(x, z)
     case other:
       raise SystemExit(f"unknown surface profile: {other}")
 
@@ -776,7 +798,7 @@ def parser() -> argparse.ArgumentParser:
   scan.add_argument("--controller-profile", default="native-pedestrian-2-1")
   scan.add_argument("--biome", action="append", default=[])
   scan.add_argument("--profile-biome", help="collapse accepted surfaces into this aggregate profile label")
-  scan.add_argument("--surface-profile", choices=("exterior", "standing"), default="exterior")
+  scan.add_argument("--surface-profile", choices=("exterior", "standing", "standing-top", "standing-bottom"), default="exterior")
   scan.add_argument("--min-distance", type=float, default=200.0)
   scan.add_argument("--max-distance", type=float, default=400.0)
   scan.add_argument("--scan-stride", type=int, default=8)
