@@ -298,11 +298,12 @@ class Chunk:
 
 
 class WorldReader:
-  def __init__(self, world: Path, dimension: str, min_surface_y: int = 50, max_surface_y: int = 180):
+  def __init__(self, world: Path, dimension: str, min_surface_y: int = 50, max_surface_y: int = 180, surface_profile: str = "exterior"):
     self.world = world
     self.dimension = dimension
     self.min_surface_y = min_surface_y
     self.max_surface_y = max_surface_y
+    self.surface_profile = surface_profile
     self.regions = self.region_root()
     self._generated_chunks: tuple[tuple[int, int], ...] | None = None
 
@@ -377,10 +378,7 @@ class WorldReader:
     chunk = self.chunk(math.floor(x / 16), math.floor(z / 16))
     if chunk is None:
       return None
-    surface = self.exterior_surface(x, z, chunk)
-    if surface is not None:
-      return surface
-    return None
+    return switch_surface(self, x, z, chunk, self.surface_profile)
 
   @lru_cache(maxsize=1_000_000)
   def column_biome(self, x: int, z: int) -> str | None:
@@ -434,6 +432,16 @@ class WorldReader:
     return None
 
 
+def switch_surface(world: WorldReader, x: int, z: int, chunk: Chunk, profile: str) -> Surface | None:
+  match profile:
+    case "exterior":
+      return world.exterior_surface(x, z, chunk)
+    case "standing":
+      return world.legacy_standing_surface(x, z)
+    case other:
+      raise SystemExit(f"unknown surface profile: {other}")
+
+
 def octant(angle: float) -> int:
   return int(((angle + math.pi * 2) % (math.pi * 2)) / (math.pi / 4) + 0.5) & 7
 
@@ -469,7 +477,7 @@ def scan_chunks(world: WorldReader, args: argparse.Namespace) -> tuple[tuple[int
 
 def discover(args: argparse.Namespace) -> None:
   rng = random.Random(args.random_seed)
-  world = WorldReader(args.world, args.dimension, args.min_surface_y, args.max_surface_y)
+  world = WorldReader(args.world, args.dimension, args.min_surface_y, args.max_surface_y, args.surface_profile)
   independent_samples = read_independent_samples(args.anchor_file)
   generated_chunks = scan_chunks(world, args)
   by_biome: dict[str, list[Surface]] = defaultdict(list)
@@ -479,8 +487,10 @@ def discover(args: argparse.Namespace) -> None:
       for lz in range(0, 16, args.scan_stride):
         surface = world.surface(cx * 16 + lx, cz * 16 + lz)
         if surface is not None and (not args.exclude_cave_biomes or surface.biome not in CAVE_BIOMES) and (not args.biome or surface.biome in args.biome):
-          by_biome[surface.biome].append(surface)
-          by_column[(surface.x, surface.z)] = surface
+          profile_biome = args.profile_biome or surface.biome
+          profiled = Surface(surface.x, surface.y, surface.z, profile_biome)
+          by_biome[profile_biome].append(profiled)
+          by_column[(profiled.x, profiled.z)] = profiled
   surface_index = SurfaceIndex(by_biome, by_column)
   args.out.mkdir(parents=True, exist_ok=True)
   for stale in args.out.glob("biome_profile_*.json"):
@@ -613,7 +623,7 @@ def write_scenario(args: argparse.Namespace, span: Span, independent_sample: str
       "lineStride": args.line_stride,
       "scanStride": args.scan_stride,
       "endpointExclusionRadius": args.endpoint_exclusion_radius,
-      "spawnSurfaceProfile": "motion_blocking_no_leaves_sky_exposed_v1",
+      "spawnSurfaceProfile": args.surface_profile,
       "spawnSpiralRadius": args.spawn_spiral_radius,
       "independentSample": independent_sample,
       "candidateIndex": span.index,
@@ -765,6 +775,8 @@ def parser() -> argparse.ArgumentParser:
   scan.add_argument("--world-preset", default="minecraft:large_biomes")
   scan.add_argument("--controller-profile", default="native-pedestrian-2-1")
   scan.add_argument("--biome", action="append", default=[])
+  scan.add_argument("--profile-biome", help="collapse accepted surfaces into this aggregate profile label")
+  scan.add_argument("--surface-profile", choices=("exterior", "standing"), default="exterior")
   scan.add_argument("--min-distance", type=float, default=200.0)
   scan.add_argument("--max-distance", type=float, default=400.0)
   scan.add_argument("--scan-stride", type=int, default=8)

@@ -719,13 +719,16 @@ class Playtest:
         self.stop()
     return status
 
-  def biome_pregen(self, world: WorldSpec, radius: int, tile_chunks: int) -> None:
+  def biome_pregen(self, world: WorldSpec, radius: int, tile_chunks: int, dimension: str = "minecraft:overworld") -> None:
     batch_tiles = int(os.environ.get("PLAYTEST_PREGEN_BATCH_TILES", "1"))
     self.server_only(world)
     min_c = -radius // 16
     max_c = radius // 16
     removals: list[str] = []
     labels: list[str] = []
+
+    def in_dimension(command: str) -> str:
+      return command if dimension == "minecraft:overworld" else f"execute in {dimension} run {command}"
 
     def flush() -> None:
       nonlocal removals, labels
@@ -747,8 +750,8 @@ class Playtest:
       for cz in range(min_c, max_c + 1, tile_chunks):
         x1, z1 = cx * 16, cz * 16
         x2, z2 = ((cx + tile_chunks - 1) * 16) + 15, ((cz + tile_chunks - 1) * 16) + 15
-        self.server_cmd_retry(f"forceload add {x1} {z1} {x2} {z2}")
-        removals.append(f"forceload remove {x1} {z1} {x2} {z2}")
+        self.server_cmd_retry(in_dimension(f"forceload add {x1} {z1} {x2} {z2}"))
+        removals.append(in_dimension(f"forceload remove {x1} {z1} {x2} {z2}"))
         labels.append(f"{cx}..{cx + tile_chunks - 1} {cz}..{cz + tile_chunks - 1}")
         if len(removals) >= batch_tiles:
           flush()
@@ -1133,7 +1136,12 @@ def main(argv: list[str] | None = None) -> int:
     case "suite":
       return playtest.run_suite(Path(args[0] if args else "scenarios/playtest/locked.txt"))
     case "biome-pregen":
-      playtest.biome_pregen(WorldSpec.from_arg(playtest.c, args[0] if args else "biome_large"), int(args[1]) if len(args) > 1 else 512, int(args[2]) if len(args) > 2 else 8)
+      playtest.biome_pregen(
+        WorldSpec.from_arg(playtest.c, args[0] if args else "biome_large"),
+        int(args[1]) if len(args) > 1 else 512,
+        int(args[2]) if len(args) > 2 else 8,
+        args[3] if len(args) > 3 else "minecraft:overworld",
+      )
       return 0
     case "biome-scan":
       if len(args) < 2:
@@ -1161,7 +1169,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def usage() -> None:
   print(
-    "usage: scripts/playtest server [worldKey|scenario.json] | stage <scenario.json> [player] | daemon [worldKey|scenario.json] | cmd <server command> | probe [worldKey|scenario.json] <x> <y> <z> [dimension] | run <scenario.json> | once <scenario.json> | suite [manifest] | biome-pregen [worldKey] [radius] [tileChunks] | biome-scan <worldKey> <outDir> [args...] | biome-aggregate [resultsDir] [outJson] | biome-facts <worldKey> [outJson] [args...] | stop | stop-all",
+    "usage: scripts/playtest server [worldKey|scenario.json] | stage <scenario.json> [player] | daemon [worldKey|scenario.json] | cmd <server command> | probe [worldKey|scenario.json] <x> <y> <z> [dimension] | run <scenario.json> | once <scenario.json> | suite [manifest] | biome-pregen [worldKey] [radius] [tileChunks] [dimension] | biome-scan <worldKey> <outDir> [args...] | biome-aggregate [resultsDir] [outJson] | biome-facts <worldKey> [outJson] [args...] | stop | stop-all",
     file=sys.stderr,
   )
 
