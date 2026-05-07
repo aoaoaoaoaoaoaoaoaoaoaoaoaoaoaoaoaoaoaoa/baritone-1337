@@ -19,7 +19,7 @@
   "viewDistance": 10,
   "simulationDistance": 10,
   "loadout": [],
-  "timeoutTicks": 1400,
+  "timeoutTicks": 2000,
   "successRadius": 20.0,
   "acceptance": {
     "requirePathComplete": true,

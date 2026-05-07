@@ -54,7 +54,7 @@ public final class MacroPlanner {
     int cellBlocks = atlas.cellBlocks();
     int waypointBlocks = Baritone.settings().macroBiomeWaypointBlocks.value;
     double fullDistance = Math.hypot(goalPos.get().getX() - start.x, goalPos.get().getZ() - start.z);
-    double minimumDistance = Math.max(cellBlocks * (double) MIN_WATER_MACRO_CELLS, waypointBlocks);
+    double minimumDistance = forceSurfaceTransition ? cellBlocks * (double) MIN_WATER_MACRO_CELLS : Math.max(cellBlocks * (double) MIN_WATER_MACRO_CELLS, waypointBlocks);
     if (fullDistance < minimumDistance) {
       return Optional.empty();
     }

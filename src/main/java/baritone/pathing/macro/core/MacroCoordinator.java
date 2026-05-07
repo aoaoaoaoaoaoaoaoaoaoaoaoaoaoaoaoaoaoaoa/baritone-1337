@@ -13,23 +13,26 @@ public final class MacroCoordinator {
   }
 
   public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal) {
-    if (MacroGoals.destinationChunkLive(context, goal)) {
-      return Optional.empty();
+    if (!MacroGoals.destinationChunkLive(context, goal)) {
+      Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal);
+      if (multimodal.filter(plan -> plan.surfaceTransitionActions() > 0 && usefulSurfacePlan(context, plan)).isPresent()) {
+        MacroPlan plan = multimodal.get();
+        Optional<RoutePlan> route = materialize(context, plan, null);
+        if (route.isPresent()) {
+          return Optional.of(MacroDirective.certified(plan, route.get()));
+        }
+        Helper.HELPER.logDebug("Macro surface plan not executable yet: " + MacroPlanMaterializer.diagnostic(context, plan));
+        Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal);
+        if (factualPrefix.isPresent()) {
+          return factualPrefix;
+        }
+        Helper.HELPER.logDebug("Deferring speculative surface macro plan until a factual prefix exists");
+        return Optional.of(MacroDirective.deferred(plan));
+      }
     }
-    Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal);
-    if (multimodal.filter(plan -> plan.surfaceTransitionActions() > 0 && usefulSurfacePlan(context, plan)).isPresent()) {
-      MacroPlan plan = multimodal.get();
-      Optional<RoutePlan> route = materialize(context, plan, null);
-      if (route.isPresent()) {
-        return Optional.of(MacroDirective.certified(plan, route.get()));
-      }
-      Helper.HELPER.logDebug("Macro surface plan not executable yet: " + MacroPlanMaterializer.diagnostic(context, plan));
-      Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal);
-      if (factualPrefix.isPresent()) {
-        return factualPrefix;
-      }
-      Helper.HELPER.logDebug("Deferring speculative surface macro plan until a factual prefix exists");
-      return Optional.of(MacroDirective.deferred(plan));
+    Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal);
+    if (factualPrefix.isPresent()) {
+      return factualPrefix;
     }
     return navigator.plan(context, start, goal);
   }
