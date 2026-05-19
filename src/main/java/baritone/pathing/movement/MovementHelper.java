@@ -587,34 +587,37 @@ public interface MovementHelper extends ActionCosts, Helper {
   }
 
   static double computeMiningDurationTicks(CalculationContext context, int x, int y, int z, BlockState state, boolean includeFalling) {
-    Block block = state.getBlock();
     if (!canWalkThrough(context, x, y, z, state)) {
-      if (!state.getFluidState().isEmpty()) {
-        return COST_INF;
-      }
-      double mult = context.breakCostMultiplierAt(x, y, z, state);
-      if (mult >= COST_INF) {
-        return COST_INF;
-      }
-      if (avoidBreaking(context.bsi, x, y, z, state)) {
-        return COST_INF;
-      }
-      double strVsBlock = context.toolSet.getStrVsBlock(state);
-      if (strVsBlock <= 0) {
-        return COST_INF;
-      }
-      double result = 1 / strVsBlock;
-      result += context.costs.breakBlockAdditional();
-      result *= mult;
-      if (includeFalling) {
-        BlockState above = context.get(x, y + 1, z);
-        if (above.getBlock() instanceof FallingBlock) {
-          result += context.affordances.miningCost(x, y + 1, z, above, true);
-        }
-      }
-      return result;
+      return computeBlockedMiningDurationTicks(context, x, y, z, state, includeFalling);
     }
     return 0; // we won't actually mine it, so don't check fallings above
+  }
+
+  static double computeBlockedMiningDurationTicks(CalculationContext context, int x, int y, int z, BlockState state, boolean includeFalling) {
+    if (!state.getFluidState().isEmpty()) {
+      return COST_INF;
+    }
+    double mult = context.breakCostMultiplierAt(x, y, z, state);
+    if (mult >= COST_INF) {
+      return COST_INF;
+    }
+    if (avoidBreaking(context.bsi, x, y, z, state)) {
+      return COST_INF;
+    }
+    double strVsBlock = context.toolSet.getStrVsBlock(state);
+    if (strVsBlock <= 0) {
+      return COST_INF;
+    }
+    double result = 1 / strVsBlock;
+    result += context.costs.breakBlockAdditional();
+    result *= mult;
+    if (includeFalling) {
+      BlockState above = context.get(x, y + 1, z);
+      if (above.getBlock() instanceof FallingBlock) {
+        result += context.affordances.miningCost(x, y + 1, z, above, true);
+      }
+    }
+    return result;
   }
 
   static boolean isBottomSlab(BlockState state) {
@@ -807,6 +810,9 @@ public interface MovementHelper extends ActionCosts, Helper {
   }
 
   static double movementPassageCost(CalculationContext context, int x, int y, int z, BlockState state, boolean includeFalling) {
+    if (state.getBlock() instanceof AirBlock) {
+      return 0;
+    }
     return isWater(state) ? canSwimThrough(context, state) ? 0 : COST_INF : getMiningDurationTicks(context, x, y, z, state, includeFalling);
   }
 

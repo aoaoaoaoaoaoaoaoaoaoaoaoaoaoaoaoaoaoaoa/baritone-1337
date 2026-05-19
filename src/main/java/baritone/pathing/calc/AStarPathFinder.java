@@ -63,7 +63,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     EdgeEvalScratch eval = new EdgeEvalScratch();
     NodeTerrainFacts terrainFacts = new NodeTerrainFacts();
     eval.nodeFacts = terrainFacts;
-    BetterWorldBorder worldBorder = new BetterWorldBorder(calcContext.world.getWorldBorder());
+    BetterWorldBorder worldBorder = calcContext.worldBorder;
     long startTime = System.currentTimeMillis();
     long primaryTimeoutTime = startTime + primaryTimeout;
     long failureTimeoutTime = startTime + failureTimeout;

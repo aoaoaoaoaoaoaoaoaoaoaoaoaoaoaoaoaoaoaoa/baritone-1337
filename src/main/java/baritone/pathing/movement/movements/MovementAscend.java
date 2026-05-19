@@ -47,7 +47,8 @@ public class MovementAscend extends Movement {
   }
 
   public static double cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
-    if (!MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z)) {
+    boolean hasFacts = facts != null && facts.matches(x, y, z);
+    if (!(hasFacts ? facts.srcHorizontalWaterMoveThrough : MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z))) {
       return COST_INF;
     }
     BlockState toPlace = context.get(destX, y, destZ);
@@ -77,7 +78,6 @@ public class MovementAscend extends Movement {
         return COST_INF;
       }
     }
-    boolean hasFacts = facts != null && facts.matches(x, y, z);
     BlockState srcUp2 = hasFacts ? facts.srcUp2 : context.get(x, y + 2, z); // used lower down anyway
     if (context.get(x, y + 3, z).getBlock() instanceof FallingBlock && (MovementHelper.canWalkThrough(context, x, y + 1, z) || !(srcUp2.getBlock() instanceof FallingBlock))) { // it would fall on us and possibly suffocate us
       // HOWEVER, we assume that we're standing in the start position

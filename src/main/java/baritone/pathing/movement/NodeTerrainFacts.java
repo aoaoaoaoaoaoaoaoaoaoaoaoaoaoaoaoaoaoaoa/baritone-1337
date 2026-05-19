@@ -11,10 +11,13 @@ public final class NodeTerrainFacts {
   public int z;
   public BlockState src;
   public Block srcBlock;
+  public BlockState srcUp;
+  public Block srcUpBlock;
   public BlockState srcDown;
   public Block srcDownBlock;
   public BlockState srcUp2;
   public Block srcUp2Block;
+  public boolean srcHorizontalWaterMoveThrough;
   public boolean standingOnABlock;
   public boolean srcDownLadderOrVine;
   public boolean srcDownBottomSlab;
@@ -25,10 +28,13 @@ public final class NodeTerrainFacts {
     this.z = z;
     this.src = context.get(x, y, z);
     this.srcBlock = src.getBlock();
+    this.srcUp = context.get(x, y + 1, z);
+    this.srcUpBlock = srcUp.getBlock();
     this.srcDown = context.get(x, y - 1, z);
     this.srcDownBlock = srcDown.getBlock();
     this.srcUp2 = context.get(x, y + 2, z);
     this.srcUp2Block = srcUp2.getBlock();
+    this.srcHorizontalWaterMoveThrough = MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z, src, srcUp);
     this.standingOnABlock = MovementHelper.mustBeSolidToWalkOn(context, x, y - 1, z, srcDown);
     this.srcDownLadderOrVine = srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE;
     this.srcDownBottomSlab = srcDownBlock instanceof SlabBlock && MovementHelper.isBottomSlab(srcDown);

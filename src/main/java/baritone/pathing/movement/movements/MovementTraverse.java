@@ -67,11 +67,12 @@ public class MovementTraverse extends Movement {
   public static double cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
     BlockState pb0 = context.get(destX, y + 1, destZ);
     BlockState pb1 = context.get(destX, y, destZ);
-    if (!MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z) || !MovementHelper.canHorizontalWaterMoveThrough(context, destX, y, destZ, pb1, pb0)) {
+    boolean hasFacts = facts != null && facts.matches(x, y, z);
+    if (!(hasFacts ? facts.srcHorizontalWaterMoveThrough : MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z))
+      || !MovementHelper.canHorizontalWaterMoveThrough(context, destX, y, destZ, pb1, pb0)) {
       return COST_INF;
     }
     BlockState destOn = context.get(destX, y - 1, destZ);
-    boolean hasFacts = facts != null && facts.matches(x, y, z);
     BlockState srcDown = hasFacts ? facts.srcDown : context.get(x, y - 1, z);
     Block srcDownBlock = hasFacts ? facts.srcDownBlock : srcDown.getBlock();
     boolean standingOnABlock = hasFacts ? facts.standingOnABlock : MovementHelper.mustBeSolidToWalkOn(context, x, y - 1, z, srcDown);

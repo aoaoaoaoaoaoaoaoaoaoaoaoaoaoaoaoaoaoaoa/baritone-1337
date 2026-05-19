@@ -121,10 +121,10 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
       case DESCEND_WEST -> MovementDescend.cost(ctx, facts, x, y, z, x - 1, z, result);
       case DESCEND_NORTH -> MovementDescend.cost(ctx, facts, x, y, z, x, z - 1, result);
       case DESCEND_SOUTH -> MovementDescend.cost(ctx, facts, x, y, z, x, z + 1, result);
-      case DIAGONAL_NORTHEAST -> MovementDiagonal.cost(ctx, x, y, z, x + 1, z - 1, result);
-      case DIAGONAL_NORTHWEST -> MovementDiagonal.cost(ctx, x, y, z, x - 1, z - 1, result);
-      case DIAGONAL_SOUTHEAST -> MovementDiagonal.cost(ctx, x, y, z, x + 1, z + 1, result);
-      case DIAGONAL_SOUTHWEST -> MovementDiagonal.cost(ctx, x, y, z, x - 1, z + 1, result);
+      case DIAGONAL_NORTHEAST -> MovementDiagonal.cost(ctx, facts, x, y, z, x + 1, z - 1, result);
+      case DIAGONAL_NORTHWEST -> MovementDiagonal.cost(ctx, facts, x, y, z, x - 1, z - 1, result);
+      case DIAGONAL_SOUTHEAST -> MovementDiagonal.cost(ctx, facts, x, y, z, x + 1, z + 1, result);
+      case DIAGONAL_SOUTHWEST -> MovementDiagonal.cost(ctx, facts, x, y, z, x - 1, z + 1, result);
       case PARKOUR_NORTH -> MovementParkour.cost(ctx, x, y, z, Direction.NORTH, result);
       case PARKOUR_SOUTH -> MovementParkour.cost(ctx, x, y, z, Direction.SOUTH, result);
       case PARKOUR_EAST -> MovementParkour.cost(ctx, x, y, z, Direction.EAST, result);

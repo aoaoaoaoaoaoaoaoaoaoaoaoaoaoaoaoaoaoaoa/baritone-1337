@@ -6,12 +6,14 @@ import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.cache.WorldData;
+import baritone.pathing.calc.BlockKey;
 import baritone.pathing.calc.PathingProfiler;
 import baritone.pathing.movement.water.WaterTransportPolicy;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
 import baritone.utils.pathing.ChunkFactState;
+import it.unimi.dsi.fastutil.HashCommon;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -30,6 +32,8 @@ import net.minecraft.world.level.block.state.BlockState;
  */
 public class CalculationContext {
   private static final ItemStack STACK_BUCKET_WATER = new ItemStack(Items.WATER_BUCKET);
+  private static final int BLOCK_STATE_CACHE_SIZE = 1 << 15;
+  private static final int BLOCK_STATE_CACHE_MASK = BLOCK_STATE_CACHE_SIZE - 1;
 
   public final boolean safeForThreadedUse;
   public final IBaritone baritone;
@@ -49,6 +53,8 @@ public class CalculationContext {
   public final PathingProfiler pathingProfiler;
   public final MovementCatalog movementCatalog;
   public final WaterTransportPolicy waterTransport;
+  private final long[] blockStateCacheKeys;
+  private final BlockState[] blockStateCacheValues;
 
   public CalculationContext(IBaritone baritone) {
     this(baritone, false);
@@ -96,12 +102,26 @@ public class CalculationContext {
     this.pathingProfiler = ((Baritone) baritone).getPathingProfiler();
     this.waterTransport = WaterTransportPolicy.snapshot((Baritone) baritone);
     this.movementCatalog = MovementCatalog.legacyWalking(this);
+    this.blockStateCacheKeys = forUseOnAnotherThread ? new long[BLOCK_STATE_CACHE_SIZE] : null;
+    this.blockStateCacheValues = forUseOnAnotherThread ? new BlockState[BLOCK_STATE_CACHE_SIZE] : null;
   }
 
   public final IBaritone getBaritone() { return baritone; }
 
   public BlockState get(int x, int y, int z) {
-    return bsi.get0(x, y, z); // laughs maniacally
+    if (blockStateCacheValues == null) {
+      return bsi.get0(x, y, z); // laughs maniacally
+    }
+    long key = BlockKey.pack(x, y, z);
+    int index = (int) HashCommon.mix(key) & BLOCK_STATE_CACHE_MASK;
+    BlockState cached = blockStateCacheValues[index];
+    if (cached != null && blockStateCacheKeys[index] == key) {
+      return cached;
+    }
+    BlockState state = bsi.get0(x, y, z);
+    blockStateCacheKeys[index] = key;
+    blockStateCacheValues[index] = state;
+    return state;
   }
 
   public ChunkFactState chunkFactState(int x, int z) {

@@ -26,6 +26,8 @@ public class BlockStateInterface {
   public final BlockPos.MutableBlockPos isPassableBlockPos;
   public final BlockGetter access;
   public final BetterWorldBorder worldBorder;
+  private final int minY;
+  private final int height;
 
   private LevelChunk prev = null;
   private CachedRegion prevCached = null;
@@ -48,6 +50,8 @@ public class BlockStateInterface {
       this.provider = (ClientChunkCache) world.getChunkSource();
     }
     this.useTheRealWorld = !Baritone.settings().pathThroughCachedOnly.value;
+    this.minY = world.dimensionType().minY();
+    this.height = world.dimensionType().height();
     if (!ctx.minecraft().isSameThread()) {
       throw new IllegalStateException("BlockStateInterface must be constructed on the main thread");
     }
@@ -89,9 +93,9 @@ public class BlockStateInterface {
   }
 
   public BlockState get0(int x, int y, int z) { // Mickey resigned
-    y -= world.dimensionType().minY();
+    y -= minY;
     // Invalid vertical position
-    if (y < 0 || y >= world.dimensionType().height()) {
+    if (y < 0 || y >= height) {
       return AIR;
     }
 
@@ -108,7 +112,7 @@ public class BlockStateInterface {
     if (cached == null) {
       return AIR;
     }
-    BlockState type = cached.getBlock(x & 511, y + world.dimensionType().minY(), z & 511);
+    BlockState type = cached.getBlock(x & 511, y + minY, z & 511);
     if (type == null) {
       return AIR;
     }

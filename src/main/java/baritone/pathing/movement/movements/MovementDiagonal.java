@@ -10,6 +10,7 @@ import baritone.pathing.movement.EdgeEvalScratch;
 import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
+import baritone.pathing.movement.NodeTerrainFacts;
 import baritone.pathing.control.ControlFrame;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
@@ -89,8 +90,13 @@ public class MovementDiagonal extends Movement {
   }
 
   public static void cost(CalculationContext context, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
+    cost(context, null, x, y, z, destX, destZ, res);
+  }
+
+  public static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
     res.blocked();
-    if (!MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z)) {
+    boolean hasFacts = facts != null && facts.matches(x, y, z);
+    if (!(hasFacts ? facts.srcHorizontalWaterMoveThrough : MovementHelper.canHorizontalWaterMoveThrough(context, x, y, z))) {
       return;
     }
     BlockState destHead = context.get(destX, y + 1, destZ);
@@ -114,11 +120,11 @@ public class MovementDiagonal extends Movement {
         return;
       }
       destWalkOn = destInto;
-      fromDown = context.get(x, y - 1, z);
+      fromDown = hasFacts ? facts.srcDown : context.get(x, y - 1, z);
     } else {
       destWalkOn = context.get(destX, y - 1, destZ);
-      fromDown = context.get(x, y - 1, z);
-      boolean standingOnABlock = MovementHelper.mustBeSolidToWalkOn(context, x, y - 1, z, fromDown);
+      fromDown = hasFacts ? facts.srcDown : context.get(x, y - 1, z);
+      boolean standingOnABlock = hasFacts ? facts.standingOnABlock : MovementHelper.mustBeSolidToWalkOn(context, x, y - 1, z, fromDown);
       frostWalker = standingOnABlock && MovementHelper.canUseFrostWalker(context, destWalkOn);
       if (!frostWalker && !MovementHelper.canWalkOn(context, destX, y - 1, destZ, destWalkOn)) {
         descend = true;
@@ -159,7 +165,7 @@ public class MovementDiagonal extends Movement {
       return;
     }
     boolean water = false;
-    BlockState startState = context.get(x, y, z);
+    BlockState startState = hasFacts ? facts.src : context.get(x, y, z);
     Block startIn = startState.getBlock();
     if (MovementHelper.isWater(startState) || MovementHelper.isWater(destInto)) {
       if (ascend) {
