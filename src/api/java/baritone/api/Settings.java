@@ -549,6 +549,31 @@ public final class Settings {
   public final Setting<Double> pedestrianPathingIncumbentHeuristicMargin = new Setting<>(6D);
 
   /**
+   * Use the pedestrian-only hot local value field for macro/local-exit walking segments.
+   */
+  public final Setting<Boolean> pedestrianHotLocalValueField = new Setting<>(true);
+
+  /**
+   * Resident node circuit breaker for one pedestrian hot local value field. This is a lazy-growth memory fuse, not a planning horizon or an eager allocation request.
+   */
+  public final Setting<Integer> pedestrianHotLocalMaxNodes = new Setting<>(8_000_000);
+
+  /**
+   * Evaluated edge record circuit breaker for one pedestrian hot local value field. Edge storage is sparse and chunked; this should stay generous without pretending edge rows are free.
+   */
+  public final Setting<Integer> pedestrianHotLocalMaxEdges = new Setting<>(24_000_000);
+
+  /**
+   * Maximum extracted hot-local movements before a prefix is published with local-value continuation.
+   */
+  public final Setting<Integer> pedestrianHotLocalExtractionMaxMovements = new Setting<>(384);
+
+  /**
+   * Emergency legacy A* fallback for unsupported or budget-exhausted hot-local queries.
+   */
+  public final Setting<Boolean> pedestrianHotLocalFallbackEnabled = new Setting<>(true);
+
+  /**
    * Horse incumbent policy. Keep these locked to the accepted mounted baseline unless explicitly retuning mounted navigation.
    */
   public final Setting<Boolean> horsePathingEarlyIncumbentExecution = new Setting<>(true);

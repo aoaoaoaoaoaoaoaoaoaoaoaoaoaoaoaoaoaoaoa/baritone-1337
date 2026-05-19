@@ -44,8 +44,8 @@ CODE_STAMP_FILES = (
 CODE_STAMP_SUFFIXES = (".java", ".json", ".gradle", ".groovy", ".properties", ".accesswidener", ".mixins.json")
 
 
-def truth(raw: str | None, default: bool) -> bool:
-  return default if raw is None else raw.lower() in {"1", "true", "yes", "on"}
+def truth(raw: object, default: bool) -> bool:
+  return default if raw is None else raw if isinstance(raw, bool) else str(raw).lower() in {"1", "true", "yes", "on"}
 
 
 def profiler_size(raw: str) -> float:

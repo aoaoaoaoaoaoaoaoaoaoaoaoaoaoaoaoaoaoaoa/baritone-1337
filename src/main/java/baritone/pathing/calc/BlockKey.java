@@ -16,4 +16,22 @@ public final class BlockKey {
   public static long pack(int x, int y, int z) {
     return ((long) x & X_MASK) << X_SHIFT | ((long) y & Y_MASK) << Y_SHIFT | ((long) z & Z_MASK);
   }
+
+  public static int x(long key) {
+    return signExtend(key >> X_SHIFT, X_BITS);
+  }
+
+  public static int y(long key) {
+    return signExtend(key >> Y_SHIFT, Y_BITS);
+  }
+
+  public static int z(long key) {
+    return signExtend(key, Z_BITS);
+  }
+
+  private static int signExtend(long value, int bits) {
+    long mask = 1L << bits - 1;
+    long truncated = value & (1L << bits) - 1L;
+    return (int) ((truncated ^ mask) - mask);
+  }
 }

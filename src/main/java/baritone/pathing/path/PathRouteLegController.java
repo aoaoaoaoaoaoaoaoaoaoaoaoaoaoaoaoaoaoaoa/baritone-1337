@@ -8,7 +8,7 @@ import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.*;
 import baritone.api.utils.input.Input;
 import baritone.behavior.PathingBehavior;
-import baritone.pathing.calc.AbstractNodeCostSearch;
+import baritone.pathing.calc.ActivePathCalculation;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.LiquidLocomotionController;
@@ -328,7 +328,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
   }
 
   private boolean shouldPause() {
-    Optional<AbstractNodeCostSearch> current = behavior.getInProgress();
+    Optional<ActivePathCalculation> current = behavior.getInProgress();
     if (!current.isPresent()) {
       return false;
     }

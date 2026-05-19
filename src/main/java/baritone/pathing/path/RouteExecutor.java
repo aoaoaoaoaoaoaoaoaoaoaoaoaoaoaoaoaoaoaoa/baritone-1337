@@ -315,7 +315,11 @@ public final class RouteExecutor implements IPathExecutor, Helper {
       return Optional.empty();
     }
     if (activeController instanceof PathRouteLegController currentPath && replacement.activeController instanceof PathRouteLegController replacementPath && legacy() && replacement.legacy()) {
-      return currentPath.tryReplaceSuffix(replacementPath, minimumAnchor.units()).map(controller -> new RouteExecutor(behavior, controller));
+      return currentPath.tryReplaceSuffix(replacementPath, minimumAnchor.units()).map(controller -> {
+        PlannedTransportState state = physicalState(behavior);
+        RoutePlan plan = RoutePlan.of(List.of(PathRouteLeg.legacy(controller.getPath(), state)), state, replacement.route.endState(), replacement.route.estimatedContinuationTicks());
+        return new RouteExecutor(behavior, plan, controller, terminalGoal);
+      });
     }
     if (legacy() || replacement.src().equals(route.src())) {
       return Optional.empty();
@@ -517,8 +521,12 @@ public final class RouteExecutor implements IPathExecutor, Helper {
   }
 
   public BetterBlockPos planAheadStart(double aheadTicks) {
-    double targetTicks = progress().ticks() + Math.max(0D, aheadTicks);
-    return legacyPath == null ? legBoundaryAtOrAfterTicks(targetTicks) : positionAtProgress(boundaryAtOrAfterTicks(targetTicks).units());
+    return planAheadStart(aheadTicks, 1);
+  }
+
+  public BetterBlockPos planAheadStart(double aheadTicks, int minimumAheadUnits) {
+    RouteProgress target = commitmentEnd(aheadTicks, minimumAheadUnits);
+    return legacyPath == null ? legBoundaryAtOrAfterTicks(target.ticks()) : positionAtProgress(target.units());
   }
 
   private RouteProgress boundaryAtOrAfterTicks(double targetTicks) {

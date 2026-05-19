@@ -1,7 +1,6 @@
 package baritone.pathing.calc;
 
 import baritone.api.pathing.calc.IPath;
-import baritone.api.pathing.calc.IPathFinder;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
@@ -15,7 +14,7 @@ import java.util.Optional;
  *
  * @author leijurv
  */
-public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
+public abstract class AbstractNodeCostSearch implements ActivePathCalculation, Helper {
   protected final BetterBlockPos realStart;
   protected final int startX;
   protected final int startY;

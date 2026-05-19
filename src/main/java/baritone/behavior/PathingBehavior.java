@@ -13,9 +13,10 @@ import baritone.api.utils.PathCalculationResult;
 import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.api.event.events.type.EventState;
 import baritone.pathing.calc.AStarPathFinder;
-import baritone.pathing.calc.AbstractNodeCostSearch;
+import baritone.pathing.calc.ActivePathCalculation;
 import baritone.pathing.calc.LocalExitObjective;
 import baritone.pathing.calc.PathingIncumbentPolicy;
+import baritone.pathing.calc.PedestrianLocalHotPlanner;
 import baritone.pathing.calc.PlanningProbe;
 import baritone.pathing.control.ControlArbiter;
 import baritone.pathing.goal.GoalTerminalPolicy;
@@ -57,7 +58,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
   private static final int SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE = 12;
   private static final int SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE = 48;
-  private static final int SUFFIX_REPLAN_MAX_ANCHOR_ADVANCE = 96;
   private static final int SAME_ANCHOR_FACT_REPLAN_INTERVAL_TICKS = 20;
   private static final int OPPORTUNISTIC_FACT_REPLAN_INTERVAL_TICKS = 10;
   private static final int OPPORTUNISTIC_FACT_REPLAN_MIN_ADVANCE_BLOCKS = 0;
@@ -92,7 +92,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private volatile String lastRouteFailure;
   private final ArrayDeque<String> recentNextPathingFailures = new ArrayDeque<>(16);
 
-  private volatile AbstractNodeCostSearch inProgress;
+  private volatile ActivePathCalculation inProgress;
   private volatile BetterBlockPos activePlanningStart;
   private volatile PlanningAnchor activePlanningAnchor;
   private volatile long activePlanningFactEpoch = -1;
@@ -121,6 +121,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private final LinkedBlockingQueue<PathEvent> toDispatch = new LinkedBlockingQueue<>();
   private final ControlArbiter controlArbiter;
   private final MacroNavigator macroNavigator = new MacroNavigator();
+  private final PedestrianLocalHotPlanner pedestrianHotPlanner = new PedestrianLocalHotPlanner();
   private TailPlanTicket lastTailPlanTicket;
   private double replanWallTicksEWMA = INITIAL_REPLAN_WALL_TICKS;
 
@@ -446,7 +447,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private BetterBlockPos planAheadStart() {
     IPath path = current.getPath();
     if (path == null) {
-      return current.planAheadStart(replanAnchorAheadTicks());
+      return current.planAheadStart(replanAnchorAheadTicks(), SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE);
     }
     if (ctx.player().isSwimming() || MovementHelper.isWater(ctx, ctx.playerFeet())) {
       return ctx.playerFeet();
@@ -454,14 +455,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (!Baritone.settings().pathingContinuousPlanning.value) {
       return path.getDest();
     }
-    int position = Math.max(0, Math.min(current.getPosition(), path.length() - 1));
-    int remainingMovements = path.length() - 1 - position;
-    if (remainingMovements <= SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE) {
-      return path.getDest();
-    }
-    int advance =
-      Math.min(remainingMovements, Math.min(SUFFIX_REPLAN_MAX_ANCHOR_ADVANCE, Math.max(SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE, Math.max(SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE, remainingMovements / 3))));
-    return path.positions().get(Math.min(path.length() - 1, position + advance));
+    return current.planAheadStart(replanAnchorAheadTicks(), SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE);
   }
 
   @Override
@@ -537,7 +531,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   public RouteExecutor getNext() { return next; }
 
   @Override
-  public Optional<AbstractNodeCostSearch> getInProgress() { return Optional.ofNullable(inProgress); }
+  public Optional<ActivePathCalculation> getInProgress() { return Optional.ofNullable(inProgress); }
 
   public Optional<PlanningProbe> getPlanningProbe() { return calculationActive() ? Optional.ofNullable(planningProbe) : Optional.empty(); }
 
@@ -1024,7 +1018,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           return;
         }
         CreatedPathfinder pathLaunch = (CreatedPathfinder) created;
-        AbstractNodeCostSearch pathfinder = pathLaunch.pathfinder();
+        ActivePathCalculation pathfinder = pathLaunch.pathfinder();
         if (pathLaunch.immediateRoute().isPresent()) {
           RouteExecutor route = new RouteExecutor(PathingBehavior.this, pathLaunch.immediateRoute().get(), pathLaunch.terminalGoal());
           synchronized (pathPlanLock) {
@@ -1050,7 +1044,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
             }
           }
         }
-        pathfinder.setPublicationSink(result -> acceptIncumbent(pathfinder, result));
+        if (!(pathfinder instanceof PedestrianLocalHotPlanner.HotLocalPathCalculation)) {
+          pathfinder.setPublicationSink(result -> acceptIncumbent(pathfinder, result));
+        }
         synchronized (pathPlanLock) {
           synchronized (pathCalcLock) {
             if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
@@ -1088,7 +1084,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                 }
               }
             }
-            acceptCalculation(calcResult, start, talkAboutIt, true, calculationContext);
+            if (!(pathfinder instanceof PedestrianLocalHotPlanner.HotLocalPathCalculation hot) || !acceptHotLocalCalculation(hot, start, talkAboutIt)) {
+              acceptCalculation(calcResult, start, talkAboutIt, true, calculationContext);
+            }
           }
           synchronized (pathCalcLock) {
             if (inProgress == pathfinder) {
@@ -1299,7 +1297,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private void cancelCalculation() {
     pathCalcEpoch++;
     pathCalcLaunching = false;
-    getInProgress().ifPresent(AbstractNodeCostSearch::cancel);
+    getInProgress().ifPresent(ActivePathCalculation::cancel);
     clearActivePlanningAnchor();
     activeMacroPlan = null;
     planningMacroPlan = null;
@@ -1401,7 +1399,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return !path.getDest().equals(startPos) && current.containsPathPosition(startPos) ? null : path;
   }
 
-  private void acceptIncumbent(AbstractNodeCostSearch pathfinder, PathCalculationResult result) {
+  private void acceptIncumbent(ActivePathCalculation pathfinder, PathCalculationResult result) {
     if (!PathingIncumbentPolicy.pedestrian().earlyExecution()) {
       return;
     }
@@ -1414,6 +1412,35 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       }
       acceptCalculation(result, pathfinder.getStart(), false, false, null);
     }
+  }
+
+  private boolean acceptHotLocalCalculation(PedestrianLocalHotPlanner.HotLocalPathCalculation pathfinder, BlockPos requestedStart, boolean talkAboutIt) {
+    if (!Thread.holdsLock(pathPlanLock)) {
+      throw new IllegalStateException("Must hold pathPlanLock while accepting a hot local calculation");
+    }
+    Optional<RoutePlan> routePlan = pathfinder.routePlan();
+    if (routePlan.isEmpty()) {
+      return false;
+    }
+    RouteExecutor candidate = new RouteExecutor(PathingBehavior.this, routePlan.get(), pathfinder.terminalGoal());
+    CandidateDisposition disposition = acceptCandidate(candidate, pathfinder.terminalGoal());
+    if (disposition == CandidateDisposition.REJECTED) {
+      if (activePlanningAnchor == PlanningAnchor.CERTIFIED_FUTURE) {
+        logDebug("Discarding stale speculative hot local route segment from " + requestedStart + " to " + candidate.dest());
+        return true;
+      }
+      logDebug("Discarding hot local route segment from " + requestedStart + " to " + candidate.dest());
+      acceptEmptyCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), requestedStart, true,
+        "discarded hot local route segment from " + requestedStart + " to " + candidate.dest());
+      return true;
+    }
+    if (disposition == CandidateDisposition.EXECUTING) {
+      commitMacroPlan(planningMacroPlan);
+    }
+    if (talkAboutIt && disposition == CandidateDisposition.EXECUTING && current != null) {
+      logDebug("Found hot local route segment from " + requestedStart + " towards " + goal + ". " + pathfinder.telemetry());
+    }
+    return true;
   }
 
   private void acceptCalculation(PathCalculationResult result, BlockPos requestedStart, boolean talkAboutIt, boolean finalResult, CalculationContext calculationContext) {
@@ -1750,6 +1777,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (profile.horse()) {
       return new HorseCalculation(horseStart, transformed, terminalGoal, macroPlan, failureTimeoutMS);
     }
+    if (Baritone.settings().pedestrianHotLocalValueField.value) {
+      return new CreatedPathfinder(pedestrianHotPlanner.query(context, realStart, start.getX(), start.getY(), start.getZ(), transformed, terminalGoal, macroPlan, favoring, worldFactEpoch),
+        terminalGoal, macroPlan, immediateRoute);
+    }
     return new CreatedPathfinder(new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context, PathingIncumbentPolicy.pedestrian()), terminalGoal, macroPlan,
       immediateRoute);
 
@@ -1758,8 +1789,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private sealed interface CalculationLaunch permits CreatedPathfinder, DeferredCalculation, HorseCalculation, ImmediateRouteCalculation, FailedCalculation {
   }
 
-  private record CreatedPathfinder(AbstractNodeCostSearch pathfinder, Goal terminalGoal, MacroPlan macroPlan, Optional<RoutePlan> immediateRoute) implements CalculationLaunch {
-    private CreatedPathfinder(AbstractNodeCostSearch pathfinder, Goal terminalGoal, MacroPlan macroPlan, Optional<RoutePlan> immediateRoute) {
+  private record CreatedPathfinder(ActivePathCalculation pathfinder, Goal terminalGoal, MacroPlan macroPlan, Optional<RoutePlan> immediateRoute) implements CalculationLaunch {
+    private CreatedPathfinder(ActivePathCalculation pathfinder, Goal terminalGoal, MacroPlan macroPlan, Optional<RoutePlan> immediateRoute) {
       this.pathfinder = Objects.requireNonNull(pathfinder);
       this.terminalGoal = Objects.requireNonNull(terminalGoal);
       this.macroPlan = macroPlan;
