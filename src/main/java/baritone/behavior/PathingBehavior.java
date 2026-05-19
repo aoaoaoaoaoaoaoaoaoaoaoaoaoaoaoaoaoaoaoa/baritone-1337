@@ -395,7 +395,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (activeFutureCalculationStale()) {
       return false;
     }
-    Optional<BetterBlockPos> certifiedPreemption = certifiedPreemptionStart();
+    Optional<BetterBlockPos> certifiedPreemption = workerSafeCertifiedPreemptionStart();
     if (certifiedPreemption.isPresent() && !sameRelevantStart(certifiedPreemption.get(), calcFrom)) {
       return false;
     }
@@ -1233,11 +1233,20 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private Optional<BetterBlockPos> certifiedPreemptionStart() {
-    if (current == null || current.getPath() == null || goalSatisfied(ctx.playerFeet())) {
+    return certifiedPreemptionStart(true);
+  }
+
+  private Optional<BetterBlockPos> workerSafeCertifiedPreemptionStart() {
+    return certifiedPreemptionStart(false);
+  }
+
+  private Optional<BetterBlockPos> certifiedPreemptionStart(boolean liveWorldTerminalPolicy) {
+    BetterBlockPos feet = ctx.playerFeet();
+    if (current == null || current.getPath() == null || (liveWorldTerminalPolicy ? goalSatisfied(feet) : goalSatisfied(goal, feet))) {
       return Optional.empty();
     }
-    if (ctx.player().isSwimming() || MovementHelper.isWater(ctx, ctx.playerFeet())) {
-      return Optional.of(ctx.playerFeet());
+    if (ctx.player().isSwimming() || liveWorldTerminalPolicy && MovementHelper.isWater(ctx, feet)) {
+      return Optional.of(feet);
     }
     return Optional.empty();
   }
