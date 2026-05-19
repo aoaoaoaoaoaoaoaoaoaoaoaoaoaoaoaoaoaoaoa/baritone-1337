@@ -157,6 +157,7 @@ class Path extends PathBase {
     }
     verified = true;
     boolean failed = assembleMovements();
+    movements.forEach(m -> m.recordFactProvenance(context));
     if (failed) { // at least one movement became impossible during calculation
       CutoffPath res = new CutoffPath(this, movements().size());
       if (res.movements().size() != movements.size()) {
@@ -164,7 +165,6 @@ class Path extends PathBase {
       }
       return res;
     }
-    movements.forEach(m -> m.recordFactProvenance(context));
     // more post processing here
     sanityCheck();
     return this;
