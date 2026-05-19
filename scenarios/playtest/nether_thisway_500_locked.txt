@@ -1,0 +1,4 @@
+# Native Nether pedestrian/macro 500-block tuning scenarios.
+scenarios/playtest/nether_thisway_500_a.json
+scenarios/playtest/nether_thisway_500_b.json
+scenarios/playtest/nether_thisway_500_c.json

@@ -83,14 +83,13 @@ def default_params() -> dict[str, Any]:
 
 
 def trial_params(trial: optuna.Trial) -> dict[str, Any]:
-  ground_first = trial.suggest_categorical("planner.ground-first-enabled", [True, False])
   direct_pull = trial.suggest_categorical("planner.direct-cruise-pulling", [True, False])
   direct_large = trial.suggest_float("planner.direct-cruise-pull-span-large", 16.0, 72.0) if direct_pull else 48.0
   direct_mid = direct_large * trial.suggest_float("planner.direct-cruise-pull-span-mid-ratio", 0.45, 0.85) if direct_pull else 32.0
   direct_small = max(1.0, direct_mid * trial.suggest_float("planner.direct-cruise-pull-span-small-ratio", 0.35, 0.85)) if direct_pull else 16.0
   return canonicalize_params({
     "planner.water-wade-cost-multiplier": trial.suggest_float("planner.water-wade-cost-multiplier", 4.0, 10.0, log=True),
-    "planner.ground-first-timeout-ms": trial.suggest_int("planner.ground-first-timeout-ms", 250, 4000) if ground_first else 0,
+    "planner.ground-first-timeout-ms": 0,
     "planner.min-local-progress-fallback-blocks": trial.suggest_float("planner.min-local-progress-fallback-blocks", 2.0, 8.0),
     "planner.min-vertical-local-progress-fallback-blocks": trial.suggest_float("planner.min-vertical-local-progress-fallback-blocks", 0.25, 4.0),
     "planner.local-progress-heuristic-epsilon": trial.suggest_float("planner.local-progress-heuristic-epsilon", 0.0, 2.0),
@@ -127,7 +126,6 @@ def trial_params(trial: optuna.Trial) -> dict[str, Any]:
 def optimizer_params_from_profile_params(params: dict[str, Any]) -> dict[str, Any]:
   profile = normalize_params(params)
   out: dict[str, Any] = {}
-  out["planner.ground-first-enabled"] = int(profile.get("planner.ground-first-timeout-ms", 0) or 0) > 0
   out["planner.direct-cruise-pulling"] = bool(profile.get("planner.direct-cruise-pulling", False))
   for key in (
     "planner.water-wade-cost-multiplier",
@@ -157,8 +155,6 @@ def optimizer_params_from_profile_params(params: dict[str, Any]) -> dict[str, An
     "controller.physical-waypoint-reached-radius",
   ):
     out[key] = profile[key]
-  if out["planner.ground-first-enabled"]:
-    out["planner.ground-first-timeout-ms"] = profile["planner.ground-first-timeout-ms"]
   if out["planner.direct-cruise-pulling"]:
     large = max(float(profile["planner.direct-cruise-pull-span-large"]), 1.0e-9)
     mid = max(float(profile["planner.direct-cruise-pull-span-mid"]), 1.0e-9)

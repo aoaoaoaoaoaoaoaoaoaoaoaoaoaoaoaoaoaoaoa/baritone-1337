@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import math
+import os
+import subprocess
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import optuna
+
+
+REPO = Path(__file__).resolve().parents[1]
+DEFAULT_MANIFEST = REPO / "scenarios/playtest/nether_thisway_500_locked.txt"
+
+
+FIXED_SETTINGS: dict[str, Any] = {
+  "chunkCaching": False,
+  "allowBreak": True,
+  "allowPlace": True,
+  "allowSprint": True,
+  "macroPlanning": True,
+  "macroBiome": True,
+  "macroNether": True,
+  "macroBiomePriorsFile": "",
+  "macroBiomeFactsFile": "",
+  "primaryTimeoutMS": 60_000,
+  "failureTimeoutMS": 60_000,
+  "planAheadPrimaryTimeoutMS": 60_000,
+  "planAheadFailureTimeoutMS": 60_000,
+  "horsePathingEarlyIncumbentExecution": True,
+  "horsePathingIncumbentIntervalMS": 100,
+  "horsePathingMinIncumbentLength": 12,
+  "horsePathingIncumbentHeuristicMargin": 6.0,
+}
+
+
+def git_head() -> str:
+  return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
+
+
+def dirty_patch_digest() -> str:
+  import hashlib
+
+  patch = subprocess.run(["git", "diff", "--binary"], cwd=REPO, check=False, stdout=subprocess.PIPE).stdout
+  return "sha256:" + hashlib.sha256(patch).hexdigest()
+
+
+def safe_name(value: str) -> str:
+  return "".join(c if c.isalnum() or c in "._-" else "_" for c in value).strip("._-") or "study"
+
+
+def bool_arg(raw: str) -> bool:
+  match raw.strip().lower():
+    case "1" | "true" | "yes" | "y" | "on":
+      return True
+    case "0" | "false" | "no" | "n" | "off":
+      return False
+    case _:
+      raise argparse.ArgumentTypeError(f"expected boolean, got {raw!r}")
+
+
+def read_json(path: Path) -> dict[str, Any]:
+  return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def manifest_scenarios(path: Path) -> list[Path]:
+  scenarios: list[Path] = []
+  for raw in path.read_text(encoding="utf-8").splitlines():
+    line = raw.split("#", 1)[0].strip()
+    if line:
+      scenario = Path(line)
+      scenarios.append(scenario if scenario.is_absolute() else REPO / scenario)
+  if not scenarios:
+    raise SystemExit(f"manifest has no scenarios: {path}")
+  return scenarios
+
+
+def default_params() -> dict[str, Any]:
+  return {
+    "pedestrianPathingEarlyIncumbentExecution": True,
+    "pedestrianPathingIncumbentIntervalMS": 100,
+    "pedestrianPathingMinIncumbentLength": 12,
+    "pedestrianPathingIncumbentHeuristicMargin": 6.0,
+    "macroBiomeHorizonBlocks": 2048,
+    "macroBiomeWaypointBlocks": 192,
+    "macroBiomeUnknownPenalty": 1.0,
+    "macroBiomeUncertaintyWeight": 20.0,
+  }
+
+
+def trial_params(trial: optuna.Trial) -> dict[str, Any]:
+  return {
+    "pedestrianPathingEarlyIncumbentExecution": trial.suggest_categorical("pedestrianPathingEarlyIncumbentExecution", [True, False]),
+    "pedestrianPathingIncumbentIntervalMS": trial.suggest_int("pedestrianPathingIncumbentIntervalMS", 25, 500, log=True),
+    "pedestrianPathingMinIncumbentLength": trial.suggest_int("pedestrianPathingMinIncumbentLength", 4, 96),
+    "pedestrianPathingIncumbentHeuristicMargin": trial.suggest_float("pedestrianPathingIncumbentHeuristicMargin", 0.0, 48.0),
+    "macroBiomeHorizonBlocks": trial.suggest_categorical("macroBiomeHorizonBlocks", [1024, 1536, 2048, 3072, 4096]),
+    "macroBiomeWaypointBlocks": trial.suggest_categorical("macroBiomeWaypointBlocks", [64, 96, 128, 160, 192, 256, 384, 512]),
+    "macroBiomeUnknownPenalty": trial.suggest_float("macroBiomeUnknownPenalty", 0.0, 8.0),
+    "macroBiomeUncertaintyWeight": trial.suggest_float("macroBiomeUncertaintyWeight", 0.0, 80.0),
+  }
+
+
+def scenario_with_settings(source: Path, target: Path, params: dict[str, Any], trace: bool, reset_world: bool, reset_world_template: Path | None, trial_id: str) -> Path:
+  scenario = copy.deepcopy(read_json(source))
+  settings = dict(scenario.get("settings") or {})
+  settings.update(FIXED_SETTINGS)
+  settings.update(params)
+  scenario["settings"] = settings
+  scenario["trace"] = trace
+  scenario["resetWorld"] = reset_world
+  if reset_world_template is not None:
+    scenario["resetWorldTemplate"] = str(reset_world_template.resolve())
+  scenario["id"] = f"{scenario.get('id', source.stem)}_{trial_id}"
+  write_json(target, scenario)
+  return target
+
+
+def summary_path_from_output(output: str) -> Path | None:
+  for line in reversed(output.splitlines()):
+    line = line.strip()
+    if line.endswith("/summary.json") or line.endswith("\\summary.json"):
+      return Path(line)
+  return None
+
+
+def finite_float(value: Any, fallback: float = 1.0e9) -> float:
+  try:
+    out = float(value)
+  except (TypeError, ValueError):
+    return fallback
+  return out if math.isfinite(out) else fallback
+
+
+def elapsed_seconds(summary: dict[str, Any], measured_wall: float) -> float:
+  elapsed = finite_float(summary.get("elapsedNanos"), 0.0) / 1.0e9
+  return elapsed if elapsed > 0.0 else measured_wall
+
+
+def mode_ticks(summary: dict[str, Any], mode: str) -> int:
+  ticks = summary.get("actualModeTicks")
+  return int(ticks.get(mode, 0) if isinstance(ticks, dict) else 0)
+
+
+def accepted(summary: dict[str, Any], status: int) -> bool:
+  return (
+    status == 0
+    and bool(summary.get("success"))
+    and bool(summary.get("codeStampMatched"))
+    and not bool(summary.get("tookDamage"))
+    and not bool(summary.get("dismounted"))
+    and mode_ticks(summary, "HORSE") == 0
+    and mode_ticks(summary, "BOAT") == 0
+    and mode_ticks(summary, "ELYTRA") == 0
+  )
+
+
+def run_one(scenario: Path, playtest_root: Path, out_dir: Path) -> dict[str, Any]:
+  env = os.environ.copy()
+  env["PLAYTEST_ROOT"] = str(playtest_root)
+  env.setdefault("PLAYTEST_RESULT_TIMEOUT", "2400")
+  env.setdefault("PLAYTEST_VIEW_DISTANCE", "6")
+  env.setdefault("PLAYTEST_SIMULATION_DISTANCE", "4")
+  env.setdefault("PLAYTEST_MAX_TICK_TIME", "600000")
+  started = time.monotonic()
+  proc = subprocess.run([str(REPO / "scripts/playtest"), "once", str(scenario)], cwd=REPO, env=env, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  measured_wall = time.monotonic() - started
+  out_dir.mkdir(parents=True, exist_ok=True)
+  (out_dir / "playtest.stdout.txt").write_text(proc.stdout, encoding="utf-8")
+  (out_dir / "playtest.stderr.txt").write_text(proc.stderr, encoding="utf-8")
+  path = summary_path_from_output(proc.stdout)
+  if path is None or not path.exists():
+    summary: dict[str, Any] = {"success": False, "terminalReason": "NO_SUMMARY", "distanceToGoal": 1.0e9, "elapsedNanos": int(measured_wall * 1.0e9), "codeStampMatched": False}
+  else:
+    summary = read_json(path)
+  ok = accepted(summary, proc.returncode)
+  distance = 0.0 if ok else finite_float(summary.get("distanceToGoal"), 1.0e9)
+  seconds = elapsed_seconds(summary, measured_wall)
+  return {
+    "scenario": str(scenario),
+    "status": proc.returncode,
+    "summaryPath": str(path) if path else "",
+    "success": ok,
+    "distance": distance,
+    "seconds": seconds,
+    "terminalReason": summary.get("terminalReason"),
+    "nextCalcFailures": int(summary.get("nextCalcFailures") or 0),
+  }
+
+
+def score(results: list[dict[str, Any]]) -> tuple[float, list[Any]]:
+  failures = sum(0 if result["success"] else 1 for result in results)
+  mean_distance = sum(float(result["distance"]) for result in results) / max(1, len(results))
+  log_time = sum(math.log(max(1.0e-3, float(result["seconds"]))) for result in results) / max(1, len(results))
+  gmean_time = math.exp(log_time)
+  vector = [failures, 0.0 if failures == 0 else mean_distance, gmean_time]
+  scalar = failures * 1.0e12 + vector[1] * 1.0e6 + gmean_time
+  return scalar, vector
+
+
+def run_trial(params: dict[str, Any], scenarios: list[Path], playtest_root: Path, out_dir: Path, trace: bool, reset_world: bool, reset_world_template: Path | None) -> dict[str, Any]:
+  trial_id = out_dir.name
+  trial_scenarios: list[Path] = []
+  for i, source in enumerate(scenarios):
+    trial_scenarios.append(scenario_with_settings(source, out_dir / "scenarios" / f"{i:02d}_{source.name}", params, trace, reset_world, reset_world_template, trial_id))
+  results = [run_one(scenario, playtest_root, out_dir / f"run-{i:02d}") for i, scenario in enumerate(trial_scenarios)]
+  scalar, vector = score(results)
+  record = {"params": params, "results": results, "scalarScore": scalar, "score": vector}
+  write_json(out_dir / "record.json", record)
+  return record
+
+
+def objective_factory(args: argparse.Namespace, root: Path, scenarios: list[Path]):
+  def objective(trial: optuna.Trial) -> float:
+    params = trial_params(trial)
+    out_dir = root / f"trial-{trial.number:04d}"
+    record = run_trial(params, scenarios, args.playtest_root.resolve(), out_dir, args.trace_trials, args.reset_world, args.world_template)
+    trial.set_user_attr("score", record["score"])
+    trial.set_user_attr("params", params)
+    trial.set_user_attr("record", str((out_dir / "record.json").resolve()))
+    trial.set_user_attr("results", record["results"])
+    print(f"trial {trial.number}: score={record['score']} params={json.dumps(params, sort_keys=True)}", flush=True)
+    return float(record["scalarScore"])
+
+  return objective
+
+
+def selected_trial(study: optuna.Study) -> optuna.trial.FrozenTrial:
+  completed = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+  if not completed:
+    raise RuntimeError("study has no completed trials")
+  return min(completed, key=lambda trial: tuple(trial.user_attrs.get("score", [float("inf"), float("inf"), float("inf")])))
+
+
+def parser() -> argparse.ArgumentParser:
+  p = argparse.ArgumentParser(description="Optuna grind for pedestrian/macro nether routing tunables.")
+  p.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+  p.add_argument("--scenario", action="append", type=Path, default=[])
+  p.add_argument("--trials", type=int, default=96)
+  p.add_argument("--timeout-hours", type=float, default=0.0)
+  p.add_argument("--study-name", default=datetime.now(timezone.utc).strftime("pedestrian-macro-nether-%Y%m%dT%H%M%SZ"))
+  p.add_argument("--root", type=Path, default=REPO / "run/tune/pedestrian_macro")
+  p.add_argument("--playtest-root", type=Path, default=REPO / "run/playtest-pedestrian-macro")
+  p.add_argument("--sampler-seed", type=int, default=2601)
+  p.add_argument("--trace-trials", type=bool_arg, default=False)
+  p.add_argument("--reset-world", type=bool_arg, default=True)
+  p.add_argument("--world-template", type=Path, help="Pregenerated pristine world directory copied into the playtest server directory before each run.")
+  p.add_argument("--dry-run-settings", type=Path)
+  return p
+
+
+def main() -> int:
+  args = parser().parse_args()
+  if args.dry_run_settings:
+    write_json(args.dry_run_settings, {"settings": {**FIXED_SETTINGS, **default_params()}})
+    print(args.dry_run_settings)
+    return 0
+  scenarios = [scenario if scenario.is_absolute() else REPO / scenario for scenario in args.scenario] if args.scenario else manifest_scenarios(args.manifest)
+  study_name = safe_name(args.study_name)
+  root = (args.root / study_name).resolve()
+  root.mkdir(parents=True, exist_ok=True)
+  write_json(
+    root / "study-meta.json",
+    {
+      "studyName": study_name,
+      "scenarios": [str(path.resolve()) for path in scenarios],
+      "playtestRoot": str(args.playtest_root.resolve()),
+      "gitHead": git_head(),
+      "dirtyPatchDigest": dirty_patch_digest(),
+      "fixedSettings": FIXED_SETTINGS,
+      "defaultParams": default_params(),
+      "resetWorld": args.reset_world,
+      "worldTemplate": str(args.world_template.resolve()) if args.world_template else "",
+    },
+  )
+  storage = f"sqlite:///{root / 'study.db'}"
+  sampler = optuna.samplers.TPESampler(seed=args.sampler_seed, multivariate=True, group=True)
+  study = optuna.create_study(study_name=study_name, storage=storage, load_if_exists=True, direction="minimize", sampler=sampler)
+  study.enqueue_trial(default_params(), skip_if_exists=True)
+  timeout = args.timeout_hours * 3600.0 if args.timeout_hours > 0 else None
+  study.optimize(objective_factory(args, root, scenarios), n_trials=args.trials, timeout=timeout)
+  chosen = selected_trial(study)
+  print(f"selected trial {chosen.number}: score={chosen.user_attrs.get('score')} value={chosen.value}")
+  print(json.dumps(chosen.user_attrs.get("params"), indent=2, sort_keys=True))
+  print(chosen.user_attrs.get("record"))
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

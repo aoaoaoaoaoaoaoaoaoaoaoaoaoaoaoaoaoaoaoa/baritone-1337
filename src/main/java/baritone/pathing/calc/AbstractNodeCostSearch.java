@@ -7,6 +7,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.Helper;
 import baritone.api.utils.PathCalculationResult;
 import baritone.pathing.movement.CalculationContext;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -23,6 +24,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   protected final Goal goal;
 
   private final CalculationContext context;
+  private final PathingIncumbentPolicy incumbentPolicy;
 
   private final PathNodeArena nodes;
 
@@ -66,13 +68,14 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
   private static final int NODE_MAP_DEFAULT_SIZE = 1024;
   private static final float NODE_MAP_LOAD_FACTOR = 0.75f;
 
-  AbstractNodeCostSearch(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, CalculationContext context) {
+  AbstractNodeCostSearch(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, CalculationContext context, PathingIncumbentPolicy incumbentPolicy) {
     this.realStart = realStart;
     this.startX = startX;
     this.startY = startY;
     this.startZ = startZ;
     this.goal = goal;
     this.context = context;
+    this.incumbentPolicy = Objects.requireNonNull(incumbentPolicy);
     this.nodes = new PathNodeArena(goal, NODE_MAP_DEFAULT_SIZE, NODE_MAP_LOAD_FACTOR);
   }
 
@@ -84,6 +87,10 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
   protected boolean hasPublicationSink() {
     return publicationSink != PathPublicationSink.IGNORE;
+  }
+
+  protected PathingIncumbentPolicy incumbentPolicy() {
+    return incumbentPolicy;
   }
 
   @Override

@@ -490,6 +490,21 @@ class Playtest:
       pidfile.unlink(missing_ok=True)
     self.c.server_stamp.unlink(missing_ok=True)
 
+  def reset_world_from_template(self, world: WorldSpec, template: Path) -> None:
+    if not template.is_absolute():
+      template = self.c.repo / template
+    template = template.resolve()
+    if not template.is_dir():
+      raise SystemExit(f"resetWorldTemplate is not a directory: {template}")
+    self.stop()
+    target = self.server_dir(world)
+    shutil.rmtree(target, ignore_errors=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    copied = subprocess.run(["cp", "-a", "--reflink=auto", str(template), str(target)], cwd=self.c.repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if copied.returncode != 0:
+      shutil.copytree(template, target, symlinks=True)
+    self.c.state.unlink(missing_ok=True)
+
   def stop_clients(self) -> None:
     self.kill_pidfile(self.c.client_pid, self.c.root)
     self.terminate_pids(self.client_processes())
@@ -985,7 +1000,15 @@ class Playtest:
     self.prune_inbox()
     if not self.c.keep_client:
       self.stop_clients()
-    self.daemon(WorldSpec.from_arg(self.c, str(scenario_path)))
+    world = WorldSpec.from_arg(self.c, str(scenario_path))
+    template = str(scenario.get("resetWorldTemplate") or "").strip()
+    if template:
+      self.reset_world_from_template(world, Path(template))
+    elif truth(scenario.get("resetWorld"), False):
+      self.stop()
+      shutil.rmtree(self.server_dir(world), ignore_errors=True)
+      self.c.state.unlink(missing_ok=True)
+    self.daemon(world)
     code_stamp = self.code_stamp()
     base = safe_key(scenario_path.stem)
     run_id = f"{base}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}"

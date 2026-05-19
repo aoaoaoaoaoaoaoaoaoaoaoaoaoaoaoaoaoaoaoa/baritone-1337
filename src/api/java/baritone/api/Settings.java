@@ -513,6 +513,7 @@ public final class Settings {
 
   /**
    * Begin executing stable incumbent A* segments before the current calculation reaches its final timeout.
+   * This is the default policy used by transport modes without a sharper modality-specific policy.
    */
   public final Setting<Boolean> pathingEarlyIncumbentExecution = new Setting<>(true);
 
@@ -523,18 +524,37 @@ public final class Settings {
 
   /**
    * Worker-thread interval between materialized incumbent path publications. Set to 0 to suppress incumbent publication.
+   * This is the default policy used by transport modes without a sharper modality-specific policy.
    */
   public final Setting<Long> pathingIncumbentIntervalMS = new Setting<>(100L);
 
   /**
    * Do not execute an incumbent shorter than this many path positions unless it already reaches the goal.
+   * This is the default policy used by transport modes without a sharper modality-specific policy.
    */
   public final Setting<Integer> pathingMinIncumbentLength = new Setting<>(12);
 
   /**
    * Required heuristic improvement before replacing a currently executing or queued segment with a newly published incumbent.
+   * This is the default policy used by transport modes without a sharper modality-specific policy.
    */
   public final Setting<Double> pathingIncumbentHeuristicMargin = new Setting<>(6D);
+
+  /**
+   * Pedestrian incumbent policy. These are deliberately split from horse values so pedestrian/macro grinding cannot perturb mounted pathing.
+   */
+  public final Setting<Boolean> pedestrianPathingEarlyIncumbentExecution = new Setting<>(true);
+  public final Setting<Long> pedestrianPathingIncumbentIntervalMS = new Setting<>(100L);
+  public final Setting<Integer> pedestrianPathingMinIncumbentLength = new Setting<>(12);
+  public final Setting<Double> pedestrianPathingIncumbentHeuristicMargin = new Setting<>(6D);
+
+  /**
+   * Horse incumbent policy. Keep these locked to the accepted mounted baseline unless explicitly retuning mounted navigation.
+   */
+  public final Setting<Boolean> horsePathingEarlyIncumbentExecution = new Setting<>(true);
+  public final Setting<Long> horsePathingIncumbentIntervalMS = new Setting<>(100L);
+  public final Setting<Integer> horsePathingMinIncumbentLength = new Setting<>(12);
+  public final Setting<Double> horsePathingIncumbentHeuristicMargin = new Setting<>(6D);
 
   /**
    * Displays live transport-mode executor state in the actionbar.
@@ -709,24 +729,24 @@ public final class Settings {
    * <p>
    * If no valid path (length above the minimum) has been found, pathing continues up until the failure timeout
    */
-  public final Setting<Long> primaryTimeoutMS = new Setting<>(500L);
+  public final Setting<Long> primaryTimeoutMS = new Setting<>(20_000L);
 
   /**
    * Pathing can never take longer than this, even if that means failing to find any path at all
    */
-  public final Setting<Long> failureTimeoutMS = new Setting<>(2000L);
+  public final Setting<Long> failureTimeoutMS = new Setting<>(60_000L);
 
   /**
    * Planning ahead while executing a segment ends after this amount of time, but only if a path has been found
    * <p>
    * If no valid path (length above the minimum) has been found, pathing continues up until the failure timeout
    */
-  public final Setting<Long> planAheadPrimaryTimeoutMS = new Setting<>(4000L);
+  public final Setting<Long> planAheadPrimaryTimeoutMS = new Setting<>(20_000L);
 
   /**
    * Planning ahead while executing a segment can never take longer than this, even if that means failing to find any path at all
    */
-  public final Setting<Long> planAheadFailureTimeoutMS = new Setting<>(5000L);
+  public final Setting<Long> planAheadFailureTimeoutMS = new Setting<>(60_000L);
 
   /**
    * allows baritone to save bed waypoints when interacting with beds

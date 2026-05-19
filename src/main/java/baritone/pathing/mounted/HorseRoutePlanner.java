@@ -7,6 +7,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.PathCalculationResult;
 import baritone.pathing.calc.BestExitGoal;
 import baritone.pathing.calc.BlockKey;
+import baritone.pathing.calc.PathingIncumbentPolicy;
 import baritone.pathing.calc.PathingProfiler;
 import baritone.pathing.goal.GoalTerminalPolicy;
 import baritone.pathing.movement.CalculationContext;
@@ -249,6 +250,7 @@ public final class HorseRoutePlanner {
     private final long failureTimeoutMS;
     private final long deadlineNanos;
     private final IncumbentSink incumbentSink;
+    private final PathingIncumbentPolicy incumbentPolicy;
     private final long incumbentIntervalMS;
     private PathingProfiler.Active profile;
     private int expansions;
@@ -289,7 +291,8 @@ public final class HorseRoutePlanner {
       this.failureTimeoutMS = failureTimeoutMS;
       this.deadlineNanos = System.nanoTime() + failureTimeoutMS * 1_000_000L;
       this.incumbentSink = incumbentSink;
-      this.incumbentIntervalMS = incumbentSink == null ? Long.MAX_VALUE : Math.max(25L, Baritone.settings().pathingIncumbentIntervalMS.value);
+      this.incumbentPolicy = PathingIncumbentPolicy.horse();
+      this.incumbentIntervalMS = incumbentSink == null ? Long.MAX_VALUE : Math.max(25L, incumbentPolicy.intervalMS());
       this.nextIncumbentPublishMS = incumbentSink == null ? Long.MAX_VALUE : System.currentTimeMillis() + this.incumbentIntervalMS;
       this.minX = this.maxX = start.x;
       this.minZ = this.maxZ = start.z;
@@ -389,13 +392,13 @@ public final class HorseRoutePlanner {
         return null;
       }
       HorsePath path = reconstructCertified(fallback);
-      if (path.flatDistance() < Baritone.settings().pathingMinIncumbentLength.value) {
+      if (path.flatDistance() < incumbentPolicy.minLength()) {
         return null;
       }
       double startValue = exit.exitValue(start.x, start.y, start.z);
       BetterBlockPos dest = path.dest();
       double destValue = exit.exitValue(dest.x, dest.y, dest.z);
-      if (!Double.isFinite(startValue) || !Double.isFinite(destValue) || destValue + Baritone.settings().pathingIncumbentHeuristicMargin.value >= startValue) {
+      if (!Double.isFinite(startValue) || !Double.isFinite(destValue) || destValue + incumbentPolicy.heuristicMargin() >= startValue) {
         return null;
       }
       return success(path);

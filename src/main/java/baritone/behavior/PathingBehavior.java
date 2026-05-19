@@ -15,6 +15,7 @@ import baritone.api.event.events.type.EventState;
 import baritone.pathing.calc.AStarPathFinder;
 import baritone.pathing.calc.AbstractNodeCostSearch;
 import baritone.pathing.calc.BestExitGoal;
+import baritone.pathing.calc.PathingIncumbentPolicy;
 import baritone.pathing.calc.PlanningProbe;
 import baritone.pathing.control.ControlArbiter;
 import baritone.pathing.goal.GoalTerminalPolicy;
@@ -1325,7 +1326,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           return false;
         }
         planningProbe = PlanningProbe.best(incumbent.path().positions());
-        if (!Baritone.settings().pathingEarlyIncumbentExecution.value || !horseIncumbentExecutableBeforeFrontier(horse, incumbent)) {
+        PathingIncumbentPolicy policy = PathingIncumbentPolicy.horse();
+        if (!policy.earlyExecution() || !horseIncumbentExecutableBeforeFrontier(horse, incumbent, policy)) {
           return false;
         }
         if (horse.macroPlan() != null && horse.macroPlan().surfaceTransitionActions() > 0) {
@@ -1343,13 +1345,13 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
   }
 
-  private boolean horseIncumbentExecutableBeforeFrontier(HorseCalculation horse, HorseRoutePlanner.Incumbent incumbent) {
+  private boolean horseIncumbentExecutableBeforeFrontier(HorseCalculation horse, HorseRoutePlanner.Incumbent incumbent, PathingIncumbentPolicy policy) {
     HorsePath path = incumbent.path();
     if (goalSatisfied(horse.terminalGoal(), path.dest())) {
       return true;
     }
     if (incumbent.boundaryExit()) {
-      return path.flatDistance() >= Baritone.settings().pathingMinIncumbentLength.value;
+      return path.flatDistance() >= policy.minLength();
     }
     if (!(horse.localGoal() instanceof BestExitGoal exit)) {
       BetterBlockPos dest = path.dest();
@@ -1359,7 +1361,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         horse.routeStart().pos().y, horse.routeStart().pos().z);
       return meaningfulDistance && meaningfulHeuristic;
     }
-    if (path.flatDistance() < Baritone.settings().pathingMinIncumbentLength.value) {
+    if (path.flatDistance() < policy.minLength()) {
       return false;
     }
     if (horse.macroPlan() == null) {
@@ -1368,7 +1370,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     BetterBlockPos dest = path.dest();
     double startValue = exit.exitValue(horse.routeStart().pos().x, horse.routeStart().pos().y, horse.routeStart().pos().z);
     double destValue = exit.exitValue(dest.x, dest.y, dest.z);
-    return Double.isFinite(startValue) && Double.isFinite(destValue) && destValue + Baritone.settings().pathingIncumbentHeuristicMargin.value < startValue;
+    return Double.isFinite(startValue) && Double.isFinite(destValue) && destValue + policy.heuristicMargin() < startValue;
   }
 
   private CalculationContext liveCalculationContext(CalculationContext base) {
@@ -1391,7 +1393,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private void acceptIncumbent(AbstractNodeCostSearch pathfinder, PathCalculationResult result) {
-    if (!Baritone.settings().pathingEarlyIncumbentExecution.value) {
+    if (!PathingIncumbentPolicy.pedestrian().earlyExecution()) {
       return;
     }
     synchronized (pathPlanLock) {
@@ -1630,8 +1632,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
   private boolean incumbentIsExecutable(RouteExecutor candidate, Goal terminalGoal) {
     IPath path = candidate.getPath();
-    return goalSatisfied(terminalGoal, candidate.dest()) || path != null && path.length() >= Baritone.settings().pathingMinIncumbentLength.value
-      || path == null && candidate.size() >= Baritone.settings().pathingMinIncumbentLength.value;
+    PathingIncumbentPolicy policy = incumbentPolicy(candidate);
+    return goalSatisfied(terminalGoal, candidate.dest()) || path != null && path.length() >= policy.minLength() || path == null && candidate.size() >= policy.minLength();
   }
 
   private boolean anchorsCurrentExecution(RouteExecutor path) {
@@ -1659,8 +1661,15 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private boolean improvesBeyond(RouteExecutor candidate, RouteExecutor incumbent, Goal terminalGoal) {
-    return goalSatisfied(terminalGoal, candidate.dest())
-      || routeObjective(candidate, terminalGoal) + Baritone.settings().pathingIncumbentHeuristicMargin.value < routeObjective(incumbent, terminalGoal);
+    return goalSatisfied(terminalGoal, candidate.dest()) || routeObjective(candidate, terminalGoal) + incumbentPolicy(candidate, incumbent).heuristicMargin() < routeObjective(incumbent, terminalGoal);
+  }
+
+  private static PathingIncumbentPolicy incumbentPolicy(RouteExecutor route) {
+    return PathingIncumbentPolicy.forMode(route.route().startState().mode()).combinedWith(PathingIncumbentPolicy.forMode(route.route().endState().mode()));
+  }
+
+  private static PathingIncumbentPolicy incumbentPolicy(RouteExecutor left, RouteExecutor right) {
+    return incumbentPolicy(left).combinedWith(incumbentPolicy(right));
   }
 
   private double routeObjective(RouteExecutor executor, Goal terminalGoal) {
@@ -1732,7 +1741,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (profile.horse()) {
       return new HorseCalculation(horseStart, transformed, terminalGoal, macroPlan, failureTimeoutMS);
     }
-    return new CreatedPathfinder(new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context), terminalGoal, macroPlan, immediateRoute);
+    return new CreatedPathfinder(new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context, PathingIncumbentPolicy.pedestrian()), terminalGoal, macroPlan,
+      immediateRoute);
 
   }
 
