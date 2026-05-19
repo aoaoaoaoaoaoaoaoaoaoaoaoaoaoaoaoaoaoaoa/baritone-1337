@@ -4,7 +4,7 @@
 
 This is `baritone-1337`: a Fabric-only, agent-maintained fork of upstream [Baritone](https://github.com/cabaletta/baritone).
 
-Current target: Minecraft `26.1.2`, Fabric Loader `0.19.2`, Java toolchain `26`, Java release bytecode `25`.
+Current target: Minecraft `26.1.2`, Fabric Loader `0.19.2`, Java toolchain `26`, Java release bytecode `26`.
 
 No Forge, NeoForge, GitLab, JitPack, Docker, GitHub Actions, issue templates, PR templates, or compatibility theater. Do not reintroduce service scaffolding unless it directly builds or ships this fork.
 
@@ -44,7 +44,11 @@ The authoritative Java formatter profile is `eclipse-compact.xml`; do not hand-f
 
 ## Notes
 
-Long-lived public prose belongs only in `README.md`, `LICENSE`, and this file. Speculative design and planning notes belong in ignored `notes/`.
+Long-lived public prose belongs only in `README.md`, `LICENSE`, this file, and `TESTING.md`. Speculative design and planning notes belong in ignored `notes/`.
+
+## Testing Polygons
+
+The canonical live-fire policy and polygon atlas live in `TESTING.md`.
 
 ## Java Tooling
 
@@ -69,4 +73,4 @@ Workspace-wide diagnostics can be expensive; prefer per-file diagnostics while e
 
 Use OpenRewrite for explicit repo-wide Java migrations. Use Spoon for bespoke Java AST audits/transforms when OpenRewrite is too rigid. Do not add either permanently unless the recipe/tooling earns its keep.
 
-JDK tools already available and worth using: `jcmd`, `jfr`, `jdeps`, `javap`, `jmap`, `jstack`, `jshell`. For JVM-level profiling, prefer async-profiler/JFR; for pathing-domain evidence, prefer the in-game profiler (`#profile next`).
+JDK tools already available and worth using: `jcmd`, `jfr`, `jdeps`, `javap`, `jmap`, `jstack`, `jshell`. For JVM-level profiling, prefer async-profiler/JFR; for pathing-domain evidence, prefer the unified in-game profiler (`#profile`).

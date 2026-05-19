@@ -1,0 +1,11 @@
+# Horse v1 mounted acceptance scenarios. One scenario JSON path per line.
+#
+# V1 is the jumpless corner-cruise horse engine. Jump, water, macro-value, and
+# thisway-500 scenarios remain standalone proving-ground cases until promoted.
+scenarios/playtest/horse_thisway_flat.json
+scenarios/playtest/horse_one_block_steps.json
+scenarios/playtest/horse_diagonal_step_course.json
+scenarios/playtest/horse_one_wide_ledge.json
+scenarios/playtest/horse_obsidian_spiral_gap.json
+scenarios/playtest/horse_thisway_200_frontier.json
+scenarios/playtest/horse_frontier_hard_climb.json

@@ -1,0 +1,807 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import itertools
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+from typing import Any, Iterable
+
+import optuna
+
+
+REPO = Path(__file__).resolve().parents[1]
+SCENARIO = REPO / "scenarios/playtest/horse_thisway_200_frontier.json"
+
+
+def safe_name(raw: str) -> str:
+  return "".join(c if c.isalnum() or c in "._-" else "_" for c in raw).strip("._-") or "study"
+
+
+def run_text(args: list[str]) -> str:
+  return subprocess.run(args, cwd=REPO, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.strip()
+
+
+def git_head() -> str:
+  out = run_text(["git", "rev-parse", "HEAD"])
+  return out or "unknown"
+
+
+def dirty_patch_digest() -> str:
+  patch = subprocess.run(["git", "diff", "--binary"], cwd=REPO, check=False, stdout=subprocess.PIPE).stdout
+  return "sha256:" + hashlib.sha256(patch).hexdigest()
+
+
+def digest_bytes(data: bytes) -> str:
+  return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def q(value: str) -> str:
+  return json.dumps(value)
+
+
+def default_params() -> dict[str, Any]:
+  return canonicalize_params({
+    # Canonical soft planner/controller baseline, rounded from accepted thisway-200 night-grind trial 152.
+    "planner.water-wade-cost-multiplier": 7.9910,
+    "planner.ground-first-timeout-ms": 0,
+    "planner.min-local-progress-fallback-blocks": 6.1497,
+    "planner.min-vertical-local-progress-fallback-blocks": 3.2136,
+    "planner.local-progress-heuristic-epsilon": 1.9207,
+    "planner.local-progress-cost-weight": 0.9758,
+    "planner.route-leg-max-edges": 73,
+    "planner.route-leg-max-ticks": 140.7602,
+    "planner.line-certification-samples-per-block": 5,
+    "planner.direct-cruise-pulling": True,
+    "planner.direct-cruise-pull-crawl-blocks": 8.4114,
+    "planner.direct-cruise-pull-span-large": 26.9281,
+    "planner.direct-cruise-pull-span-mid": 19.7710,
+    "planner.direct-cruise-pull-span-small": 8.5052,
+    "planner.min-cruise-support-quadrants": 1,
+    "planner.damage-hazard-approach-margin": 0.8081,
+    "planner.poor-support-penalty-ticks": 0.0656,
+    "planner.diagonal-step-overrun-penalty-ticks": 6.0,
+    "motion.settled-speed": 0.0315,
+    "motion.low-max-forward": 0.1573,
+    "motion.precision-ride-speed": 0.1573,
+    "motion.precision-ride-final-speed": 0.0727,
+    "motion.precision-ride-taper-distance": 1.2597,
+    "controller.cruise-segment-aim-distance": 3.4632,
+    "controller.precision-segment-aim-distance": 0.5616,
+    "controller.terminal-settled-speed": 0.0403,
+    "controller.stall-grace-ticks": 68,
+    "controller.stall-progress-epsilon": 0.1540,
+    "controller.waypoint-reached-radius": 0.8251,
+    "controller.technical-waypoint-reached-radius": 0.4272,
+    "controller.terminal-reached-radius": 0.5534,
+    "controller.physical-waypoint-reached-radius": 1.4705,
+  })
+
+
+def trial_params(trial: optuna.Trial) -> dict[str, Any]:
+  ground_first = trial.suggest_categorical("planner.ground-first-enabled", [True, False])
+  direct_pull = trial.suggest_categorical("planner.direct-cruise-pulling", [True, False])
+  direct_large = trial.suggest_float("planner.direct-cruise-pull-span-large", 16.0, 72.0) if direct_pull else 48.0
+  direct_mid = direct_large * trial.suggest_float("planner.direct-cruise-pull-span-mid-ratio", 0.45, 0.85) if direct_pull else 32.0
+  direct_small = max(1.0, direct_mid * trial.suggest_float("planner.direct-cruise-pull-span-small-ratio", 0.35, 0.85)) if direct_pull else 16.0
+  return canonicalize_params({
+    "planner.water-wade-cost-multiplier": trial.suggest_float("planner.water-wade-cost-multiplier", 4.0, 10.0, log=True),
+    "planner.ground-first-timeout-ms": trial.suggest_int("planner.ground-first-timeout-ms", 250, 4000) if ground_first else 0,
+    "planner.min-local-progress-fallback-blocks": trial.suggest_float("planner.min-local-progress-fallback-blocks", 2.0, 8.0),
+    "planner.min-vertical-local-progress-fallback-blocks": trial.suggest_float("planner.min-vertical-local-progress-fallback-blocks", 0.25, 4.0),
+    "planner.local-progress-heuristic-epsilon": trial.suggest_float("planner.local-progress-heuristic-epsilon", 0.0, 2.0),
+    "planner.local-progress-cost-weight": trial.suggest_float("planner.local-progress-cost-weight", 0.02, 1.20),
+    "planner.route-leg-max-edges": trial.suggest_int("planner.route-leg-max-edges", 12, 96),
+    "planner.route-leg-max-ticks": trial.suggest_float("planner.route-leg-max-ticks", 24.0, 180.0),
+    "planner.line-certification-samples-per-block": trial.suggest_int("planner.line-certification-samples-per-block", 3, 8),
+    "planner.direct-cruise-pulling": direct_pull,
+    "planner.direct-cruise-pull-crawl-blocks": trial.suggest_float("planner.direct-cruise-pull-crawl-blocks", 0.0, 24.0) if direct_pull else 10.0,
+    "planner.direct-cruise-pull-span-large": direct_large,
+    "planner.direct-cruise-pull-span-mid": direct_mid,
+    "planner.direct-cruise-pull-span-small": direct_small,
+    "planner.min-cruise-support-quadrants": trial.suggest_int("planner.min-cruise-support-quadrants", 1, 4) if direct_pull else 2,
+    "planner.damage-hazard-approach-margin": trial.suggest_float("planner.damage-hazard-approach-margin", 0.55, 1.35),
+    "planner.poor-support-penalty-ticks": trial.suggest_float("planner.poor-support-penalty-ticks", 0.0, 0.20),
+    "planner.diagonal-step-overrun-penalty-ticks": trial.suggest_float("planner.diagonal-step-overrun-penalty-ticks", 0.0, 16.0),
+    "motion.settled-speed": trial.suggest_float("motion.settled-speed", 0.030, 0.090),
+    "motion.low-max-forward": trial.suggest_float("motion.low-max-forward", 0.12, 0.34),
+    "motion.precision-ride-speed": trial.suggest_float("motion.precision-ride-speed", 0.09, 0.24),
+    "motion.precision-ride-final-speed": trial.suggest_float("motion.precision-ride-final-speed", 0.030, 0.110),
+    "motion.precision-ride-taper-distance": trial.suggest_float("motion.precision-ride-taper-distance", 0.35, 1.60),
+    "controller.cruise-segment-aim-distance": trial.suggest_float("controller.cruise-segment-aim-distance", 1.5, 6.0),
+    "controller.precision-segment-aim-distance": trial.suggest_float("controller.precision-segment-aim-distance", 0.22, 0.95),
+    "controller.terminal-settled-speed": trial.suggest_float("controller.terminal-settled-speed", 0.030, 0.090),
+    "controller.stall-grace-ticks": trial.suggest_int("controller.stall-grace-ticks", 30, 120),
+    "controller.stall-progress-epsilon": trial.suggest_float("controller.stall-progress-epsilon", 0.04, 0.18),
+    "controller.waypoint-reached-radius": trial.suggest_float("controller.waypoint-reached-radius", 0.50, 0.95),
+    "controller.technical-waypoint-reached-radius": trial.suggest_float("controller.technical-waypoint-reached-radius", 0.40, 0.90),
+    "controller.terminal-reached-radius": trial.suggest_float("controller.terminal-reached-radius", 0.45, 1.20),
+    "controller.physical-waypoint-reached-radius": trial.suggest_float("controller.physical-waypoint-reached-radius", 0.80, 1.70),
+  })
+
+
+def optimizer_params_from_profile_params(params: dict[str, Any]) -> dict[str, Any]:
+  profile = normalize_params(params)
+  out: dict[str, Any] = {}
+  out["planner.ground-first-enabled"] = int(profile.get("planner.ground-first-timeout-ms", 0) or 0) > 0
+  out["planner.direct-cruise-pulling"] = bool(profile.get("planner.direct-cruise-pulling", False))
+  for key in (
+    "planner.water-wade-cost-multiplier",
+    "planner.min-local-progress-fallback-blocks",
+    "planner.min-vertical-local-progress-fallback-blocks",
+    "planner.local-progress-heuristic-epsilon",
+    "planner.local-progress-cost-weight",
+    "planner.route-leg-max-edges",
+    "planner.route-leg-max-ticks",
+    "planner.line-certification-samples-per-block",
+    "planner.damage-hazard-approach-margin",
+    "planner.poor-support-penalty-ticks",
+    "planner.diagonal-step-overrun-penalty-ticks",
+    "motion.settled-speed",
+    "motion.low-max-forward",
+    "motion.precision-ride-speed",
+    "motion.precision-ride-final-speed",
+    "motion.precision-ride-taper-distance",
+    "controller.cruise-segment-aim-distance",
+    "controller.precision-segment-aim-distance",
+    "controller.terminal-settled-speed",
+    "controller.stall-grace-ticks",
+    "controller.stall-progress-epsilon",
+    "controller.waypoint-reached-radius",
+    "controller.technical-waypoint-reached-radius",
+    "controller.terminal-reached-radius",
+    "controller.physical-waypoint-reached-radius",
+  ):
+    out[key] = profile[key]
+  if out["planner.ground-first-enabled"]:
+    out["planner.ground-first-timeout-ms"] = profile["planner.ground-first-timeout-ms"]
+  if out["planner.direct-cruise-pulling"]:
+    large = max(float(profile["planner.direct-cruise-pull-span-large"]), 1.0e-9)
+    mid = max(float(profile["planner.direct-cruise-pull-span-mid"]), 1.0e-9)
+    small = max(float(profile["planner.direct-cruise-pull-span-small"]), 1.0e-9)
+    out["planner.direct-cruise-pull-span-large"] = large
+    out["planner.direct-cruise-pull-span-mid-ratio"] = clamp(mid / large, 0.45, 0.85)
+    out["planner.direct-cruise-pull-span-small-ratio"] = clamp(small / mid, 0.35, 0.85)
+    out["planner.direct-cruise-pull-crawl-blocks"] = profile["planner.direct-cruise-pull-crawl-blocks"]
+    out["planner.min-cruise-support-quadrants"] = profile["planner.min-cruise-support-quadrants"]
+  return out
+
+
+def clamp(value: float, low: float, high: float) -> float:
+  return max(low, min(high, value))
+
+
+def canonicalize_params(params: dict[str, Any]) -> dict[str, Any]:
+  out = dict(params)
+  if "motion.low-max-forward" in out:
+    low = float(out["motion.low-max-forward"])
+    if "motion.settled-speed" in out:
+      out["motion.settled-speed"] = min(float(out["motion.settled-speed"]), low)
+    if "motion.precision-ride-speed" in out:
+      out["motion.precision-ride-speed"] = min(float(out["motion.precision-ride-speed"]), low)
+    if "controller.terminal-settled-speed" in out:
+      out["controller.terminal-settled-speed"] = min(float(out["controller.terminal-settled-speed"]), low)
+  if "motion.precision-ride-speed" in out and "motion.precision-ride-final-speed" in out:
+    out["motion.precision-ride-final-speed"] = min(float(out["motion.precision-ride-final-speed"]), float(out["motion.precision-ride-speed"]))
+  if "controller.cruise-segment-aim-distance" in out and "controller.precision-segment-aim-distance" in out:
+    out["controller.precision-segment-aim-distance"] = min(float(out["controller.precision-segment-aim-distance"]), float(out["controller.cruise-segment-aim-distance"]))
+  if "controller.waypoint-reached-radius" in out:
+    waypoint = float(out["controller.waypoint-reached-radius"])
+    if "controller.technical-waypoint-reached-radius" in out:
+      out["controller.technical-waypoint-reached-radius"] = min(float(out["controller.technical-waypoint-reached-radius"]), waypoint)
+    if "controller.physical-waypoint-reached-radius" in out:
+      out["controller.physical-waypoint-reached-radius"] = max(float(out["controller.physical-waypoint-reached-radius"]), waypoint)
+  return out
+
+
+def profile_toml(params: dict[str, Any]) -> str:
+  sections: dict[str, list[tuple[str, Any]]] = {}
+  for key, value in sorted(params.items()):
+    section, name = key.split(".", 1)
+    sections.setdefault(section, []).append((name, value))
+  lines = [
+    "# Generated by scripts/tune_horse. This is a boiler-room mounted-control profile.",
+    "# It must not encode collision truth; it only alters soft planner/controller policy.",
+    "",
+  ]
+  for section, rows in sections.items():
+    lines.append(f"[{section}]")
+    for name, value in rows:
+      rendered = q(value) if isinstance(value, str) else str(value).lower() if isinstance(value, bool) else repr(value)
+      lines.append(f"{name} = {rendered}")
+    lines.append("")
+  return "\n".join(lines)
+
+
+def parse_profile_toml(path: Path) -> dict[str, Any]:
+  section = ""
+  out: dict[str, Any] = {}
+  for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    line = strip_toml_comment(raw).strip()
+    if not line:
+      continue
+    if line.startswith("[") and line.endswith("]"):
+      section = line[1:-1].strip()
+      if not section:
+        raise SystemExit(f"{path}:{line_number}: empty TOML section")
+      continue
+    if "=" not in line:
+      raise SystemExit(f"{path}:{line_number}: expected key = value")
+    key, value = (part.strip() for part in line.split("=", 1))
+    if section and "." not in key:
+      key = f"{section}.{key}"
+    out[key.replace("_", "-")] = parse_toml_value(value)
+  return out
+
+
+def strip_toml_comment(raw: str) -> str:
+  quoted = False
+  escaped = False
+  for i, char in enumerate(raw):
+    if char == "\\" and quoted and not escaped:
+      escaped = True
+      continue
+    if char == '"' and not escaped:
+      quoted = not quoted
+    elif char == "#" and not quoted:
+      return raw[:i]
+    escaped = False
+  return raw
+
+
+def parse_toml_value(raw: str) -> Any:
+  raw = raw.strip()
+  if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
+    return json.loads(raw)
+  lower = raw.lower()
+  if lower == "true":
+    return True
+  if lower == "false":
+    return False
+  try:
+    return int(raw)
+  except ValueError:
+    try:
+      return float(raw)
+    except ValueError:
+      return raw
+
+
+def summary_path_from_output(output: str) -> Path | None:
+  for line in reversed(output.splitlines()):
+    line = line.strip()
+    if line.endswith("/summary.json") or line.endswith("\\summary.json"):
+      return Path(line)
+  return None
+
+
+def finite_float(value: Any, fallback: float = 1.0e9) -> float:
+  try:
+    out = float(value)
+  except (TypeError, ValueError):
+    return fallback
+  return out if out == out and out not in (float("inf"), float("-inf")) else fallback
+
+
+def mode_ticks(summary: dict[str, Any], mode: str) -> int:
+  ticks = summary.get("actualModeTicks")
+  return int(ticks.get(mode, 0) if isinstance(ticks, dict) else 0)
+
+
+def horse_only_distance(summary: dict[str, Any]) -> float:
+  return finite_float(summary.get("closestHorseDistanceToGoal"), 1.0e9)
+
+
+def accepted(summary: dict[str, Any], status: int) -> bool:
+  return (
+    status == 0
+    and bool(summary.get("success"))
+    and bool(summary.get("sawHorse"))
+    and int(summary.get("jumpTicks") or 0) == 0
+    and not bool(summary.get("lostHorseAfterEncounter"))
+    and mode_ticks(summary, "PEDESTRIAN") == 0
+    and mode_ticks(summary, "LEGACY_WATER") == 0
+    and mode_ticks(summary, "SWIM") == 0
+    and mode_ticks(summary, "BOAT") == 0
+    and mode_ticks(summary, "ELYTRA") == 0
+    and bool(summary.get("codeStampMatched"))
+  )
+
+
+def score(summary: dict[str, Any], status: int, measured_wall: float) -> tuple[float, list[Any], list[Any], bool]:
+  distance = horse_only_distance(summary)
+  wall = float(summary.get("elapsedNanos") or 0) / 1.0e9 or measured_wall
+  ok = accepted(summary, status)
+  failed = 0 if ok else 1
+  scored_distance = 0.0 if ok else distance
+  frontier = [scored_distance, failed, wall]
+  acceptance = [failed, scored_distance, wall]
+  scalar = scored_distance * 1.0e9 + failed * 1.0e6 + wall
+  return scalar, frontier, acceptance, ok
+
+
+def tuning_scenario(source: Path, target: Path, profile: Path, digest: str, trace: bool) -> Path:
+  scenario = json.loads(source.read_text(encoding="utf-8"))
+  scenario["trace"] = trace
+  scenario["mountTuning"] = {"profile": str(profile.resolve()), "digest": digest}
+  target.write_text(json.dumps(scenario, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+  return target
+
+
+def run_trial(profile: Path, scenario: Path, playtest_root: Path, out_dir: Path, hot_client: bool) -> dict[str, Any]:
+  env = os.environ.copy()
+  env["PLAYTEST_ROOT"] = str(playtest_root)
+  if hot_client and env.get("PLAYTEST_KEEP_CLIENT", "").strip() == "":
+    env["PLAYTEST_KEEP_CLIENT"] = "1"
+  started = time.monotonic()
+  proc = subprocess.run([str(REPO / "scripts/playtest"), "once", str(scenario)], cwd=REPO, env=env, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  measured_wall = time.monotonic() - started
+  (out_dir / "playtest.stdout.txt").write_text(proc.stdout, encoding="utf-8")
+  (out_dir / "playtest.stderr.txt").write_text(proc.stderr, encoding="utf-8")
+  path = summary_path_from_output(proc.stdout)
+  if path is None or not path.exists():
+    summary: dict[str, Any] = {"success": False, "terminalReason": "NO_SUMMARY", "distanceToGoal": 1.0e9, "elapsedNanos": int(measured_wall * 1.0e9), "codeStampMatched": False}
+  else:
+    summary = json.loads(path.read_text(encoding="utf-8"))
+  scalar, frontier, acceptance_score, ok = score(summary, proc.returncode, measured_wall)
+  expected_digest = profile_digest(profile)
+  observed_digest = str(summary.get("mountTuningDigest") or "")
+  tuning_matched = expected_digest == observed_digest
+  if not tuning_matched:
+    ok = False
+    acceptance_score = [1, acceptance_score[1], acceptance_score[2]]
+    frontier = [frontier[0], 1, frontier[2]]
+    scalar = frontier[0] * 1.0e9 + 1.0e6 + frontier[2]
+  return {
+    "status": proc.returncode,
+    "summaryPath": str(path) if path else "",
+    "summary": summary,
+    "scalarScore": scalar,
+    "scoredDistance": horse_only_distance(summary),
+    "accepted": ok,
+    "tuningDigestMatched": tuning_matched,
+    "expectedMountTuningDigest": expected_digest,
+    "observedMountTuningDigest": observed_digest,
+    "acceptanceScore": acceptance_score,
+    "frontierScore": frontier,
+  }
+
+
+def worse_result(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+  return max((left, right), key=lambda result: tuple(result.get("acceptanceScore", [float("-inf"), float("-inf"), float("-inf")])))
+
+
+def run_repeated_trial(profile: Path, scenario: Path, playtest_root: Path, out_dir: Path, hot_client: bool, repeats: int) -> dict[str, Any]:
+  repeats = max(1, repeats)
+  if repeats == 1:
+    result = run_trial(profile, scenario, playtest_root, out_dir, hot_client)
+    result["repeatResults"] = [{key: result[key] for key in ("status", "summaryPath", "scalarScore", "scoredDistance", "accepted", "tuningDigestMatched", "acceptanceScore", "frontierScore")}]
+    return result
+  repeat_results: list[dict[str, Any]] = []
+  worst: dict[str, Any] | None = None
+  for i in range(repeats):
+    repeat_dir = out_dir / f"repeat-{i:02d}"
+    repeat_dir.mkdir(parents=True, exist_ok=True)
+    result = run_trial(profile, scenario, playtest_root, repeat_dir, hot_client)
+    repeat_results.append(result)
+    worst = result if worst is None else worse_result(worst, result)
+  assert worst is not None
+  aggregate = dict(worst)
+  aggregate["repeatResults"] = [
+    {key: result[key] for key in ("status", "summaryPath", "scalarScore", "scoredDistance", "accepted", "tuningDigestMatched", "acceptanceScore", "frontierScore")}
+    for result in repeat_results
+  ]
+  aggregate["repeatPolicy"] = "worst-acceptance-score"
+  aggregate["repeatCount"] = repeats
+  return aggregate
+
+
+def profile_digest(profile: Path) -> str:
+  return digest_bytes(profile.read_bytes())
+
+
+def objective_factory(args: argparse.Namespace, root: Path):
+  scenario = args.scenario.resolve()
+  playtest_root = args.playtest_root.resolve()
+  trials = root / "trials"
+  trials.mkdir(parents=True, exist_ok=True)
+  head = git_head()
+  patch = dirty_patch_digest()
+
+  def objective(trial: optuna.Trial) -> float:
+    params = trial_params(trial)
+    trial_dir = trials / f"trial-{trial.number:05d}"
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    profile = trial_dir / "mount-tuning.toml"
+    text = profile_toml(params)
+    profile.write_text(text, encoding="utf-8")
+    digest = digest_bytes(text.encode("utf-8"))
+    scenario_file = tuning_scenario(scenario, trial_dir / "scenario.json", profile, digest, args.trace_trials)
+    result = run_repeated_trial(profile, scenario_file, playtest_root, trial_dir, not args.cold_client, args.repeats)
+    record = {
+      "trial": trial.number,
+      "params": params,
+      "profile": str(profile),
+      "profileDigest": digest,
+      "gitHead": head,
+      "dirtyPatchDigest": patch,
+      **result,
+    }
+    (trial_dir / "record.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    trial.set_user_attr("record", str(trial_dir / "record.json"))
+    trial.set_user_attr("profile", str(profile))
+    trial.set_user_attr("summary", result["summaryPath"])
+    trial.set_user_attr("accepted", result["accepted"])
+    trial.set_user_attr("acceptanceScore", result["acceptanceScore"])
+    trial.set_user_attr("frontierScore", result["frontierScore"])
+    return float(result["scalarScore"])
+
+  return objective
+
+
+def tuple_attr(trial: optuna.trial.FrozenTrial, key: str) -> tuple[Any, ...]:
+  value = trial.user_attrs.get(key)
+  if isinstance(value, list):
+    return tuple(value)
+  return (float("inf"), float("inf"), float("inf"))
+
+
+def bool_arg(raw: str) -> bool:
+  value = raw.strip().lower()
+  if value in {"1", "true", "yes", "on"}:
+    return True
+  if value in {"0", "false", "no", "off"}:
+    return False
+  raise argparse.ArgumentTypeError(f"expected boolean, got {raw!r}")
+
+
+def record_paths(sources: Iterable[Path]) -> list[Path]:
+  paths: list[Path] = []
+  for source in sources:
+    source = source.expanduser()
+    if source.is_file():
+      paths.append(source)
+    elif source.is_dir():
+      paths.extend(sorted(source.rglob("record.json")))
+    else:
+      raise SystemExit(f"warm-start source does not exist: {source}")
+  return paths
+
+
+def warm_start_valid(record: dict[str, Any]) -> bool:
+  summary = record.get("summary")
+  if not isinstance(summary, dict):
+    return False
+  return (
+    bool(summary.get("codeStampMatched"))
+    and bool(summary.get("sawHorse"))
+    and not bool(summary.get("tookDamage"))
+    and not bool(summary.get("lostHorseAfterEncounter"))
+    and int(summary.get("jumpTicks") or 0) == 0
+    and mode_ticks(summary, "PEDESTRIAN") == 0
+    and mode_ticks(summary, "LEGACY_WATER") == 0
+    and mode_ticks(summary, "SWIM") == 0
+    and mode_ticks(summary, "BOAT") == 0
+    and mode_ticks(summary, "ELYTRA") == 0
+  )
+
+
+def warm_start_distance(record: dict[str, Any]) -> float:
+  summary = record.get("summary") if isinstance(record.get("summary"), dict) else {}
+  distance = horse_only_distance(summary)
+  if distance < 1.0e9:
+    return distance
+  score = record.get("frontierScore")
+  if isinstance(score, list) and score:
+    return finite_float(score[0])
+  return finite_float(summary.get("distanceToGoal") if isinstance(summary, dict) else None)
+
+
+def record_wall(record: dict[str, Any]) -> float:
+  summary = record.get("summary") if isinstance(record.get("summary"), dict) else {}
+  return finite_float(summary.get("elapsedNanos") if isinstance(summary, dict) else None, 1.0e18) / 1.0e9
+
+
+def record_quality_key(record: dict[str, Any]) -> tuple[float, float, float]:
+  return (0.0, record_wall(record), warm_start_distance(record)) if record.get("accepted") else (1.0, warm_start_distance(record), record_wall(record))
+
+
+def normalize_params(params: dict[str, Any]) -> dict[str, Any]:
+  defaults = default_params()
+  relevant = {key: value for key, value in params.items() if key in defaults}
+  return canonicalize_params({**defaults, **relevant})
+
+
+def params_from_record(path: Path) -> dict[str, Any]:
+  record = json.loads(path.read_text(encoding="utf-8"))
+  params = record.get("params")
+  if not isinstance(params, dict):
+    raise SystemExit(f"{path} has no params object")
+  return normalize_params(params)
+
+
+def enqueue_warm_starts(study: optuna.Study, sources: list[Path], limit: int) -> int:
+  if not sources or limit <= 0:
+    return 0
+  records: list[dict[str, Any]] = []
+  for path in record_paths(sources):
+    try:
+      record = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+      continue
+    params = record.get("params")
+    if isinstance(params, dict) and warm_start_valid(record):
+      records.append(record)
+  records.sort(key=record_quality_key)
+  count = 0
+  seen: set[str] = set()
+  for record in records:
+    params = optimizer_params_from_profile_params(dict(record["params"]))
+    fingerprint = json.dumps(params, sort_keys=True)
+    if fingerprint in seen:
+      continue
+    seen.add(fingerprint)
+    study.enqueue_trial(params, skip_if_exists=True)
+    count += 1
+    if count >= limit:
+      break
+  return count
+
+
+def selected_record(records: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+  if not records:
+    raise RuntimeError("scan has no records")
+  accepted_records = [record for record in records if bool(record.get("accepted"))]
+  if accepted_records:
+    return "accepted", min(accepted_records, key=lambda record: tuple(record.get("acceptanceScore", [float("inf"), float("inf"), float("inf")])))
+  return "frontier", min(records, key=lambda record: tuple(record.get("frontierScore", [float("inf"), float("inf"), float("inf")])))
+
+
+def scan_base_params(args: argparse.Namespace) -> dict[str, Any]:
+  if args.scan_baseline_record:
+    return params_from_record(args.scan_baseline_record.expanduser())
+  if args.scan_baseline_profile:
+    return normalize_params(parse_profile_toml(args.scan_baseline_profile.expanduser()))
+  if args.warm_start:
+    records = []
+    for path in record_paths(args.warm_start):
+      try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+      except (json.JSONDecodeError, OSError):
+        continue
+      if isinstance(record.get("params"), dict) and warm_start_valid(record):
+        records.append(record)
+    if records:
+      return normalize_params(min(records, key=record_quality_key)["params"])
+  raise SystemExit("--scan requires --scan-baseline-profile, --scan-baseline-record, or a --warm-start source containing valid records")
+
+
+def parse_scan_specs(specs: list[str], base: dict[str, Any]) -> list[tuple[str, list[Any]]]:
+  parsed: list[tuple[str, list[Any]]] = []
+  for spec in specs:
+    if "=" not in spec:
+      raise SystemExit(f"scan spec must be key=v1,v2,..., got {spec!r}")
+    key, raw_values = (part.strip() for part in spec.split("=", 1))
+    key = key.replace("_", "-")
+    if key not in base:
+      raise SystemExit(f"scan key {key!r} is not in mounted tuning surface")
+    values = [parse_scan_value(token.strip(), base[key]) for token in raw_values.split(",") if token.strip()]
+    if not values:
+      raise SystemExit(f"scan spec for {key!r} has no values")
+    parsed.append((key, unique_values(values)))
+  return parsed
+
+
+def parse_scan_value(token: str, base: Any) -> Any:
+  if token in {"base", "."}:
+    return base
+  if isinstance(base, (int, float)) and not isinstance(base, bool):
+    if token.startswith("*"):
+      return coerce_scan_numeric(float(base) * float(token[1:]), base)
+    if token.startswith("+") or token.startswith("-") and not token[1:].replace(".", "", 1).isdigit():
+      return coerce_scan_numeric(float(base) + float(token), base)
+    return coerce_scan_numeric(float(token), base)
+  if isinstance(base, str):
+    return token
+  if isinstance(base, bool):
+    return bool_arg(token)
+  return token
+
+
+def coerce_scan_numeric(value: float, base: Any) -> Any:
+  return int(round(value)) if isinstance(base, int) and not isinstance(base, bool) else value
+
+
+def unique_values(values: list[Any]) -> list[Any]:
+  out: list[Any] = []
+  seen: set[str] = set()
+  for value in values:
+    fingerprint = json.dumps(value, sort_keys=True)
+    if fingerprint not in seen:
+      seen.add(fingerprint)
+      out.append(value)
+  return out
+
+
+def scan_param_grid(base: dict[str, Any], specs: list[tuple[str, list[Any]]], include_baseline: bool, limit: int) -> list[dict[str, Any]]:
+  rows: list[dict[str, Any]] = []
+  if include_baseline:
+    rows.append(dict(base))
+  keys = [key for key, _ in specs]
+  for values in itertools.product(*(values for _, values in specs)):
+    params = dict(base)
+    params.update(dict(zip(keys, values, strict=True)))
+    rows.append(canonicalize_params(params))
+  deduped: list[dict[str, Any]] = []
+  seen: set[str] = set()
+  for params in rows:
+    fingerprint = json.dumps(params, sort_keys=True)
+    if fingerprint in seen:
+      continue
+    seen.add(fingerprint)
+    deduped.append(params)
+  if len(deduped) > limit:
+    raise SystemExit(f"scan would run {len(deduped)} trials; raise --scan-max-combinations above {limit} or narrow the grid")
+  return deduped
+
+
+def run_scan(args: argparse.Namespace, root: Path) -> int:
+  if not args.scan:
+    raise SystemExit("--scan mode requires at least one --scan key=values spec")
+  base = scan_base_params(args)
+  specs = parse_scan_specs(args.scan, base)
+  rows = scan_param_grid(base, specs, args.scan_include_baseline, args.scan_max_combinations)
+  trials = root / "trials"
+  trials.mkdir(parents=True, exist_ok=True)
+  scenario = args.scenario.resolve()
+  playtest_root = args.playtest_root.resolve()
+  head = git_head()
+  patch = dirty_patch_digest()
+  records: list[dict[str, Any]] = []
+  for number, params in enumerate(rows):
+    trial_dir = trials / f"trial-{number:05d}"
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    profile = trial_dir / "mount-tuning.toml"
+    text = profile_toml(params)
+    profile.write_text(text, encoding="utf-8")
+    digest = digest_bytes(text.encode("utf-8"))
+    scenario_file = tuning_scenario(scenario, trial_dir / "scenario.json", profile, digest, args.trace_trials)
+    result = run_repeated_trial(profile, scenario_file, playtest_root, trial_dir, not args.cold_client, args.repeats)
+    changed = {key: params[key] for key, _ in specs if params[key] != base[key]}
+    record = {"trial": number, "sampler": "grid-scan", "changed": changed, "params": params, "profile": str(profile), "profileDigest": digest, "gitHead": head, "dirtyPatchDigest": patch, **result}
+    (trial_dir / "record.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    records.append(record)
+    print(f"scan trial {number}/{len(rows)-1}: changed={changed} frontier={record['frontierScore']} accepted={record['accepted']}")
+  kind, chosen = selected_record(records)
+  (root / "scan-summary.json").write_text(json.dumps({"selectedKind": kind, "selectedTrial": chosen["trial"], "selectedProfile": chosen["profile"], "selectedSummary": chosen["summaryPath"], "selectedScore": chosen["frontierScore"], "scan": args.scan}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+  print(f"selected {kind} scan trial {chosen['trial']}: acceptance={chosen['acceptanceScore']} frontier={chosen['frontierScore']} value={chosen['scalarScore']}")
+  print(chosen["profile"])
+  print(chosen["summaryPath"])
+  return 0
+
+
+def selected_trial(study: optuna.Study) -> tuple[str, optuna.trial.FrozenTrial]:
+  completed = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+  if not completed:
+    raise RuntimeError("study has no completed trials")
+  accepted_trials = [trial for trial in completed if bool(trial.user_attrs.get("accepted"))]
+  if accepted_trials:
+    return "accepted", min(accepted_trials, key=lambda trial: tuple_attr(trial, "acceptanceScore"))
+  return "frontier", min(completed, key=lambda trial: tuple_attr(trial, "frontierScore"))
+
+
+def parser() -> argparse.ArgumentParser:
+  p = argparse.ArgumentParser(description="Optuna grind for mounted horse pathing soft tunables.")
+  p.add_argument("--scenario", type=Path, default=SCENARIO)
+  p.add_argument("--trials", type=int, default=24)
+  p.add_argument("--timeout-hours", type=float, default=0.0, help="Optional Optuna wallclock budget. The current trial is allowed to finish.")
+  p.add_argument("--study-name", default=time.strftime("horse-thisway-200-%Y%m%dT%H%M%SZ", time.gmtime()))
+  p.add_argument("--root", type=Path, default=REPO / "run/tune/horse_thisway_200")
+  p.add_argument("--playtest-root", type=Path, default=REPO / "run/playtest")
+  p.add_argument("--sampler-seed", type=int, default=1337)
+  p.add_argument("--trace-trials", type=bool_arg, default=False)
+  p.add_argument("--warm-start", action="append", type=Path, default=[], help="Prior record.json or study directory whose valid parameter sets should be enqueued before sampling.")
+  p.add_argument("--warm-start-limit", type=int, default=12)
+  p.add_argument("--cold-client", action="store_true", help="Restart the playtest client for every trial instead of hot-loading scenario tuning.")
+  p.add_argument("--leave-client", action="store_true", help="Leave the hot playtest client/server running after the study.")
+  p.add_argument("--repeats", type=int, default=1, help="Serial playtest repeats per parameter vector; the optimizer receives the worst acceptance-score repeat.")
+  p.add_argument("--scan", action="append", default=[], metavar="KEY=VALUES", help="Deterministic grid scan coordinate. Values are comma-separated; use 'base' or '*factor' for numeric baseline-relative values.")
+  p.add_argument("--scan-baseline-profile", type=Path, help="Profile TOML used as the fixed scan baseline.")
+  p.add_argument("--scan-baseline-record", type=Path, help="record.json whose params object is used as the fixed scan baseline.")
+  p.add_argument("--scan-include-baseline", type=bool_arg, default=True)
+  p.add_argument("--scan-max-combinations", type=int, default=256)
+  p.add_argument("--dry-run-profile", type=Path)
+  return p
+
+
+def main() -> int:
+  args = parser().parse_args()
+  if args.dry_run_profile:
+    args.dry_run_profile.parent.mkdir(parents=True, exist_ok=True)
+    args.dry_run_profile.write_text(profile_toml(default_params()), encoding="utf-8")
+    print(args.dry_run_profile)
+    return 0
+  study_name = safe_name(args.study_name)
+  root = (args.root / study_name).resolve()
+  root.mkdir(parents=True, exist_ok=True)
+  if args.scan:
+    (root / "study-meta.json").write_text(
+      json.dumps(
+        {
+          "studyName": study_name,
+          "sampler": "grid-scan",
+          "scenario": str(args.scenario.resolve()),
+          "playtestRoot": str(args.playtest_root.resolve()),
+          "gitHead": git_head(),
+          "dirtyPatchDigest": dirty_patch_digest(),
+          "traceTrials": args.trace_trials,
+          "hotClient": not args.cold_client,
+          "repeats": args.repeats,
+          "scan": args.scan,
+          "scanBaselineProfile": str(args.scan_baseline_profile or ""),
+          "scanBaselineRecord": str(args.scan_baseline_record or ""),
+          "warmStartSources": [str(path) for path in args.warm_start],
+        },
+        indent=2,
+        sort_keys=True,
+      ) + "\n",
+      encoding="utf-8",
+    )
+    try:
+      return run_scan(args, root)
+    finally:
+      if not args.cold_client and not args.leave_client:
+        stop_env = os.environ.copy()
+        stop_env["PLAYTEST_ROOT"] = str(args.playtest_root.resolve())
+        subprocess.run([str(REPO / "scripts/playtest"), "stop"], cwd=REPO, env=stop_env, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  storage = f"sqlite:///{root / 'study.db'}"
+  sampler = optuna.samplers.TPESampler(seed=args.sampler_seed, multivariate=True, group=True)
+  study = optuna.create_study(study_name=study_name, storage=storage, load_if_exists=True, direction="minimize", sampler=sampler)
+  study.enqueue_trial(optimizer_params_from_profile_params(default_params()), skip_if_exists=True)
+  enqueued = enqueue_warm_starts(study, args.warm_start, args.warm_start_limit)
+  (root / "study-meta.json").write_text(
+    json.dumps(
+      {
+        "studyName": study_name,
+        "storage": storage,
+        "scenario": str(args.scenario.resolve()),
+        "playtestRoot": str(args.playtest_root.resolve()),
+        "gitHead": git_head(),
+        "dirtyPatchDigest": dirty_patch_digest(),
+        "traceTrials": args.trace_trials,
+        "hotClient": not args.cold_client,
+        "repeats": args.repeats,
+        "warmStartSources": [str(path) for path in args.warm_start],
+        "warmStartEnqueued": enqueued,
+      },
+      indent=2,
+      sort_keys=True,
+    ) + "\n",
+    encoding="utf-8",
+  )
+  if enqueued:
+    print(f"warm-start enqueued {enqueued} valid prior trial(s)")
+  timeout = args.timeout_hours * 3600.0 if args.timeout_hours > 0 else None
+  try:
+    study.optimize(objective_factory(args, root), n_trials=args.trials, timeout=timeout)
+  finally:
+    if not args.cold_client and not args.leave_client:
+      stop_env = os.environ.copy()
+      stop_env["PLAYTEST_ROOT"] = str(args.playtest_root.resolve())
+      subprocess.run([str(REPO / "scripts/playtest"), "stop"], cwd=REPO, env=stop_env, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+  kind, chosen = selected_trial(study)
+  optuna_best = study.best_trial
+  print(f"selected {kind} trial {chosen.number}: acceptance={chosen.user_attrs.get('acceptanceScore')} frontier={chosen.user_attrs.get('frontierScore')} value={chosen.value}")
+  print(chosen.user_attrs.get("profile", ""))
+  print(chosen.user_attrs.get("summary", ""))
+  if optuna_best.number != chosen.number:
+    print(f"optuna frontier-best trial {optuna_best.number}: frontier={optuna_best.user_attrs.get('frontierScore')} value={optuna_best.value}")
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

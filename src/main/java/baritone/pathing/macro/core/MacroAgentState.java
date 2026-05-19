@@ -9,9 +9,10 @@ public record MacroAgentState(int bits) {
   private static final int MODE_PEDESTRIAN = 0;
   private static final int MODE_BOAT = 1;
   private static final int MODE_SWIM = 2;
+  private static final int MODE_HORSE = 3;
 
   public MacroAgentState {
-    if ((bits & ~MODE_MASK) != 0 || (bits & MODE_MASK) > MODE_SWIM) {
+    if ((bits & ~MODE_MASK) != 0 || (bits & MODE_MASK) > MODE_HORSE) {
       throw new IllegalArgumentException("invalid macro agent-state bits: " + bits);
     }
   }
@@ -35,11 +36,16 @@ public record MacroAgentState(int bits) {
     return new MacroAgentState(MODE_SWIM);
   }
 
+  public static MacroAgentState horse() {
+    return new MacroAgentState(MODE_HORSE);
+  }
+
   public TransportMode mode() {
     return switch (bits & MODE_MASK) {
       case MODE_PEDESTRIAN -> TransportMode.PEDESTRIAN;
       case MODE_BOAT -> TransportMode.BOAT;
       case MODE_SWIM -> TransportMode.SWIM;
+      case MODE_HORSE -> TransportMode.HORSE;
       default -> throw new IllegalStateException("invalid macro agent-state mode: " + bits);
     };
   }
@@ -54,6 +60,10 @@ public record MacroAgentState(int bits) {
 
   public boolean swimming() {
     return (bits & MODE_MASK) == MODE_SWIM;
+  }
+
+  public boolean horseMounted() {
+    return (bits & MODE_MASK) == MODE_HORSE;
   }
 
   public boolean surfaceWaterborne() {

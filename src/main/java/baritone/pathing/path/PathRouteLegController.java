@@ -645,14 +645,14 @@ final class PathRouteLegController implements RouteLegController, Helper {
     return null;
   }
 
-  void appendRenderPlan(ArrayList<RouteRenderPlan.Segment> segments, ArrayList<RouteRenderPlan.Anchor> anchors, boolean current) {
+  void appendRenderPlan(ArrayList<RouteRenderPlan.Segment> segments, ArrayList<RouteRenderPlan.Anchor> anchors, boolean current, int committedUntilPosition) {
     List<BetterBlockPos> positions = path.positions();
     if (positions.size() < 2) {
       return;
     }
     int cursor = current ? Math.max(pathPosition - 3, 0) : 0;
     if (surfaceLegs.isEmpty()) {
-      addPathRenderSegment(segments, positions, cursor, positions.size() - 1, TransportMode.PEDESTRIAN, false, current, -1);
+      addPathRenderSegment(segments, positions, cursor, positions.size() - 1, TransportMode.PEDESTRIAN, false, current, -1, committedUntilPosition);
       return;
     }
     for (PathSurfaceOverlayLeg leg : surfaceLegs) {
@@ -660,9 +660,11 @@ final class PathRouteLegController implements RouteLegController, Helper {
         continue;
       }
       if (leg.startIndex() > cursor) {
-        addPathRenderSegment(segments, positions, cursor, Math.min(leg.startIndex(), positions.size() - 1), TransportMode.PEDESTRIAN, false, current, -1);
+        addPathRenderSegment(segments, positions, cursor, Math.min(leg.startIndex(), positions.size() - 1), TransportMode.PEDESTRIAN, false, current, -1, committedUntilPosition);
       }
-      segments.add(new RouteRenderPlan.Segment(leg.segment().mode(), leg.segment().terminal(), leg.contains(pathPosition), -1, List.of(leg.segment().waterStart(), leg.segment().waterEnd()), 0));
+      RouteRenderPlan.SegmentRole role = leg.endExclusive() <= committedUntilPosition ? RouteRenderPlan.SegmentRole.COMMITTED : RouteRenderPlan.SegmentRole.CANDIDATE;
+      segments.add(new RouteRenderPlan.Segment(leg.segment().mode(), leg.segment().terminal(), leg.contains(pathPosition), -1, List.of(leg.segment().waterStart(), leg.segment().waterEnd()), 0,
+        RouteRenderPlan.SegmentKind.NORMAL, role));
       anchors.add(new RouteRenderPlan.Anchor(RouteRenderPlan.AnchorKind.LAUNCH, leg.segment().src()));
       anchors.add(new RouteRenderPlan.Anchor(RouteRenderPlan.AnchorKind.ENTRY, leg.segment().waterStart()));
       if (leg.segment().terminal()) {
@@ -670,16 +672,25 @@ final class PathRouteLegController implements RouteLegController, Helper {
       }
       cursor = Math.max(cursor, leg.endExclusive());
     }
-    addPathRenderSegment(segments, positions, cursor, positions.size() - 1, TransportMode.PEDESTRIAN, false, current, -1);
+    addPathRenderSegment(segments, positions, cursor, positions.size() - 1, TransportMode.PEDESTRIAN, false, current, -1, committedUntilPosition);
   }
 
   private static void addPathRenderSegment(ArrayList<RouteRenderPlan.Segment> segments, List<BetterBlockPos> positions, int start, int endInclusive, TransportMode mode, boolean terminal,
-    boolean active, int componentId) {
+    boolean active, int componentId, int committedUntilPosition) {
     if (endInclusive <= start || start < 0 || start >= positions.size()) {
       return;
     }
     int end = Math.min(endInclusive, positions.size() - 1);
-    segments.add(new RouteRenderPlan.Segment(mode, terminal, active, componentId, List.copyOf(positions.subList(start, end + 1)), 0));
+    int committedEnd = Math.min(end, committedUntilPosition);
+    if (active && committedEnd > start) {
+      segments.add(new RouteRenderPlan.Segment(mode, terminal, true, componentId, List.copyOf(positions.subList(start, committedEnd + 1)), 0, RouteRenderPlan.SegmentKind.NORMAL,
+        RouteRenderPlan.SegmentRole.COMMITTED));
+    }
+    int candidateStart = active ? Math.max(start, committedEnd) : start;
+    if (end > candidateStart) {
+      segments.add(new RouteRenderPlan.Segment(mode, terminal, active, componentId, List.copyOf(positions.subList(candidateStart, end + 1)), 0, RouteRenderPlan.SegmentKind.NORMAL,
+        RouteRenderPlan.SegmentRole.CANDIDATE));
+    }
   }
 
   private static TransportControl transportControl(String movement, MovementStatus status, ControlFrame frame) {

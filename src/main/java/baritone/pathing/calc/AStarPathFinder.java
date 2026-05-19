@@ -126,6 +126,14 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         }
         return Optional.of(new Path(realStart, startNode, currentNode, numNodes, goal, calcContext));
       }
+      if (bestExitGoal != null && currentNode.previous != null && bestExitGoal.isExactExit(currentNode.x, currentNode.y, currentNode.z)) {
+        double score = currentNode.cost + bestExitGoal.exitValue(currentNode.x, currentNode.y, currentNode.z);
+        if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
+          bestExit = currentNode;
+          bestExitScore = score;
+        }
+        continue;
+      }
       terrainFacts.load(calcContext, currentNode.x, currentNode.y, currentNode.z);
       boolean touchesExactBoundary = false;
       for (int primitiveIndex = 0; primitiveIndex < allMoves.length; primitiveIndex++) {

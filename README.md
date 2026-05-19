@@ -16,7 +16,7 @@ Fabric artifacts are written to `dist/`. Use the standalone Fabric jar for norma
 
 - Fabric-only Minecraft `26.1.2` port.
 - Core pathfinding hardening and optimization.
-- In-game path microprofiles via `#profile next`.
+- Unified next-path profiling via `#profile`.
 - Conservative `(2, 1)` oblique walking primitives.
 - Overworld elytra transport.
 - Sprint-swimming path support.

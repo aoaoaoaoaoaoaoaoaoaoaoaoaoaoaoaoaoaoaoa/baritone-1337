@@ -6,6 +6,10 @@ import net.minecraft.world.level.Level;
 import net.minecraft.resources.ResourceKey;
 
 public final class MacroNodeKey {
+  public static final int DIMENSION_OVERWORLD = 0;
+  public static final int DIMENSION_NETHER = 1;
+  public static final int DIMENSION_END = 2;
+
   private static final long KIND_CELL = 0L;
   private static final long KIND_ANCHOR = 3L;
   private static final int COORD_BITS = 26;
@@ -79,15 +83,19 @@ public final class MacroNodeKey {
     return cell(dimension, stratum, scale, Math.floorDiv(pos.x, cellBlocks), Math.floorDiv(pos.z, cellBlocks));
   }
 
-  private static int dimensionId(ResourceKey<Level> dimension) {
+  public static long siblingCell(long key, int cellX, int cellZ) {
+    return cell(dimensionId(key), stratum(key), scale(key), cellX, cellZ);
+  }
+
+  public static int dimensionId(ResourceKey<Level> dimension) {
     if (dimension.equals(Level.OVERWORLD)) {
-      return 0;
+      return DIMENSION_OVERWORLD;
     }
     if (dimension.equals(Level.NETHER)) {
-      return 1;
+      return DIMENSION_NETHER;
     }
     if (dimension.equals(Level.END)) {
-      return 2;
+      return DIMENSION_END;
     }
     return 7;
   }

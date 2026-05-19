@@ -22,11 +22,10 @@ import baritone.api.selection.ISelectionManager;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.BlockOptionalMetaLookup;
+import baritone.selection.SelectionRenderer;
 import baritone.utils.BlockStateInterface;
-import baritone.utils.IRenderer;
 import baritone.utils.RenderContext;
 import baritone.utils.schematic.StaticSchematic;
-import com.mojang.blaze3d.vertex.BufferBuilder;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.world.level.block.Blocks;
@@ -42,10 +41,13 @@ import java.util.stream.Stream;
 
 public class SelCommand extends Command {
 
-  private ISelectionManager manager = baritone.getSelectionManager();
+  private final ISelectionManager manager = baritone.getSelectionManager();
   private BetterBlockPos pos1 = null;
   private ISchematic clipboard = null;
   private Vec3i clipboardOffset = null;
+
+  private record SelectionSnapshot(ISchematic schematic, BetterBlockPos origin, Vec3i size) {
+  }
 
   public SelCommand(IBaritone baritone) {
     super(baritone, "sel", "selection", "s");
@@ -59,9 +61,7 @@ public class SelCommand extends Command {
         float opacity = Baritone.settings().selectionOpacity.value;
         float lineWidth = Baritone.settings().selectionLineWidth.value;
         boolean ignoreDepth = Baritone.settings().renderSelectionIgnoreDepth.value;
-        BufferBuilder bufferBuilder = IRenderer.startLines(color, opacity);
-        IRenderer.emitAABB(bufferBuilder, RenderContext.capture(event), new AABB(pos1), lineWidth);
-        IRenderer.endLines(bufferBuilder, ignoreDepth);
+        SelectionRenderer.renderBox(RenderContext.capture(event), new AABB(pos1), color, opacity, lineWidth, ignoreDepth);
       }
     });
   }
@@ -77,7 +77,7 @@ public class SelCommand extends Command {
         throw new CommandInvalidStateException("Set pos1 first before using pos2");
       }
       BetterBlockPos playerPos = ctx.viewerPos();
-      BetterBlockPos pos = args.hasAny() ? args.getDatatypePost(RelativeBlockPos.INSTANCE, playerPos) : playerPos;
+      BetterBlockPos pos = args.hasAny() ? args.getDatatypePost(RelativeBlockPos.INSTANCE, playerPos) : defaultSelectionPos();
       args.requireMax(0);
       if (action == Action.POS1) {
         pos1 = pos;
@@ -90,7 +90,7 @@ public class SelCommand extends Command {
     } else if (action == Action.CLEAR) {
       args.requireMax(0);
       pos1 = null;
-      logDirect(String.format("Removed %d selections", manager.removeAllSelections().length));
+      logDirect("Removed %d selections".formatted(manager.removeAllSelections().length));
     } else if (action == Action.UNDO) {
       args.requireMax(0);
       if (pos1 != null) {
@@ -143,31 +143,21 @@ public class SelCommand extends Command {
         Vec3i size = selection.size();
         BetterBlockPos min = selection.min();
 
-        // Java 8 so no switch expressions 😿
         UnaryOperator<ISchematic> create = fill -> {
           final int w = fill.widthX();
           final int h = fill.heightY();
           final int l = fill.lengthZ();
 
-          switch (action) {
-            case WALLS :
-              return new WallsSchematic(fill);
-            case SHELL :
-              return new ShellSchematic(fill);
-            case REPLACE :
-              return new ReplaceSchematic(fill, replaces);
-            case SPHERE :
-              return MaskSchematic.create(fill, new SphereMask(w, h, l, true).compute());
-            case HSPHERE :
-              return MaskSchematic.create(fill, new SphereMask(w, h, l, false).compute());
-            case CYLINDER :
-              return MaskSchematic.create(fill, new CylinderMask(w, h, l, true, alignment).compute());
-            case HCYLINDER :
-              return MaskSchematic.create(fill, new CylinderMask(w, h, l, false, alignment).compute());
-            default :
-              // Silent fail
-              return fill;
-          }
+          return switch (action) {
+            case WALLS -> new WallsSchematic(fill);
+            case SHELL -> new ShellSchematic(fill);
+            case REPLACE -> new ReplaceSchematic(fill, replaces);
+            case SPHERE -> MaskSchematic.create(fill, new SphereMask(w, h, l, true).compute());
+            case HSPHERE -> MaskSchematic.create(fill, new SphereMask(w, h, l, false).compute());
+            case CYLINDER -> MaskSchematic.create(fill, new CylinderMask(w, h, l, true, alignment).compute());
+            case HCYLINDER -> MaskSchematic.create(fill, new CylinderMask(w, h, l, false, alignment).compute());
+            default -> fill;
+          };
         };
 
         ISchematic schematic = create.apply(new FillSchematic(size.getX(), size.getY(), size.getZ(), type));
@@ -179,33 +169,9 @@ public class SelCommand extends Command {
       BetterBlockPos playerPos = ctx.viewerPos();
       BetterBlockPos pos = args.hasAny() ? args.getDatatypePost(RelativeBlockPos.INSTANCE, playerPos) : playerPos;
       args.requireMax(0);
-      ISelection[] selections = manager.getSelections();
-      if (selections.length < 1) {
-        throw new CommandInvalidStateException("No selections");
-      }
-      BlockStateInterface bsi = new BlockStateInterface(ctx);
-      BetterBlockPos origin = selections[0].min();
-      CompositeSchematic composite = new CompositeSchematic(0, 0, 0);
-      for (ISelection selection : selections) {
-        BetterBlockPos min = selection.min();
-        origin = new BetterBlockPos(Math.min(origin.x, min.x), Math.min(origin.y, min.y), Math.min(origin.z, min.z));
-      }
-      for (ISelection selection : selections) {
-        Vec3i size = selection.size();
-        BetterBlockPos min = selection.min();
-        BlockState[][][] blockstates = new BlockState[size.getX()][size.getZ()][size.getY()];
-        for (int x = 0; x < size.getX(); x++) {
-          for (int y = 0; y < size.getY(); y++) {
-            for (int z = 0; z < size.getZ(); z++) {
-              blockstates[x][z][y] = bsi.get0(min.x + x, min.y + y, min.z + z);
-            }
-          }
-        }
-        ISchematic schematic = new StaticSchematic(blockstates);
-        composite.put(schematic, min.x - origin.x, min.y - origin.y, min.z - origin.z);
-      }
-      clipboard = composite;
-      clipboardOffset = origin.subtract(pos);
+      SelectionSnapshot snapshot = captureSelections();
+      clipboard = snapshot.schematic();
+      clipboardOffset = snapshot.origin().subtract(pos);
       logDirect("Selection copied");
     } else if (action == Action.PASTE) {
       BetterBlockPos playerPos = ctx.viewerPos();
@@ -216,6 +182,13 @@ public class SelCommand extends Command {
       }
       baritone.getBuilderProcess().build("Fill", clipboard, pos.offset(clipboardOffset));
       logDirect("Building now");
+    } else if (action == Action.EXTRUDE) {
+      Extrusion extrusion = parseExtrusion(args);
+      SelectionSnapshot snapshot = captureSelections();
+      Vec3i repeat = repeatVector(extrusion.direction(), axisSpan(snapshot.size(), extrusion.direction().getAxis()));
+      Vec3i firstOrigin = snapshot.origin().offset(repeat);
+      baritone.getBuilderProcess().build("Selection extrude", snapshot.schematic(), firstOrigin, repeat, extrusion.count(), true);
+      logDirect(extrusion.count() == -1 ? "Extruding selection indefinitely" : "Extruding selection %d times".formatted(extrusion.count()));
     } else if (action == Action.EXPAND || action == Action.CONTRACT || action == Action.SHIFT) {
       args.requireExactly(3);
       TransformTarget transformTarget = TransformTarget.getByName(args.getString());
@@ -238,7 +211,7 @@ public class SelCommand extends Command {
           manager.shift(selection, direction, blocks);
         }
       }
-      logDirect(String.format("Transformed %d selections", selections.length));
+      logDirect("Transformed %d selections".formatted(selections.length));
     }
   }
 
@@ -272,6 +245,8 @@ public class SelCommand extends Command {
               return args.tabCompleteDatatype(ForDirection.INSTANCE);
             }
           }
+        } else if (action == Action.EXTRUDE && args.hasExactlyOne()) {
+          return args.tabCompleteDatatype(ForDirection.INSTANCE);
         }
       }
     }
@@ -286,22 +261,96 @@ public class SelCommand extends Command {
     return Arrays.asList("The sel command allows you to manipulate Baritone's selections, similarly to WorldEdit.", "",
       "Using these selections, you can clear areas, fill them with blocks, or something else.", "",
       "The expand/contract/shift commands use a kind of selector to choose which selections to target. Supported ones are a/all, n/newest, and o/oldest.", "", "Usage:",
-      "> sel pos1/p1/1 - Set position 1 to your current position.", "> sel pos1/p1/1 <x> <y> <z> - Set position 1 to a relative position.",
-      "> sel pos2/p2/2 - Set position 2 to your current position.", "> sel pos2/p2/2 <x> <y> <z> - Set position 2 to a relative position.", "", "> sel clear/c - Clear the selection.",
-      "> sel undo/u - Undo the last action (setting positions, creating selections, etc.)", "> sel set/fill/s/f [block] - Completely fill all selections with a block.",
-      "> sel walls/w [block] - Fill in the walls of the selection with a specified block.", "> sel shell/shl [block] - The same as walls, but fills in a ceiling and floor too.",
-      "> sel sphere/sph [block] - Fills the selection with a sphere bounded by the sides.", "> sel hsphere/hsph [block] - The same as sphere, but hollow.",
+      "> sel pos1/p1/1 - Set position 1 to the targeted block, or your current position if nothing is targeted.", "> sel pos1/p1/1 <x> <y> <z> - Set position 1 to a relative position.",
+      "> sel pos2/p2/2 - Set position 2 to the targeted block, or your current position if nothing is targeted.", "> sel pos2/p2/2 <x> <y> <z> - Set position 2 to a relative position.", "",
+      "> sel clear/c - Clear the selection.", "> sel undo/u - Undo the last action (setting positions, creating selections, etc.)",
+      "> sel set/fill/s/f [block] - Completely fill all selections with a block.", "> sel walls/w [block] - Fill in the walls of the selection with a specified block.",
+      "> sel shell/shl [block] - The same as walls, but fills in a ceiling and floor too.", "> sel sphere/sph [block] - Fills the selection with a sphere bounded by the sides.",
+      "> sel hsphere/hsph [block] - The same as sphere, but hollow.",
       "> sel cylinder/cyl [block] <axis> - Fills the selection with a cylinder bounded by the sides, oriented about the given axis. (default=y)",
       "> sel hcylinder/hcyl [block] <axis> - The same as cylinder, but hollow.", "> sel cleararea/ca - Basically 'set air'.",
       "> sel replace/r <blocks...> <with> - Replaces blocks with another block.", "> sel copy/cp <x> <y> <z> - Copy the selected area relative to the specified or your position.",
-      "> sel paste/p <x> <y> <z> - Build the copied area relative to the specified or your position.", "", "> sel expand <target> <direction> <blocks> - Expand the targets.",
-      "> sel contract <target> <direction> <blocks> - Contract the targets.", "> sel shift <target> <direction> <blocks> - Shift the targets (does not resize).");
+      "> sel paste/p <x> <y> <z> - Build the copied area relative to the specified or your position.",
+      "> sel extrude [direction] [count] - Snapshot the selection and build adjacent copies. Direction defaults to facing; count defaults to unbounded.", "",
+      "> sel expand <target> <direction> <blocks> - Expand the targets.", "> sel contract <target> <direction> <blocks> - Contract the targets.",
+      "> sel shift <target> <direction> <blocks> - Shift the targets (does not resize).");
+  }
+
+  private BetterBlockPos defaultSelectionPos() {
+    return ctx.getSelectedBlock().map(BetterBlockPos::new).orElseGet(ctx::viewerPos);
+  }
+
+  private SelectionSnapshot captureSelections() throws CommandInvalidStateException {
+    ISelection[] selections = manager.getSelections();
+    if (selections.length < 1) {
+      throw new CommandInvalidStateException("No selections");
+    }
+    BetterBlockPos origin = selections[0].min();
+    BetterBlockPos max = selections[0].max();
+    for (ISelection selection : selections) {
+      BetterBlockPos min = selection.min();
+      BetterBlockPos selMax = selection.max();
+      origin = new BetterBlockPos(Math.min(origin.x, min.x), Math.min(origin.y, min.y), Math.min(origin.z, min.z));
+      max = new BetterBlockPos(Math.max(max.x, selMax.x), Math.max(max.y, selMax.y), Math.max(max.z, selMax.z));
+    }
+    BlockStateInterface bsi = new BlockStateInterface(ctx);
+    CompositeSchematic composite = new CompositeSchematic(0, 0, 0);
+    for (ISelection selection : selections) {
+      Vec3i size = selection.size();
+      BetterBlockPos min = selection.min();
+      BlockState[][][] blockstates = new BlockState[size.getX()][size.getZ()][size.getY()];
+      for (int x = 0; x < size.getX(); x++) {
+        for (int y = 0; y < size.getY(); y++) {
+          for (int z = 0; z < size.getZ(); z++) {
+            blockstates[x][z][y] = bsi.get0(min.x + x, min.y + y, min.z + z);
+          }
+        }
+      }
+      composite.put(new StaticSchematic(blockstates), min.x - origin.x, min.y - origin.y, min.z - origin.z);
+    }
+    return new SelectionSnapshot(composite, origin, new Vec3i(max.x - origin.x + 1, max.y - origin.y + 1, max.z - origin.z + 1));
+  }
+
+  private Extrusion parseExtrusion(IArgConsumer args) throws CommandException {
+    Direction direction = ctx.player().getDirection();
+    int count = -1;
+    if (args.hasAny()) {
+      Integer first = args.peekAsOrNull(Integer.class);
+      if (first == null) {
+        direction = args.getDatatypeFor(ForDirection.INSTANCE);
+        if (args.hasAny()) {
+          count = args.getAs(Integer.class);
+        }
+      } else {
+        count = args.getAs(Integer.class);
+      }
+    }
+    args.requireMax(0);
+    if (count != -1 && count < 1) {
+      throw new CommandInvalidTypeException(args.consumed(), "a positive count, or no count for unbounded extrusion");
+    }
+    return new Extrusion(direction, count);
+  }
+
+  private static int axisSpan(Vec3i size, Direction.Axis axis) {
+    return switch (axis) {
+      case X -> size.getX();
+      case Y -> size.getY();
+      case Z -> size.getZ();
+    };
+  }
+
+  private static Vec3i repeatVector(Direction direction, int span) {
+    return new Vec3i(direction.getStepX() * span, direction.getStepY() * span, direction.getStepZ() * span);
+  }
+
+  private record Extrusion(Direction direction, int count) {
   }
 
   enum Action {
     POS1("pos1", "p1", "1"), POS2("pos2", "p2", "2"), CLEAR("clear", "c"), UNDO("undo", "u"), SET("set", "fill", "s", "f"), WALLS("walls", "w"), SHELL("shell", "shl"), SPHERE("sphere",
-      "sph"), HSPHERE("hsphere", "hsph"), CYLINDER("cylinder", "cyl"), HCYLINDER("hcylinder",
-        "hcyl"), CLEARAREA("cleararea", "ca"), REPLACE("replace", "r"), EXPAND("expand", "ex"), COPY("copy", "cp"), PASTE("paste", "p"), CONTRACT("contract", "ct"), SHIFT("shift", "sh");
+      "sph"), HSPHERE("hsphere", "hsph"), CYLINDER("cylinder", "cyl"), HCYLINDER("hcylinder", "hcyl"), CLEARAREA("cleararea",
+        "ca"), REPLACE("replace", "r"), EXPAND("expand", "ex"), COPY("copy", "cp"), PASTE("paste", "p"), EXTRUDE("extrude", "ext"), CONTRACT("contract", "ct"), SHIFT("shift", "sh");
 
     private final String[] names;
 

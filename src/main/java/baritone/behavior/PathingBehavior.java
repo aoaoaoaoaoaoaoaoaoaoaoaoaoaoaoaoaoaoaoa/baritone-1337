@@ -15,6 +15,7 @@ import baritone.api.event.events.type.EventState;
 import baritone.pathing.calc.AStarPathFinder;
 import baritone.pathing.calc.AbstractNodeCostSearch;
 import baritone.pathing.calc.BestExitGoal;
+import baritone.pathing.calc.PlanningProbe;
 import baritone.pathing.control.ControlArbiter;
 import baritone.pathing.goal.GoalTerminalPolicy;
 import baritone.pathing.macro.core.MacroCoordinator;
@@ -22,11 +23,17 @@ import baritone.pathing.macro.core.MacroDirective;
 import baritone.pathing.macro.core.MacroNavigator;
 import baritone.pathing.macro.core.MacroPlan;
 import baritone.pathing.macro.core.MacroProjectedGoal;
+import baritone.pathing.macro.core.MacroTraversalProfile;
+import baritone.pathing.mounted.HorsePath;
+import baritone.pathing.mounted.HorseRoutePlanner;
+import baritone.pathing.mounted.MountTuning;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.RouteExecutor;
 import baritone.pathing.route.RouteFactFootprint;
 import baritone.pathing.route.RoutePlan;
+import baritone.pathing.route.RouteProgress;
+import baritone.pathing.transport.TransportMode;
 import baritone.pathing.transport.TransportSnapshot;
 import baritone.utils.PathRenderer;
 import baritone.utils.PathingCommandContext;
@@ -34,10 +41,13 @@ import baritone.utils.pathing.Favoring;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.level.ChunkPos;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -48,9 +58,16 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private static final int SUFFIX_REPLAN_TARGET_ANCHOR_ADVANCE = 48;
   private static final int SUFFIX_REPLAN_MAX_ANCHOR_ADVANCE = 96;
   private static final int SAME_ANCHOR_FACT_REPLAN_INTERVAL_TICKS = 20;
-  private static final int OPPORTUNISTIC_FACT_REPLAN_INTERVAL_TICKS = 80;
-  private static final int OPPORTUNISTIC_FACT_REPLAN_MIN_ADVANCE_BLOCKS = 32;
+  private static final int OPPORTUNISTIC_FACT_REPLAN_INTERVAL_TICKS = 10;
+  private static final int OPPORTUNISTIC_FACT_REPLAN_MIN_ADVANCE_BLOCKS = 0;
   private static final double SUFFIX_REPLACEMENT_COST_EPSILON = 2D;
+  private static final double INITIAL_REPLAN_WALL_TICKS = 40D;
+  private static final double REPLAN_WALL_TICKS_ALPHA = 0.18D;
+  private static final double COMMITMENT_MIN_TICKS = 14D;
+  private static final double COMMITMENT_MAX_TICKS = 120D;
+  private static final double COMMITMENT_LATENCY_MULTIPLIER = 1.35D;
+  private static final double COMMITMENT_BUFFER_TICKS = 8D;
+  private static final int COMMITMENT_MIN_UNITS = 1;
 
   private RouteExecutor current;
   private RouteExecutor next;
@@ -68,9 +85,17 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private boolean pausedThisTick;
   private boolean cancelRequested;
   private boolean calcFailedLastTick;
+  private boolean horseModeLock;
+  private volatile String lastPathingFailure;
+  private volatile String lastNextPathingFailure;
+  private volatile String lastRouteFailure;
+  private final ArrayDeque<String> recentNextPathingFailures = new ArrayDeque<>(16);
 
   private volatile AbstractNodeCostSearch inProgress;
   private volatile BetterBlockPos activePlanningStart;
+  private volatile PlanningAnchor activePlanningAnchor;
+  private volatile long activePlanningFactEpoch = -1;
+  private volatile PlanningProbe planningProbe;
   private volatile MacroPlan activeMacroPlan;
   private volatile MacroPlan planningMacroPlan;
   private volatile boolean pathCalcLaunching;
@@ -96,6 +121,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private final ControlArbiter controlArbiter;
   private final MacroNavigator macroNavigator = new MacroNavigator();
   private TailPlanTicket lastTailPlanTicket;
+  private double replanWallTicksEWMA = INITIAL_REPLAN_WALL_TICKS;
 
   public PathingBehavior(Baritone baritone) {
     super(baritone);
@@ -160,10 +186,12 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   public void onWorldEvent(WorldEvent event) {
     worldFactEpoch++;
     lastTailPlanTicket = null;
+    finishPathProfile("world event");
   }
 
   private void recordWorldFact(ChunkPos chunk, boolean invalidatesCertifiedFootprint) {
     worldFactEpoch++;
+    lastTailPlanTicket = null;
     if (invalidatesCertifiedFootprint && currentRouteFactFootprint.touches(chunk)) {
       currentRouteFactsDirty = true;
     }
@@ -218,10 +246,33 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       }
       safeToCancel = current.onTick();
       controlArbiter.apply(current.controlFrame());
-      if (current.failed() || current.finished()) {
+      boolean routeFailed = current.failed();
+      String routeFailureReason = routeFailed ? current.failureReason() : null;
+      RouteExecutor completedRoute = current;
+      if (routeFailed && !fatalRouteFailure(completedRoute, routeFailureReason)) {
+        Optional<RouteExecutor> reanchoredCurrent = completedRoute.reanchor(physicalExecutionAnchor());
+        if (reanchoredCurrent.isPresent() && reanchoredCurrent.get() != completedRoute) {
+          logDebug("Reanchoring failed route at physical execution anchor after: " + routeFailureReason);
+          setCurrentRoute(reanchoredCurrent.get());
+          current.onTick();
+          controlArbiter.apply(current.controlFrame());
+          return;
+        }
+      }
+      if (routeFailed || current.finished()) {
         clearCurrentRoute();
+        if (routeFailed) {
+          lastPathingFailure = routeFailureReason;
+          lastRouteFailure = routeFailureReason;
+          logDirect("Route execution failed: " + routeFailureReason);
+          if (fatalRouteFailure(completedRoute, routeFailureReason)) {
+            abortFatalRouteFailure(routeFailureReason);
+            return;
+          }
+        }
         if (goalSatisfied(ctx.playerFeet())) {
           logDebug("All done. At " + goal);
+          finishPathProfile("goal reached");
           queuePathEvent(PathEvent.AT_GOAL);
           next = null;
           if (Baritone.settings().disconnectOnArrival.value) {
@@ -241,6 +292,16 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           // so need to discard it sadly.
           queuePathEvent(PathEvent.DISCARD_NEXT);
           next = null;
+        }
+        if (next != null) {
+          Optional<RouteExecutor> anchoredNext = next.reanchor(physicalExecutionAnchor());
+          if (anchoredNext.isEmpty()) {
+            logDebug("Discarding next route because it no longer anchors current execution");
+            queuePathEvent(PathEvent.DISCARD_NEXT);
+            next = null;
+          } else {
+            next = anchoredNext.get();
+          }
         }
         if (next != null) {
           logDebug("Continuing on to planned next path");
@@ -291,6 +352,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       if (next != null && current.dest().equals(next.dest())) {
         next = null;
       }
+      if (discardStaleQueuedTail()) {
+        return;
+      }
       if (discardStaleSurfaceTail()) {
         return;
       }
@@ -309,7 +373,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           // and we have no plan for what to do next
           return;
         }
-        if (goalSatisfied(current.dest())) {
+        if (goalSatisfied(goal, current.dest())) {
           // and this path doesn't get us all the way there
           return;
         }
@@ -320,19 +384,22 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           }
           logDebug(start.equals(current.dest()) ? "Extending path tail in background..." : "Refining path suffix from future anchor " + start + "...");
           queuePathEvent(PathEvent.NEXT_SEGMENT_CALC_STARTED);
-          findPathInNewThread(start, false, context);
+          findPathInNewThread(start, false, context, PlanningAnchor.CERTIFIED_FUTURE);
         }
       }
     }
   }
 
   private boolean calculationStartIsStillRelevant(BetterBlockPos calcFrom) {
-    Optional<BetterBlockPos> certifiedPreemption = certifiedPreemptionStart();
-    if (certifiedPreemption.isPresent() && !sameCertificationBucket(certifiedPreemption.get(), calcFrom)) {
+    if (activeFutureCalculationStale()) {
       return false;
     }
-    if (current != null && current.getPath() == null) {
-      return current.planAheadStart().equals(calcFrom);
+    Optional<BetterBlockPos> certifiedPreemption = certifiedPreemptionStart();
+    if (certifiedPreemption.isPresent() && !sameRelevantStart(certifiedPreemption.get(), calcFrom)) {
+      return false;
+    }
+    if (current != null && current.getPath() == null && activePlanningAnchor == PlanningAnchor.CERTIFIED_FUTURE) {
+      return current.progressOfExact(calcFrom).filter(progress -> progress.reaches(committedRouteProgress())).isPresent();
     }
     if (calcFrom.equals(ctx.playerFeet()) || calcFrom.equals(expectedSegmentStart)) {
       return true;
@@ -346,6 +413,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return false;
   }
 
+  private boolean activeFutureCalculationStale() {
+    return activePlanningAnchor == PlanningAnchor.CERTIFIED_FUTURE && worldFactEpoch != activePlanningFactEpoch && current != null && Double.isFinite(current.estimatedContinuationTicks());
+  }
+
   private boolean bestCalculationPathIsStillRelevant(Optional<IPath> currentBest) {
     if (current != null && current.getPath() == null) {
       return false;
@@ -355,7 +426,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
   private boolean shouldStartTailPlanning() {
     if (current != null && current.getPath() == null) {
-      return ticksRemainingInSegment(false).orElse(Double.POSITIVE_INFINITY) < Baritone.settings().planningTickLookahead.value;
+      return true;
     }
     if (Baritone.settings().pathingContinuousPlanning.value) {
       return true;
@@ -374,7 +445,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private BetterBlockPos planAheadStart() {
     IPath path = current.getPath();
     if (path == null) {
-      return current.planAheadStart();
+      return current.planAheadStart(replanAnchorAheadTicks());
     }
     if (ctx.player().isSwimming() || MovementHelper.isWater(ctx, ctx.playerFeet())) {
       return ctx.playerFeet();
@@ -415,6 +486,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       planningMacroPlan = null;
       clearRouteFactState();
       clearDeferredMacroPlan();
+      clearNextPathingFailures();
+      horseModeLock = false;
     }
     this.goal = goal;
   }
@@ -432,6 +505,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (goalSatisfied(ctx.playerFeet())) {
       return false;
     }
+    horseModeLock = ctx.player().getVehicle() instanceof AbstractHorse;
     synchronized (pathPlanLock) {
       if (current != null) {
         return false;
@@ -441,6 +515,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           return false;
         }
         queuePathEvent(PathEvent.CALC_STARTED);
+        clearNextPathingFailures();
         lastTailPlanTicket = null;
         findPathInNewThread(expectedSegmentStart, true, context);
         return true;
@@ -463,6 +538,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   @Override
   public Optional<AbstractNodeCostSearch> getInProgress() { return Optional.ofNullable(inProgress); }
 
+  public Optional<PlanningProbe> getPlanningProbe() { return calculationActive() ? Optional.ofNullable(planningProbe) : Optional.empty(); }
+
   public Optional<BetterBlockPos> getPlanningStart() { return calculationActive() ? Optional.ofNullable(activePlanningStart) : Optional.empty(); }
 
   public Optional<MacroPlan> getMacroPlan() {
@@ -475,6 +552,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       return Optional.empty();
     }
     return Optional.ofNullable(planningMacroPlan);
+  }
+
+  public RouteProgress committedRouteProgress() {
+    return current == null ? RouteProgress.origin() : current.commitmentEnd(commitmentAheadTicks(), COMMITMENT_MIN_UNITS);
   }
 
   public boolean isSafeToCancel() {
@@ -507,6 +588,24 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return calcFailedLastTick;
   }
 
+  public String lastPathingFailure() {
+    return lastPathingFailure;
+  }
+
+  public String lastNextPathingFailure() {
+    return lastNextPathingFailure;
+  }
+
+  public List<String> recentNextPathingFailures() {
+    synchronized (recentNextPathingFailures) {
+      return List.copyOf(recentNextPathingFailures);
+    }
+  }
+
+  public String lastRouteFailure() {
+    return lastRouteFailure;
+  }
+
   private void transportDebugOverlay() {
     if (!Baritone.settings().transportDebugOverlay.value || ctx.player() == null) {
       return;
@@ -530,23 +629,37 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       next = null;
     }
     cancelRequested = true;
+    finishPathProfile("soft cancel");
     // do everything BUT clear keys
   }
 
   // just cancel the current path
   public void secretInternalSegmentCancel() {
-    queuePathEvent(PathEvent.CANCELED);
+    boolean canceled = false;
     synchronized (pathPlanLock) {
       synchronized (pathCalcLock) {
+        if (!hasCancelableWork()) {
+          return;
+        }
         cancelCalculation();
       }
-      if (current != null) {
+      canceled = true;
+      if (current != null || next != null) {
         clearCurrentRoute();
         next = null;
-        clearDeferredMacroPlan();
         controlArbiter.clearPathingControls();
       }
+      horseModeLock = false;
     }
+    if (canceled) {
+      queuePathEvent(PathEvent.CANCELED);
+      finishPathProfile("canceled");
+    }
+  }
+
+  private boolean hasCancelableWork() {
+    return current != null || next != null || inProgress != null || pathCalcLaunching || activePlanningStart != null || planningMacroPlan != null || activeMacroPlan != null
+      || lastTailPlanTicket != null || deferredMacroFactEpoch >= 0L;
   }
 
   @Override
@@ -621,6 +734,35 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     clearRouteFactState();
   }
 
+  private boolean fatalRouteFailure(RouteExecutor route, String reason) {
+    if (route == null || route.route().startState().mode() != TransportMode.HORSE && route.route().endState().mode() != TransportMode.HORSE) {
+      return false;
+    }
+    return !(ctx.player().getVehicle() instanceof AbstractHorse) || reason != null && reason.startsWith("dismounted");
+  }
+
+  private void abortFatalRouteFailure(String reason) {
+    lastPathingFailure = reason;
+    lastRouteFailure = reason;
+    synchronized (pathPlanLock) {
+      synchronized (pathCalcLock) {
+        cancelPlanningCalculation();
+      }
+      next = null;
+      activeMacroPlan = null;
+      clearDeferredMacroPlan();
+      controlArbiter.clearPathingControls();
+    }
+    finishPathProfile("fatal route failure: " + reason);
+    queuePathEvent(PathEvent.CALC_FAILED);
+  }
+
+  private void finishPathProfile(String reason) {
+    if (baritone.getPathProfileController().active()) {
+      logDirect(baritone.getPathProfileController().finish(reason));
+    }
+  }
+
   private void clearRouteFactState() {
     currentRouteFactEpoch = -1;
     currentRouteFactFootprint = RouteFactFootprint.EMPTY;
@@ -636,6 +778,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
    * @return The starting {@link BlockPos} for a new path
    */
   public BetterBlockPos pathStart() { // TODO move to a helper or util class
+    if (ctx.player().getVehicle() instanceof AbstractHorse horse) {
+      return HorsePath.vehicleFeet(horse);
+    }
     BetterBlockPos feet = ctx.playerFeet();
     if (!MovementHelper.canWalkOn(ctx, feet.below())) {
       if (ctx.player().onGround()) {
@@ -682,6 +827,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
    * @param talkAboutIt
    */
   private void findPathInNewThread(final BlockPos start, final boolean talkAboutIt, CalculationContext context) {
+    findPathInNewThread(start, talkAboutIt, context, PlanningAnchor.PHYSICAL);
+  }
+
+  private void findPathInNewThread(final BlockPos start, final boolean talkAboutIt, CalculationContext context, PlanningAnchor anchor) {
     // this must be called with synchronization on pathCalcLock!
     // actually, we can check this, muahaha
     if (!Thread.holdsLock(pathCalcLock)) {
@@ -713,112 +862,254 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
     IPath previous = previousPathForFavoring(start);
     activePlanningStart = new BetterBlockPos(start);
+    activePlanningAnchor = anchor;
+    activePlanningFactEpoch = worldFactEpoch;
+    planningProbe = null;
+    baritone.getPathProfileController().beginIfArmed(activePlanningStart, goal);
     planningMacroPlan = null;
     pathCalcLaunching = true;
     long epoch = ++pathCalcEpoch;
+    long launchedNanos = System.nanoTime();
     Baritone.getExecutor().execute(() -> {
-      CalculationLaunch created;
       try {
-        synchronized (macroNavigator) {
-          created = createPathfinder(start, goal, previous, calculationContext);
+        CalculationLaunch created;
+        try {
+          synchronized (macroNavigator) {
+            created = createPathfinder(start, goal, previous, calculationContext, failureTimeout, anchor);
+          }
+        } catch (Exception e) {
+          logDirect("Pathing exception before A*: " + e);
+          e.printStackTrace();
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch == epoch && pathCalcLaunching) {
+                pathCalcLaunching = false;
+                clearActivePlanningAnchor();
+                planningMacroPlan = null;
+                acceptCalculation(new PathCalculationResult(PathCalculationResult.Type.EXCEPTION), start, talkAboutIt, true, calculationContext);
+              }
+            }
+          }
+          return;
         }
-      } catch (Exception e) {
-        logDirect("Pathing exception before A*: " + e);
-        e.printStackTrace();
-        synchronized (pathPlanLock) {
-          synchronized (pathCalcLock) {
-            if (pathCalcEpoch == epoch && pathCalcLaunching) {
+        if (created instanceof DeferredCalculation deferred) {
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
+                return;
+              }
+              deferMacroPlan(deferred.plan());
               pathCalcLaunching = false;
-              activePlanningStart = null;
+              clearActivePlanningAnchor();
+              logDebug("Awaiting factual macro prefix before actuation (seq=" + deferred.plan().sequence() + ")");
+            }
+          }
+          return;
+        }
+        if (created instanceof HorseCalculation horse) {
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
+                return;
+              }
+              planningMacroPlan = horse.macroPlan();
+              if (talkAboutIt && horse.macroPlan() != null) {
+                logDebug("Searching horse route over macro value field " + horse.localGoal() + " (seq=" + horse.macroPlan().sequence() + ")");
+              }
+            }
+          }
+          HorseRoutePlanner.Result horseRoute =
+            HorseRoutePlanner.plan(calculationContext, horse.routeStart(), horse.localGoal(), horse.failureTimeoutMS(), incumbent -> publishHorseIncumbent(epoch, goal, horse, incumbent));
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
+                return;
+              }
+              if (horseRoute.incumbentAccepted()) {
+                pathCalcLaunching = false;
+                clearActivePlanningAnchor();
+                planningMacroPlan = null;
+                return;
+              }
+              if (activeFutureCalculationStale()) {
+                pathCalcLaunching = false;
+                clearActivePlanningAnchor();
+                planningMacroPlan = null;
+                return;
+              }
+              RouteExecutor rejectedRoute = null;
+              if (horseRoute.route().isPresent()) {
+                RouteExecutor route = new RouteExecutor(PathingBehavior.this, horseRoute.route().get(), horse.terminalGoal());
+                CandidateDisposition disposition = acceptCandidate(route, horse.terminalGoal());
+                if (disposition != CandidateDisposition.REJECTED) {
+                  if (disposition == CandidateDisposition.EXECUTING && horse.macroPlan() != null) {
+                    commitMacroPlan(horse.macroPlan());
+                  }
+                  pathCalcLaunching = false;
+                  clearActivePlanningAnchor();
+                  if (talkAboutIt && disposition == CandidateDisposition.EXECUTING) {
+                    logDebug("Executing horse route from " + route.src() + " towards " + goal);
+                  }
+                  return;
+                }
+                rejectedRoute = route;
+              }
+              PlanningAnchor rejectedAnchor = activePlanningAnchor;
+              pathCalcLaunching = false;
+              clearActivePlanningAnchor();
               planningMacroPlan = null;
-              acceptCalculation(new PathCalculationResult(PathCalculationResult.Type.EXCEPTION), start, talkAboutIt, true, calculationContext);
+              String diagnostic;
+              if (rejectedRoute == null) {
+                diagnostic = "Failed to calculate horse route: " + horseRoute.diagnostic() + " from " + horse.routeStart().pos()
+                  + (horse.macroPlan() == null ? "" : " after macro " + horse.macroPlan().sequence() + " localGoal=" + horse.localGoal());
+                logDirect(diagnostic);
+              } else {
+                diagnostic = "Discarding horse route " + rejectedRoute.src() + " -> " + rejectedRoute.dest() + " from " + horse.routeStart().pos() + " for " + rejectedAnchor
+                  + (current == null ? "" : "; current " + current.src() + " -> " + current.dest());
+                logDebug(diagnostic);
+              }
+              if (restartRejectedPhysicalRoute(rejectedAnchor, start, talkAboutIt, calculationContext)) {
+                return;
+              }
+              if (restartOrphanCalculation(rejectedAnchor, start, talkAboutIt, calculationContext)) {
+                return;
+              }
+              acceptCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), start, talkAboutIt, true, calculationContext, diagnostic);
+            }
+          }
+          return;
+        }
+        if (created instanceof ImmediateRouteCalculation immediate) {
+          RouteExecutor route = new RouteExecutor(PathingBehavior.this, immediate.route(), immediate.terminalGoal());
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
+                return;
+              }
+              planningMacroPlan = immediate.macroPlan();
+              CandidateDisposition disposition = acceptCandidate(route, immediate.terminalGoal());
+              if (disposition != CandidateDisposition.REJECTED) {
+                if (disposition == CandidateDisposition.EXECUTING && immediate.macroPlan() != null) {
+                  commitMacroPlan(immediate.macroPlan());
+                }
+                pathCalcLaunching = false;
+                clearActivePlanningAnchor();
+                if (talkAboutIt && disposition == CandidateDisposition.EXECUTING) {
+                  logDebug("Executing immediate " + immediate.kind() + " route from " + route.src() + " towards " + goal);
+                }
+                return;
+              }
+              pathCalcLaunching = false;
+              clearActivePlanningAnchor();
+              acceptCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), start, talkAboutIt, true, calculationContext,
+                "discarded immediate " + immediate.kind() + " route from " + route.src() + " to " + route.dest());
+            }
+          }
+          return;
+        }
+        if (created instanceof FailedCalculation failed) {
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch == epoch && pathCalcLaunching && this.goal == goal) {
+                pathCalcLaunching = false;
+                clearActivePlanningAnchor();
+                planningMacroPlan = null;
+                String diagnostic = "Failed to calculate " + failed.kind() + " route from " + start;
+                logDirect(diagnostic);
+                acceptCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), start, talkAboutIt, true, calculationContext, diagnostic);
+              }
+            }
+          }
+          return;
+        }
+        CreatedPathfinder pathLaunch = (CreatedPathfinder) created;
+        AbstractNodeCostSearch pathfinder = pathLaunch.pathfinder();
+        if (pathLaunch.immediateRoute().isPresent()) {
+          RouteExecutor route = new RouteExecutor(PathingBehavior.this, pathLaunch.immediateRoute().get(), pathLaunch.terminalGoal());
+          synchronized (pathPlanLock) {
+            synchronized (pathCalcLock) {
+              if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
+                return;
+              }
+              planningMacroPlan = pathLaunch.macroPlan();
+              CandidateDisposition disposition = acceptCandidate(route, pathLaunch.terminalGoal());
+              if (disposition != CandidateDisposition.REJECTED) {
+                if (disposition == CandidateDisposition.EXECUTING) {
+                  commitMacroPlan(pathLaunch.macroPlan());
+                }
+                pathCalcLaunching = false;
+                clearActivePlanningAnchor();
+                if (talkAboutIt && disposition == CandidateDisposition.EXECUTING) {
+                  logDebug("Executing immediate macro route from " + route.src() + " towards " + goal + " (seq=" + pathLaunch.macroPlan().sequence() + ")");
+                }
+                return;
+              }
+              logDebug("Discarding immediate macro route from " + route.src() + " to " + route.dest() + " while current=" + (current == null ? "none" : current.src() + "->" + current.dest())
+                + " feet=" + ctx.playerFeet() + " expected=" + expectedSegmentStart);
             }
           }
         }
-        return;
-      }
-      if (created instanceof DeferredCalculation deferred) {
+        pathfinder.setPublicationSink(result -> acceptIncumbent(pathfinder, result));
         synchronized (pathPlanLock) {
           synchronized (pathCalcLock) {
             if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
-              return;
-            }
-            deferMacroPlan(deferred.plan());
-            pathCalcLaunching = false;
-            activePlanningStart = null;
-            logDebug("Awaiting factual macro prefix before actuation (seq=" + deferred.plan().sequence() + ")");
-          }
-        }
-        return;
-      }
-      CreatedPathfinder pathLaunch = (CreatedPathfinder) created;
-      AbstractNodeCostSearch pathfinder = pathLaunch.pathfinder();
-      if (pathLaunch.immediateRoute().isPresent()) {
-        RouteExecutor route = new RouteExecutor(PathingBehavior.this, pathLaunch.immediateRoute().get());
-        synchronized (pathPlanLock) {
-          synchronized (pathCalcLock) {
-            if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
+              pathfinder.cancel();
               return;
             }
             planningMacroPlan = pathLaunch.macroPlan();
-            CandidateDisposition disposition = acceptCandidate(route, pathLaunch.terminalGoal());
-            if (disposition != CandidateDisposition.REJECTED) {
-              if (disposition == CandidateDisposition.EXECUTING) {
-                commitMacroPlan(pathLaunch.macroPlan());
-              }
-              pathCalcLaunching = false;
-              activePlanningStart = null;
-              if (talkAboutIt && disposition == CandidateDisposition.EXECUTING) {
-                logDebug("Executing immediate macro route from " + route.src() + " towards " + goal + " (seq=" + pathLaunch.macroPlan().sequence() + ")");
-              }
-              return;
-            }
-            logDebug("Discarding immediate macro route from " + route.src() + " to " + route.dest() + " while current=" + (current == null ? "none" : current.src() + "->" + current.dest()) + " feet="
-              + ctx.playerFeet() + " expected=" + expectedSegmentStart);
+            inProgress = pathfinder;
+            pathCalcLaunching = false;
           }
         }
-      }
-      pathfinder.setPublicationSink(result -> acceptIncumbent(pathfinder, result));
-      synchronized (pathPlanLock) {
-        synchronized (pathCalcLock) {
-          if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != goal) {
-            pathfinder.cancel();
-            return;
-          }
-          planningMacroPlan = pathLaunch.macroPlan();
-          inProgress = pathfinder;
-          pathCalcLaunching = false;
+        if (!Objects.equals(pathfinder.getGoal(), goal) && pathLaunch.macroPlan() == null) { // will return the exact same object if simplification didn't happen
+          logDebug("Simplifying " + goal.getClass() + " to GoalXZ due to distance");
         }
-      }
-      if (!Objects.equals(pathfinder.getGoal(), goal) && pathLaunch.macroPlan() == null) { // will return the exact same object if simplification didn't happen
-        logDebug("Simplifying " + goal.getClass() + " to GoalXZ due to distance");
-      }
-      if (talkAboutIt) {
-        logDebug("Starting to search for path from " + start + " to " + goal);
-      }
+        if (talkAboutIt) {
+          logDebug("Starting to search for path from " + start + " to " + goal);
+        }
 
-      PathCalculationResult calcResult = pathfinder.calculate(primaryTimeout, failureTimeout);
-      synchronized (pathPlanLock) {
-        boolean currentCalculation;
-        synchronized (pathCalcLock) {
-          currentCalculation = pathCalcEpoch == epoch && inProgress == pathfinder;
-        }
-        if (currentCalculation) {
-          acceptCalculation(calcResult, start, talkAboutIt, true, calculationContext);
-        }
-        synchronized (pathCalcLock) {
-          if (inProgress == pathfinder) {
-            inProgress = null;
-            activePlanningStart = null;
-            planningMacroPlan = null;
+        PathCalculationResult calcResult = pathfinder.calculate(primaryTimeout, failureTimeout);
+        synchronized (pathPlanLock) {
+          boolean currentCalculation;
+          PlanningAnchor finishedAnchor;
+          synchronized (pathCalcLock) {
+            currentCalculation = pathCalcEpoch == epoch && inProgress == pathfinder && calculationStartIsStillRelevant(pathfinder.getStart());
+            finishedAnchor = activePlanningAnchor;
+          }
+          if (currentCalculation) {
+            synchronized (pathCalcLock) {
+              if (calculationOrphaned(finishedAnchor, start)) {
+                inProgress = null;
+                clearActivePlanningAnchor();
+                planningMacroPlan = null;
+                if (restartOrphanCalculation(finishedAnchor, start, talkAboutIt, calculationContext)) {
+                  return;
+                }
+              }
+            }
+            acceptCalculation(calcResult, start, talkAboutIt, true, calculationContext);
+          }
+          synchronized (pathCalcLock) {
+            if (inProgress == pathfinder) {
+              inProgress = null;
+              clearActivePlanningAnchor();
+              planningMacroPlan = null;
+            }
           }
         }
+      } finally {
+        recordReplanWallTime(launchedNanos);
       }
     });
   }
 
   private boolean calculationActive() {
     return inProgress != null || pathCalcLaunching;
+  }
+
+  private void recordReplanWallTime(long launchedNanos) {
+    double ticks = Math.max(0D, (System.nanoTime() - launchedNanos) / 50_000_000D);
+    replanWallTicksEWMA = replanWallTicksEWMA * (1D - REPLAN_WALL_TICKS_ALPHA) + ticks * REPLAN_WALL_TICKS_ALPHA;
   }
 
   private boolean preemptLegacyWaterPlanning() {
@@ -863,8 +1154,19 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return true;
   }
 
+  private boolean discardStaleQueuedTail() {
+    if (current == null || next == null || current.getPath() != null || !Double.isFinite(current.estimatedContinuationTicks()) || worldFactEpoch <= currentRouteFactEpoch) {
+      return false;
+    }
+    logDebug("Discarding queued tail after new world facts; recertifying beyond refreshed frontier");
+    queuePathEvent(PathEvent.DISCARD_NEXT);
+    next = null;
+    lastTailPlanTicket = null;
+    return true;
+  }
+
   private boolean preemptStaleCurrentRoute() {
-    if (current == null || next != null || goalSatisfied(current.dest())) {
+    if (current == null || next != null || goalSatisfied(goal, current.dest())) {
       return false;
     }
     BetterBlockPos start = pathStart();
@@ -874,11 +1176,15 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
     synchronized (pathCalcLock) {
       if (calculationActive()) {
-        if (planningFrom(start)) {
+        if (activeFutureCalculationStale()) {
+          logDebug("Preempting stale future-anchor calculation; world frontier advanced from epoch " + activePlanningFactEpoch + " to " + worldFactEpoch);
+          cancelPlanningCalculation();
+        } else if (planningFrom(start)) {
           return true;
+        } else {
+          logDebug(dirty ? "Preempting future-anchor calculation; certified route facts changed near " + start : "Preempting future-anchor calculation; improving route after new facts from " + start);
+          cancelPlanningCalculation();
         }
-        logDebug(dirty ? "Preempting future-anchor calculation; certified route facts changed near " + start : "Preempting future-anchor calculation; improving route after new facts from " + start);
-        cancelPlanningCalculation();
       }
       if (dirty) {
         lastTailPlanTicket = null;
@@ -921,7 +1227,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (previous != null && previous.matches(start, goal, worldFactEpoch, ticksElapsedSoFar)) {
       return false;
     }
-    lastTailPlanTicket = new TailPlanTicket(new BetterBlockPos(start), goal, worldFactEpoch, ticksElapsedSoFar);
+    lastTailPlanTicket = new TailPlanTicket(new BetterBlockPos(start), goal, worldFactEpoch, ticksElapsedSoFar, strictStartBuckets());
     return true;
   }
 
@@ -936,10 +1242,22 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private boolean planningFrom(BetterBlockPos start) {
-    if (sameCertificationBucket(start, activePlanningStart)) {
+    if (sameRelevantStart(start, activePlanningStart)) {
       return true;
     }
-    return inProgress != null && sameCertificationBucket(start, inProgress.getStart());
+    return inProgress != null && sameRelevantStart(start, inProgress.getStart());
+  }
+
+  private boolean sameRelevantStart(BetterBlockPos a, BetterBlockPos b) {
+    return strictStartBuckets() ? sameHorseExecutionStart(a, b) : sameCertificationBucket(a, b);
+  }
+
+  private boolean strictStartBuckets() {
+    return horseModeLock || ctx != null && ctx.player().getVehicle() instanceof AbstractHorse;
+  }
+
+  private static boolean sameHorseExecutionStart(BetterBlockPos a, BetterBlockPos b) {
+    return a != null && b != null && a.x == b.x && a.y == b.y && a.z == b.z;
   }
 
   private static boolean sameCertificationBucket(BetterBlockPos a, BetterBlockPos b) {
@@ -958,7 +1276,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       inProgress.cancel();
       inProgress = null;
     }
-    activePlanningStart = null;
+    clearActivePlanningAnchor();
     planningMacroPlan = null;
   }
 
@@ -972,7 +1290,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     pathCalcEpoch++;
     pathCalcLaunching = false;
     getInProgress().ifPresent(AbstractNodeCostSearch::cancel);
-    activePlanningStart = null;
+    clearActivePlanningAnchor();
     activeMacroPlan = null;
     planningMacroPlan = null;
     lastTailPlanTicket = null;
@@ -990,8 +1308,74 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     deferredMacroTick = -1;
   }
 
+  private void clearActivePlanningAnchor() {
+    activePlanningStart = null;
+    activePlanningAnchor = null;
+    activePlanningFactEpoch = -1;
+    planningProbe = null;
+  }
+
+  private boolean publishHorseIncumbent(long epoch, Goal capturedGoal, HorseCalculation horse, HorseRoutePlanner.Incumbent incumbent) {
+    synchronized (pathPlanLock) {
+      synchronized (pathCalcLock) {
+        if (pathCalcEpoch != epoch || !pathCalcLaunching || this.goal != capturedGoal) {
+          return false;
+        }
+        if (activeFutureCalculationStale()) {
+          return false;
+        }
+        planningProbe = PlanningProbe.best(incumbent.path().positions());
+        if (!Baritone.settings().pathingEarlyIncumbentExecution.value || !horseIncumbentExecutableBeforeFrontier(horse, incumbent)) {
+          return false;
+        }
+        if (horse.macroPlan() != null && horse.macroPlan().surfaceTransitionActions() > 0) {
+          return false;
+        }
+        boolean boatAvailable = ((Baritone) baritone).getInventoryBehavior().hasBoat();
+        RouteExecutor candidate = new RouteExecutor(PathingBehavior.this, HorseRoutePlanner.routePlan(horse.localGoal(), incumbent.path(), boatAvailable), horse.terminalGoal());
+        CandidateDisposition disposition = acceptCandidate(candidate, horse.terminalGoal());
+        if (disposition == CandidateDisposition.EXECUTING && horse.macroPlan() != null) {
+          activeMacroPlan = horse.macroPlan();
+          clearDeferredMacroPlan();
+        }
+        return disposition != CandidateDisposition.REJECTED;
+      }
+    }
+  }
+
+  private boolean horseIncumbentExecutableBeforeFrontier(HorseCalculation horse, HorseRoutePlanner.Incumbent incumbent) {
+    HorsePath path = incumbent.path();
+    if (goalSatisfied(horse.terminalGoal(), path.dest())) {
+      return true;
+    }
+    if (incumbent.boundaryExit()) {
+      return path.flatDistance() >= Baritone.settings().pathingMinIncumbentLength.value;
+    }
+    if (!(horse.localGoal() instanceof BestExitGoal exit)) {
+      BetterBlockPos dest = path.dest();
+      MountTuning.Planner tuning = MountTuning.current().planner();
+      boolean meaningfulDistance = path.flatDistance() >= tuning.minLocalProgressFallbackBlocks();
+      boolean meaningfulHeuristic = horse.localGoal().heuristic(dest.x, dest.y, dest.z) + tuning.localProgressHeuristicEpsilon() < horse.localGoal().heuristic(horse.routeStart().pos().x,
+        horse.routeStart().pos().y, horse.routeStart().pos().z);
+      return meaningfulDistance && meaningfulHeuristic;
+    }
+    if (path.flatDistance() < Baritone.settings().pathingMinIncumbentLength.value) {
+      return false;
+    }
+    if (horse.macroPlan() == null) {
+      return false;
+    }
+    BetterBlockPos dest = path.dest();
+    double startValue = exit.exitValue(horse.routeStart().pos().x, horse.routeStart().pos().y, horse.routeStart().pos().z);
+    double destValue = exit.exitValue(dest.x, dest.y, dest.z);
+    return Double.isFinite(startValue) && Double.isFinite(destValue) && destValue + Baritone.settings().pathingIncumbentHeuristicMargin.value < startValue;
+  }
+
   private CalculationContext liveCalculationContext(CalculationContext base) {
-    return base != null && base.getClass() != CalculationContext.class ? base : new CalculationContext(baritone, true);
+    if (base != null && (base.getClass() != CalculationContext.class || !ctx.minecraft().isSameThread())) {
+      return base;
+    }
+    return new CalculationContext(baritone, true);
   }
 
   private IPath previousPathForFavoring(BlockPos start) {
@@ -1022,20 +1406,24 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private void acceptCalculation(PathCalculationResult result, BlockPos requestedStart, boolean talkAboutIt, boolean finalResult, CalculationContext calculationContext) {
+    acceptCalculation(result, requestedStart, talkAboutIt, finalResult, calculationContext, "");
+  }
+
+  private void acceptCalculation(PathCalculationResult result, BlockPos requestedStart, boolean talkAboutIt, boolean finalResult, CalculationContext calculationContext, String emptyDiagnostic) {
     if (!Thread.holdsLock(pathPlanLock)) {
       throw new IllegalStateException("Must hold pathPlanLock while accepting a path calculation");
     }
     Optional<IPath> path = result.getPath();
     MacroPlan macroPlan = planningMacroPlan;
+    Goal terminalGoal = calculationContext == null ? goal : GoalTerminalPolicy.project(calculationContext, goal);
     Optional<RouteExecutor> executor = finalResult && calculationContext != null && macroPlan != null
-      ? MacroCoordinator.materialize(calculationContext, macroPlan, path.orElse(null)).map(route -> new RouteExecutor(PathingBehavior.this, route)) : Optional.empty();
+      ? MacroCoordinator.materialize(calculationContext, macroPlan, path.orElse(null)).map(route -> new RouteExecutor(PathingBehavior.this, route, terminalGoal)) : Optional.empty();
     executor = executor.or(() -> path.map(p -> new RouteExecutor(PathingBehavior.this, p)));
     if (executor.isEmpty()) {
-      acceptEmptyCalculation(result, requestedStart, finalResult);
+      acceptEmptyCalculation(result, requestedStart, finalResult, emptyDiagnostic);
       return;
     }
     RouteExecutor candidate = executor.get();
-    Goal terminalGoal = calculationContext == null ? goal : GoalTerminalPolicy.project(calculationContext, goal);
     if (!finalResult && !incumbentIsExecutable(candidate, terminalGoal)) {
       return;
     }
@@ -1043,6 +1431,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (disposition == CandidateDisposition.REJECTED) {
       if (finalResult) {
         logDebug("Discarding orphan route segment from " + requestedStart + " to " + candidate.dest());
+        acceptEmptyCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), requestedStart, true,
+          "discarded orphan route segment from " + requestedStart + " to " + candidate.dest());
       }
       return;
     }
@@ -1059,21 +1449,85 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
   }
 
-  private void acceptEmptyCalculation(PathCalculationResult result, BlockPos requestedStart, boolean finalResult) {
-    if (!finalResult || result.getType() == PathCalculationResult.Type.CANCELLATION || result.getType() == PathCalculationResult.Type.EXCEPTION) {
+  private void acceptEmptyCalculation(PathCalculationResult result, BlockPos requestedStart, boolean finalResult, String diagnostic) {
+    if (!finalResult || result.getType() == PathCalculationResult.Type.CANCELLATION) {
       return;
     }
     if (current == null) {
-      logDirect("Path calculation failed from " + requestedStart + " to " + goal + " (" + result.getType() + ")");
+      lastPathingFailure = "Path calculation failed from " + requestedStart + " to " + goal + " (" + result.getType() + ")";
+      logDirect(lastPathingFailure);
+      finishPathProfile("path calculation failed");
       queuePathEvent(PathEvent.CALC_FAILED);
     } else if (next == null) {
+      recordNextPathingFailure(result, requestedStart, diagnostic);
       queuePathEvent(PathEvent.NEXT_CALC_FAILED);
     }
   }
 
+  private void recordNextPathingFailure(PathCalculationResult result, BlockPos requestedStart, String diagnostic) {
+    String message =
+      "Next calculation failed from " + new BetterBlockPos(requestedStart) + " to " + goal + " (" + result.getType() + ")" + (diagnostic == null || diagnostic.isBlank() ? "" : ": " + diagnostic)
+        + "; current=" + (current == null ? "none" : current.src() + "->" + current.dest()) + "; physical=" + physicalExecutionAnchor() + "; anchor=" + activePlanningAnchor;
+    lastNextPathingFailure = message;
+    synchronized (recentNextPathingFailures) {
+      if (recentNextPathingFailures.size() >= 16) {
+        recentNextPathingFailures.removeFirst();
+      }
+      recentNextPathingFailures.addLast(message);
+    }
+  }
+
+  private void clearNextPathingFailures() {
+    lastNextPathingFailure = null;
+    synchronized (recentNextPathingFailures) {
+      recentNextPathingFailures.clear();
+    }
+  }
+
+  private boolean calculationOrphaned(PlanningAnchor finishedAnchor, BlockPos requestedStart) {
+    if (current != null) {
+      return false;
+    }
+    if (finishedAnchor == PlanningAnchor.CERTIFIED_FUTURE) {
+      return true;
+    }
+    return !sameRelevantStart(new BetterBlockPos(requestedStart), physicalExecutionAnchor());
+  }
+
+  private boolean restartOrphanCalculation(PlanningAnchor finishedAnchor, BlockPos requestedStart, boolean talkAboutIt, CalculationContext calculationContext) {
+    if (!calculationOrphaned(finishedAnchor, requestedStart)) {
+      return false;
+    }
+    BetterBlockPos physicalStart = physicalExecutionAnchor();
+    logDebug("Discarding orphan " + finishedAnchor + " calculation from " + requestedStart + "; restarting from physical execution anchor " + physicalStart);
+    queuePathEvent(PathEvent.CALC_STARTED);
+    lastTailPlanTicket = null;
+    findPathInNewThread(physicalStart, talkAboutIt, calculationContext, PlanningAnchor.PHYSICAL);
+    return true;
+  }
+
+  private boolean restartRejectedPhysicalRoute(PlanningAnchor rejectedAnchor, BlockPos requestedStart, boolean talkAboutIt, CalculationContext calculationContext) {
+    if (current != null || rejectedAnchor != PlanningAnchor.PHYSICAL) {
+      return false;
+    }
+    BetterBlockPos physicalStart = physicalExecutionAnchor();
+    if (physicalStart.equals(new BetterBlockPos(requestedStart))) {
+      return false;
+    }
+    logDebug("Rejected stale physical route from " + requestedStart + "; restarting from execution anchor " + physicalStart);
+    queuePathEvent(PathEvent.CALC_STARTED);
+    lastTailPlanTicket = null;
+    findPathInNewThread(physicalStart, talkAboutIt, calculationContext, PlanningAnchor.PHYSICAL);
+    return true;
+  }
+
   private CandidateDisposition acceptCandidate(RouteExecutor candidate, Goal terminalGoal) {
+    if (!transportLockAccepts(candidate)) {
+      return CandidateDisposition.REJECTED;
+    }
     RouteExecutor original = candidate;
-    Optional<RouteExecutor> currentAnchor = anchorAtCurrentExecution(candidate);
+    boolean futureAnchor = activePlanningAnchor == PlanningAnchor.CERTIFIED_FUTURE;
+    Optional<RouteExecutor> currentAnchor = current == null ? anchorAtPhysicalExecution(candidate) : futureAnchor ? Optional.empty() : anchorAtCurrentExecution(candidate);
     if (current == null) {
       if (currentAnchor.isEmpty()) {
         return CandidateDisposition.REJECTED;
@@ -1090,17 +1544,24 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (tryReplaceCurrentSuffix(candidate, terminalGoal)) {
       return CandidateDisposition.EXECUTING;
     }
-    if (tryReplaceCurrentWithAnchoredRoute(candidate, terminalGoal)) {
+    if (!futureAnchor && tryReplaceCurrentWithAnchoredRoute(candidate, terminalGoal)) {
       return CandidateDisposition.EXECUTING;
     }
     candidate = original;
     if (candidate.src().equals(current.dest())) {
       return queueFutureCandidate(candidate, terminalGoal);
     }
+    if (futureAnchor) {
+      return CandidateDisposition.REJECTED;
+    }
     if (anchorsFutureExecution(candidate)) {
       return queueFutureCandidate(candidate, terminalGoal);
     }
     return CandidateDisposition.REJECTED;
+  }
+
+  private boolean transportLockAccepts(RouteExecutor candidate) {
+    return !horseModeLock || candidate.route().startState().mode() == TransportMode.HORSE && candidate.route().endState().mode() == TransportMode.HORSE;
   }
 
   private boolean tryReplaceCurrentWithAnchoredRoute(RouteExecutor candidate, Goal terminalGoal) {
@@ -1121,7 +1582,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (!Baritone.settings().splicePath.value) {
       return false;
     }
-    Optional<RouteExecutor> replacement = current.tryReplaceSuffix(candidate, current.getPosition() + SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE);
+    Optional<RouteExecutor> replacement = current.tryReplaceSuffix(candidate, current.commitmentEnd(commitmentAheadTicks(), SUFFIX_REPLAN_MIN_ANCHOR_ADVANCE));
     if (replacement.isEmpty()) {
       return false;
     }
@@ -1136,10 +1597,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private boolean suffixReplacementIsWorthwhile(RouteExecutor candidate, RouteExecutor replacement, Goal terminalGoal) {
-    if (goalSatisfied(terminalGoal, candidate.dest()) || improvesBeyond(candidate, current, terminalGoal)) {
+    if (goalSatisfied(terminalGoal, candidate.dest()) && !goalSatisfied(terminalGoal, current.dest())) {
       return true;
     }
-    return replacement.estimatedTicksRemainingFromCurrent() + SUFFIX_REPLACEMENT_COST_EPSILON < current.estimatedTicksRemainingFromCurrent();
+    return executionImproves(replacement, current, terminalGoal);
   }
 
   private CandidateDisposition queueFutureCandidate(RouteExecutor candidate, Goal terminalGoal) {
@@ -1159,6 +1620,14 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       + routeObjective(incumbent, terminalGoal);
   }
 
+  private double commitmentAheadTicks() {
+    return net.minecraft.util.Mth.clamp(replanWallTicksEWMA * COMMITMENT_LATENCY_MULTIPLIER + COMMITMENT_BUFFER_TICKS, COMMITMENT_MIN_TICKS, COMMITMENT_MAX_TICKS);
+  }
+
+  private double replanAnchorAheadTicks() {
+    return commitmentAheadTicks() + COMMITMENT_BUFFER_TICKS;
+  }
+
   private boolean incumbentIsExecutable(RouteExecutor candidate, Goal terminalGoal) {
     IPath path = candidate.getPath();
     return goalSatisfied(terminalGoal, candidate.dest()) || path != null && path.length() >= Baritone.settings().pathingMinIncumbentLength.value
@@ -1170,8 +1639,19 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private Optional<RouteExecutor> anchorAtCurrentExecution(RouteExecutor path) {
-    Optional<RouteExecutor> anchored = path.reanchor(ctx.playerFeet());
-    return anchored.isPresent() ? anchored : path.reanchor(expectedSegmentStart);
+    Optional<RouteExecutor> anchored = anchorAtPhysicalExecution(path);
+    return anchored.isPresent() || current == null ? anchored : path.reanchor(expectedSegmentStart);
+  }
+
+  private Optional<RouteExecutor> anchorAtPhysicalExecution(RouteExecutor path) {
+    return path.reanchor(physicalExecutionAnchor());
+  }
+
+  private BetterBlockPos physicalExecutionAnchor() {
+    if (ctx.player().getVehicle() instanceof AbstractHorse horse) {
+      return HorsePath.vehicleFeet(horse);
+    }
+    return ctx.minecraft().isSameThread() ? pathStart() : ctx.playerFeet();
   }
 
   private boolean anchorsFutureExecution(RouteExecutor path) {
@@ -1199,21 +1679,30 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return GoalTerminalPolicy.satisfied(baritone, ctx, goal, pos);
   }
 
-  private static boolean goalSatisfied(Goal terminalGoal, BetterBlockPos pos) {
-    return terminalGoal == null || terminalGoal.isInGoal(pos);
+  private boolean goalSatisfied(Goal terminalGoal, BetterBlockPos pos) {
+    return horseModeLock ? GoalTerminalPolicy.plannedHorseSatisfied(terminalGoal, pos) : terminalGoal == null || terminalGoal.isInGoal(pos);
   }
 
   private enum CandidateDisposition {
     EXECUTING, QUEUED, REJECTED
   }
 
-  private CalculationLaunch createPathfinder(BlockPos start, Goal goal, IPath previous, CalculationContext context) {
+  private CalculationLaunch createPathfinder(BlockPos start, Goal goal, IPath previous, CalculationContext context, long failureTimeoutMS, PlanningAnchor planningAnchor) {
     Goal terminalGoal = GoalTerminalPolicy.project(context, goal);
     Goal transformed = terminalGoal;
     BetterBlockPos realStart = new BetterBlockPos(start);
+    MacroTraversalProfile profile = MacroTraversalProfile.physical(context);
+    HorseRoutePlanner.Start horseStart = null;
+    if (horseModeLock && !profile.horse()) {
+      return new FailedCalculation(terminalGoal, "horse mode-locked");
+    }
+    if (profile.horse()) {
+      horseStart = horseRouteStart(realStart, planningAnchor);
+      realStart = horseStart.pos();
+    }
     MacroPlan macroPlan = null;
     Optional<RoutePlan> immediateRoute = Optional.empty();
-    Optional<MacroDirective> macroDirective = MacroCoordinator.plan(macroNavigator, context, realStart, terminalGoal);
+    Optional<MacroDirective> macroDirective = MacroCoordinator.plan(macroNavigator, context, realStart, terminalGoal, profile);
     if (macroDirective.isPresent()) {
       macroPlan = macroDirective.get().plan();
       if (macroDirective.get().deferred()) {
@@ -1233,16 +1722,21 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       }
     }
     Favoring favoring = new Favoring(context.getBaritone().getPlayerContext(), previous, context);
-    BetterBlockPos feet = ctx.playerFeet();
-    var sub = feet.subtract(realStart);
-    if (feet.getY() == realStart.getY() && Math.abs(sub.getX()) <= 1 && Math.abs(sub.getZ()) <= 1) {
-      realStart = feet;
+    if (!profile.horse()) {
+      BetterBlockPos feet = ctx.playerFeet();
+      var sub = feet.subtract(realStart);
+      if (feet.getY() == realStart.getY() && Math.abs(sub.getX()) <= 1 && Math.abs(sub.getZ()) <= 1) {
+        realStart = feet;
+      }
+    }
+    if (profile.horse()) {
+      return new HorseCalculation(horseStart, transformed, terminalGoal, macroPlan, failureTimeoutMS);
     }
     return new CreatedPathfinder(new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context), terminalGoal, macroPlan, immediateRoute);
 
   }
 
-  private sealed interface CalculationLaunch permits CreatedPathfinder, DeferredCalculation {
+  private sealed interface CalculationLaunch permits CreatedPathfinder, DeferredCalculation, HorseCalculation, ImmediateRouteCalculation, FailedCalculation {
   }
 
   private record CreatedPathfinder(AbstractNodeCostSearch pathfinder, Goal terminalGoal, MacroPlan macroPlan, Optional<RoutePlan> immediateRoute) implements CalculationLaunch {
@@ -1260,9 +1754,59 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
   }
 
-  private record TailPlanTicket(BetterBlockPos start, Goal goal, long factEpoch, int tick) {
+  private HorseRoutePlanner.Start horseRouteStart(BetterBlockPos requestedStart, PlanningAnchor planningAnchor) {
+    if (planningAnchor == PlanningAnchor.PHYSICAL && ctx.player().getVehicle() instanceof AbstractHorse horse) {
+      return HorseRoutePlanner.physicalStart(horse);
+    }
+    if (planningAnchor == PlanningAnchor.CERTIFIED_FUTURE) {
+      Optional<HorsePath.Waypoint> waypoint = certifiedHorseWaypoint(requestedStart);
+      if (waypoint.isPresent()) {
+        return HorseRoutePlanner.certifiedStart(waypoint.get());
+      }
+    }
+    return HorseRoutePlanner.Start.corner(requestedStart);
+  }
+
+  private Optional<HorsePath.Waypoint> certifiedHorseWaypoint(BlockPos pos) {
+    if (current != null) {
+      Optional<HorsePath.Waypoint> currentWaypoint = current.horseWaypointAtOrAfterCurrent(pos);
+      if (currentWaypoint.isPresent()) {
+        return currentWaypoint;
+      }
+    }
+    return next == null ? Optional.empty() : next.horseWaypointAtOrAfterCurrent(pos);
+  }
+
+  private enum PlanningAnchor {
+    PHYSICAL, CERTIFIED_FUTURE
+  }
+
+  private record HorseCalculation(HorseRoutePlanner.Start routeStart, Goal localGoal, Goal terminalGoal, MacroPlan macroPlan, long failureTimeoutMS) implements CalculationLaunch {
+    private HorseCalculation {
+      Objects.requireNonNull(routeStart);
+      Objects.requireNonNull(localGoal);
+      Objects.requireNonNull(terminalGoal);
+    }
+  }
+
+  private record ImmediateRouteCalculation(RoutePlan route, Goal terminalGoal, MacroPlan macroPlan, String kind) implements CalculationLaunch {
+    private ImmediateRouteCalculation {
+      Objects.requireNonNull(route);
+      Objects.requireNonNull(terminalGoal);
+      Objects.requireNonNull(kind);
+    }
+  }
+
+  private record FailedCalculation(Goal terminalGoal, String kind) implements CalculationLaunch {
+    private FailedCalculation {
+      Objects.requireNonNull(terminalGoal);
+      Objects.requireNonNull(kind);
+    }
+  }
+
+  private record TailPlanTicket(BetterBlockPos start, Goal goal, long factEpoch, int tick, boolean strictStart) {
     private boolean matches(BetterBlockPos candidateStart, Goal candidateGoal, long candidateFactEpoch, int candidateTick) {
-      if (!Objects.equals(goal, candidateGoal) || !sameCertificationBucket(start, candidateStart)) {
+      if (!Objects.equals(goal, candidateGoal) || !(strictStart ? sameHorseExecutionStart(start, candidateStart) : sameCertificationBucket(start, candidateStart))) {
         return false;
       }
       return factEpoch == candidateFactEpoch || candidateTick - tick < SAME_ANCHOR_FACT_REPLAN_INTERVAL_TICKS;

@@ -2,7 +2,6 @@ package baritone.pathing.macro.core;
 
 import baritone.Baritone;
 import baritone.api.pathing.goals.Goal;
-import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.movement.CalculationContext;
 import java.util.Optional;
@@ -15,6 +14,10 @@ public final class MacroNavigator {
   private MacroValueField activeField;
 
   public Optional<MacroDirective> plan(CalculationContext calculation, BetterBlockPos start, Goal goal) {
+    return plan(calculation, start, goal, MacroTraversalProfile.physical(calculation));
+  }
+
+  public Optional<MacroDirective> plan(CalculationContext calculation, BetterBlockPos start, Goal goal, MacroTraversalProfile profile) {
     if (!Baritone.settings().macroPlanning.value || !Baritone.settings().macroBiome.value || calculation.world.dimension() != Level.OVERWORLD) {
       return Optional.empty();
     }
@@ -27,7 +30,7 @@ public final class MacroNavigator {
       return Optional.empty();
     }
     MacroAtlas atlas = MacroAtlas.build(calculation, start, false);
-    if (!atlas.empiricalPriors()) {
+    if (!atlas.empiricalPriors() && !profile.permitsPredictiveFallback()) {
       return Optional.empty();
     }
     int cellBlocks = atlas.cellBlocks();
@@ -49,10 +52,10 @@ public final class MacroNavigator {
     int maxX = Math.max(sx, target.cellX) + lateralCells;
     int minZ = Math.min(sz, target.cellZ) - lateralCells;
     int maxZ = Math.max(sz, target.cellZ) + lateralCells;
-    double expectedTerminal = terminalExpected(policy, atlas, target, trueGx, trueGz);
-    double floorTerminal = target.cellX == trueGx && target.cellZ == trueGz ? 0D : terminalFloor(goalPos.get(), target.center);
-    Signature signature = new Signature(calculation.world.dimension().identifier().toString(), atlas.scale(), dst, minX, maxX, minZ, maxZ, policy, trueGx, trueGz);
-    MacroValueField field = field(signature, atlas, policy, src, dst, minX, maxX, minZ, maxZ, expectedTerminal, floorTerminal);
+    double expectedTerminal = terminalExpected(policy, atlas, profile, target, trueGx, trueGz);
+    double floorTerminal = target.cellX == trueGx && target.cellZ == trueGz ? 0D : terminalFloor(calculation, profile, goalPos.get(), target.center);
+    Signature signature = new Signature(calculation.world.dimension().identifier().toString(), atlas.scale(), dst, minX, maxX, minZ, maxZ, policy, profile, trueGx, trueGz);
+    MacroValueField field = field(signature, atlas, policy, profile, src, dst, minX, maxX, minZ, maxZ, expectedTerminal, floorTerminal);
     if (!Double.isFinite(field.telemetry().expectedStartValue())) {
       return Optional.empty();
     }
@@ -61,13 +64,14 @@ public final class MacroNavigator {
     return Optional.of(MacroDirective.localGoal(plan));
   }
 
-  private MacroValueField field(Signature signature, MacroAtlas atlas, MacroPolicy policy, long src, long dst, int minX, int maxX, int minZ, int maxZ, double expectedTerminal, double floorTerminal) {
+  private MacroValueField field(Signature signature, MacroAtlas atlas, MacroPolicy policy, MacroTraversalProfile profile, long src, long dst, int minX, int maxX, int minZ, int maxZ,
+    double expectedTerminal, double floorTerminal) {
     if (activeField != null && signature.equals(activeSignature)) {
       activeField.repair(atlas, src, expectedTerminal, floorTerminal);
       return activeField;
     }
     activeSignature = signature;
-    activeField = MacroValueField.build(atlas, policy, src, dst, minX, maxX, minZ, maxZ, expectedTerminal, floorTerminal);
+    activeField = MacroValueField.build(atlas, policy, profile, src, dst, minX, maxX, minZ, maxZ, expectedTerminal, floorTerminal);
     return activeField;
   }
 
@@ -85,23 +89,24 @@ public final class MacroNavigator {
     return new Target(cellX, cellZ, new BetterBlockPos(cellX * cellBlocks + cellBlocks / 2, goal.getY(), cellZ * cellBlocks + cellBlocks / 2));
   }
 
-  private static double terminalExpected(MacroPolicy policy, MacroAtlas atlas, Target target, int trueGx, int trueGz) {
+  private static double terminalExpected(MacroPolicy policy, MacroAtlas atlas, MacroTraversalProfile profile, Target target, int trueGx, int trueGz) {
     if (target.cellX == trueGx && target.cellZ == trueGz) {
       return 0D;
     }
     BetterBlockPos from = atlas.center(target.cellX, target.cellZ);
     BetterBlockPos to = atlas.center(trueGx, trueGz);
     double distance = Math.hypot(to.x - from.x, to.z - from.z);
-    return policy.score(MacroCostVector.surfacePerBlock(atlas.surfaceCost(target.cellX, target.cellZ)).times(distance), MacroAgentState.pedestrian(), MacroAgentState.pedestrian());
+    return policy.score(profile.surfaceCost(atlas, target.cellX, target.cellZ, distance), profile.canonicalSurfaceState(), profile.canonicalSurfaceState());
   }
 
-  private static double terminalFloor(BlockPos finalGoal, BetterBlockPos target) {
-    return GoalXZ.calculate(finalGoal.getX() - target.x, finalGoal.getZ() - target.z);
+  private static double terminalFloor(CalculationContext calculation, MacroTraversalProfile profile, BlockPos finalGoal, BetterBlockPos target) {
+    return Math.hypot(finalGoal.getX() - target.x, finalGoal.getZ() - target.z) * profile.lowerBoundTicksPerBlock(calculation);
   }
 
   private record Target(int cellX, int cellZ, BetterBlockPos center) {
   }
 
-  private record Signature(String dimension, int scale, long target, int minCellX, int maxCellX, int minCellZ, int maxCellZ, MacroPolicy policy, int finalGoalCellX, int finalGoalCellZ) {
+  private record Signature(String dimension, int scale, long target, int minCellX, int maxCellX, int minCellZ, int maxCellZ, MacroPolicy policy, MacroTraversalProfile profile, int finalGoalCellX,
+    int finalGoalCellZ) {
   }
 }

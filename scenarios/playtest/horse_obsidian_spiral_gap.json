@@ -1,0 +1,51 @@
+{
+  "id": "horse_obsidian_spiral_gap",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1196.5,
+    "y": 80.0,
+    "z": -1162.5,
+    "yaw": 135.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "near",
+    "x": 1189,
+    "y": 87,
+    "z": -1159,
+    "radius": 3
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld positioned 1196.5 80.0 -1162.5 run kill @e[type=minecraft:horse,tag=baritone_playtest,distance=..32]",
+    "execute in minecraft:overworld run summon minecraft:horse 1196.5 80.0 -1162.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "timeoutTicks": 420,
+  "successRadius": 3.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "maxJumpTicks": 0,
+    "maxRouteDestDistance": 3.0,
+    "maxTicksToPlanning": 120,
+    "maxTicksToActuation": 180
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

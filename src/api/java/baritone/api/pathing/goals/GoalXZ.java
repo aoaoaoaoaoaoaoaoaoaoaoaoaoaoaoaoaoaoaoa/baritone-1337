@@ -104,7 +104,16 @@ public class GoalXZ implements Goal {
     return new GoalXZ(Mth.floor(x), Mth.floor(z));
   }
 
+  public static GoalXZ fromDirection(Vec3 origin, float yaw, double distance, int tolerance) {
+    GoalXZ exact = fromDirection(origin, yaw, distance);
+    return tolerance <= 0 ? exact : new GoalNearXZ(exact.getX(), exact.getZ(), tolerance);
+  }
+
   public int getX() { return x; }
 
   public int getZ() { return z; }
+
+  public int xzRadius() {
+    return 0;
+  }
 }

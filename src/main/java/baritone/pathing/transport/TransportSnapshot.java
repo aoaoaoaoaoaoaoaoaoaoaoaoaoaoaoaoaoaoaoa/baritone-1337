@@ -10,6 +10,7 @@ import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.RouteExecutor;
 import baritone.pathing.route.PlannedTransportState;
 import java.util.Locale;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 
 public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor current, TransportSnapshot.Executor next, BetterBlockPos planningStart, TransportControl control) {
@@ -31,6 +32,9 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
     }
     if (ctx.player().getVehicle() instanceof AbstractBoat) {
       return TransportMode.BOAT;
+    }
+    if (ctx.player().getVehicle() instanceof AbstractHorse) {
+      return TransportMode.HORSE;
     }
     if (MovementHelper.isWater(ctx, ctx.playerFeet()) || ctx.player().isSwimming()) {
       return TransportMode.SWIM;
@@ -120,6 +124,7 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
         case LEGACY_WATER -> 'w';
         case SWIM -> 'S';
         case BOAT -> terminal ? 'B' : 'b';
+        case HORSE -> 'H';
         case ELYTRA -> 'E';
       };
     }

@@ -3,6 +3,7 @@ package baritone.api.process;
 import baritone.api.schematic.ISchematic;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.world.level.block.state.BlockState;
 import java.io.File;
@@ -23,6 +24,20 @@ public interface IBuilderProcess extends IBaritoneProcess {
    * @param origin    The origin position of the schematic being built
    */
   void build(String name, ISchematic schematic, Vec3i origin);
+
+  /**
+   * Requests a build for the specified schematic with build-local repeat semantics. {@code repeatCount == -1}
+   * repeats forever; otherwise it counts completed placements of this schematic, so {@code repeatCount == 1} means
+   * build exactly once at {@code origin}.
+   *
+   * @param name         A user-friendly name for the schematic
+   * @param schematic    The object representation of the schematic
+   * @param origin       The origin position of the first schematic being built
+   * @param repeat       The world-space vector between successive origins
+   * @param repeatCount  The number of repeated builds to execute, or {@code -1} for unbounded repetition
+   * @param repeatSneaky Whether the schematic should skip {@link ISchematic#reset()} between repeats
+   */
+  void build(String name, ISchematic schematic, Vec3i origin, Vec3i repeat, int repeatCount, boolean repeatSneaky);
 
   /**
    * Requests a build for the specified schematic, labeled as specified, with the specified origin.
@@ -47,6 +62,14 @@ public interface IBuilderProcess extends IBaritoneProcess {
   void resume();
 
   void clearArea(BlockPos corner1, BlockPos corner2);
+
+  /**
+   * Builds a minimal ten-obsidian Nether portal frame and clears the six interior blocks.
+   *
+   * @param lowerLeftInterior The lower-left interior portal block in world coordinates
+   * @param axis              The horizontal axis spanned by the two-wide portal interior
+   */
+  void buildPortalFrame(BlockPos lowerLeftInterior, Direction.Axis axis);
 
   /**
    * @return A list of block states that are estimated to be placeable by this builder process. You can use this in

@@ -5,6 +5,8 @@ __pycache__/
 *.py[cod]
 
 .gradle/
+.gradle-home/
+.venv/
 build/
 classes/
 out/
@@ -13,6 +15,7 @@ mapping/
 run/
 logs/
 notes/
+.goals/
 .worktrees/
 
 .idea/

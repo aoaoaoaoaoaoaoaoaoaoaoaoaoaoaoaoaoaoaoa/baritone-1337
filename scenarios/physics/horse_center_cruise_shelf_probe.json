@@ -1,0 +1,39 @@
+{
+  "id": "horse_center_cruise_shelf_probe",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "timeoutSeconds": 120,
+  "horse": {
+    "movementSpeed": 0.3,
+    "jumpStrength": 0.9
+  },
+  "input": {
+    "forward": true
+  },
+  "ticks": 35,
+  "endRadius": 0.9,
+  "maxEndYError": 1.25,
+  "requireNoDamage": true,
+  "requireMounted": true,
+  "perturbations": {
+    "longitudinal": [-0.12, 0.0, 0.12],
+    "lateral": [-0.12, 0.0, 0.12],
+    "yaw": [-3.0, 0.0, 3.0]
+  },
+  "cases": [
+    {
+      "id": "lower_same_height_zp",
+      "start": {"x": 1192.5, "y": 70.0, "z": -1174.5, "yaw": 0.0},
+      "end": {"x": 1192.5, "y": 70.0, "z": -1173.5},
+      "minY": 69.8
+    },
+    {
+      "id": "middle_same_height_zn2",
+      "start": {"x": 1203.5, "y": 99.0, "z": -1119.5, "yaw": 180.0},
+      "end": {"x": 1203.5, "y": 99.0, "z": -1121.5},
+      "ticks": 45,
+      "minY": 98.8
+    }
+  ]
+}

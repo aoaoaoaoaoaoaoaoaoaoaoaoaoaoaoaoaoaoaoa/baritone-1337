@@ -1,7 +1,7 @@
 package baritone.pathing.macro.surface;
 
+import baritone.Baritone;
 import baritone.api.utils.BetterBlockPos;
-import baritone.pathing.macro.biome.BiomeSurfaceCost;
 import baritone.pathing.macro.core.MacroActionKind;
 import baritone.pathing.macro.core.MacroAgentState;
 import baritone.pathing.macro.core.MacroCostVector;
@@ -24,7 +24,7 @@ public final class SurfaceTraversalDomain implements MacroDomain {
 
   @Override
   public void expand(MacroExpansionContext context, MacroLabel label, MacroOptionSink out) {
-    if (MacroNodeKey.anchorKey(label.node()) || MacroNodeKey.stratum(label.node()) != MacroStratum.SURFACE || !label.state().pedestrianMode()) {
+    if (MacroNodeKey.anchorKey(label.node()) || MacroNodeKey.stratum(label.node()) != MacroStratum.SURFACE || !context.profile().surfaceTraversalState(label.state())) {
       return;
     }
     int x = MacroNodeKey.cellX(label.node());
@@ -36,18 +36,24 @@ public final class SurfaceTraversalDomain implements MacroDomain {
         }
         int nx = x + dx;
         int nz = z + dz;
-        if (!context.inBounds(nx, nz)) {
+        if (!context.inBounds(label.node(), nx, nz)) {
           continue;
         }
         BetterBlockPos from = context.atlas().center(x, z);
         BetterBlockPos to = context.atlas().center(nx, nz);
         double distance = Math.hypot(to.x - from.x, to.z - from.z);
-        BiomeSurfaceCost prior = context.atlas().surfaceCost(nx, nz);
-        MacroCostVector cost = MacroCostVector.surfacePerBlock(prior).times(distance);
-        long next = MacroNodeKey.cell(context.calculation().world.dimension(), MacroStratum.SURFACE, context.atlas().scale(), nx, nz);
+        MacroCostVector cost = cost(context, label.node(), nx, nz, distance);
+        long next = MacroNodeKey.siblingCell(label.node(), nx, nz);
         MacroAgentState state = label.state();
         out.accept(new MacroOption(MacroActionKind.SURFACE_TRAVERSE, next, state, cost, List.of(from, to), null));
       }
     }
+  }
+
+  private static MacroCostVector cost(MacroExpansionContext context, long node, int nx, int nz, double distance) {
+    if (MacroNodeKey.dimensionId(node) == MacroNodeKey.DIMENSION_NETHER) {
+      return MacroCostVector.fixedTime(distance * Baritone.settings().macroNetherTicksPerBlock.value);
+    }
+    return context.profile().surfaceCost(context.atlas(), nx, nz, distance);
   }
 }

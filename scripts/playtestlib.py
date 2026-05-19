@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import fcntl
+import hashlib
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -22,6 +23,25 @@ from typing import Any
 
 MODE_TICKS_ZERO = {"PEDESTRIAN": 0, "LEGACY_WATER": 0, "SWIM": 0, "BOAT": 0, "ELYTRA": 0}
 PLAYER_RE = re.compile(r"[A-Za-z0-9_]{1,16}")
+FILL_COMMAND_RE = re.compile(r"(?:^|\s)fill\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)(?:\s|$)")
+MINECRAFT_FILL_BLOCK_LIMIT = 32768
+CODE_STAMP_ROOTS = (
+  "src/api/java",
+  "src/launch/java",
+  "src/main/java",
+  "src/main/resources",
+  "fabric/src/main",
+  "buildSrc/src",
+)
+CODE_STAMP_FILES = (
+  "build.gradle",
+  "settings.gradle",
+  "gradle.properties",
+  "fabric/build.gradle",
+  "scripts/playtest",
+  "scripts/playtestlib.py",
+)
+CODE_STAMP_SUFFIXES = (".java", ".json", ".gradle", ".groovy", ".properties", ".accesswidener", ".mixins.json")
 
 
 def truth(raw: str | None, default: bool) -> bool:
@@ -63,6 +83,18 @@ def write_json(path: Path, value: Any) -> None:
   path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def validate_scenario_commands(path: Path, scenario: dict) -> None:
+  for section in ("setupCommands", "postSetupCommands"):
+    for index, command in enumerate(scenario.get(section) or []):
+      match = FILL_COMMAND_RE.search(str(command))
+      if match is None:
+        continue
+      x1, y1, z1, x2, y2, z2 = (int(group) for group in match.groups())
+      volume = (abs(x2 - x1) + 1) * (abs(y2 - y1) + 1) * (abs(z2 - z1) + 1)
+      if volume > MINECRAFT_FILL_BLOCK_LIMIT:
+        raise SystemExit(f"{path}:{section}[{index}] fill touches {volume} blocks; split into <= {MINECRAFT_FILL_BLOCK_LIMIT}: {command}")
+
+
 def now() -> str:
   return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -97,6 +129,7 @@ class PlaytestConfig:
   profiler_alloc_interval: str
   profiler_cpu_sample_ms: float
   profiler_start_timeout: int
+  keep_client: bool
 
   @staticmethod
   def from_env(repo: Path) -> "PlaytestConfig":
@@ -134,6 +167,7 @@ class PlaytestConfig:
       profiler_alloc_interval=os.environ.get("PLAYTEST_PROFILE_ALLOC", "1m").strip() or "1m",
       profiler_cpu_sample_ms=float(os.environ.get("PLAYTEST_PROFILE_CPU_SAMPLE_MS", "10")),
       profiler_start_timeout=int(os.environ.get("PLAYTEST_PROFILE_START_TIMEOUT", "180")),
+      keep_client=truth(os.environ.get("PLAYTEST_KEEP_CLIENT"), False),
     )
 
   @property
@@ -141,8 +175,20 @@ class PlaytestConfig:
     return self.root / "server.pid"
 
   @property
+  def server_stamp(self) -> Path:
+    return self.root / "server.code-stamp"
+
+  @property
   def client_pid(self) -> Path:
     return self.root / "client.pid"
+
+  @property
+  def client_stamp(self) -> Path:
+    return self.root / "client.code-stamp"
+
+  @property
+  def client_launch(self) -> Path:
+    return self.root / "client.launch.json"
 
   @property
   def state(self) -> Path:
@@ -159,6 +205,14 @@ class PlaytestConfig:
   @property
   def results(self) -> Path:
     return self.root / "results"
+
+  @property
+  def physics_inbox(self) -> Path:
+    return self.root / "physics-inbox"
+
+  @property
+  def physics_results(self) -> Path:
+    return self.root / "physics-results"
 
   @property
   def serial_lock(self) -> Path:
@@ -234,6 +288,63 @@ class Playtest:
   def client_dir(self) -> Path:
     return self.c.root / "client"
 
+  def code_stamp(self) -> str:
+    digest = hashlib.sha256()
+    digest.update(b"baritone-playtest-code-stamp-v1\0")
+    for rel in self.code_stamp_paths():
+      path = self.c.repo / rel
+      try:
+        data = path.read_bytes()
+      except (FileNotFoundError, IsADirectoryError, PermissionError):
+        continue
+      digest.update(rel.as_posix().encode("utf-8"))
+      digest.update(b"\0")
+      digest.update(str(len(data)).encode("ascii"))
+      digest.update(b"\0")
+      digest.update(data)
+      digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+  def mount_tuning_stamp(self) -> dict[str, str]:
+    raw = os.environ.get("BARITONE_MOUNT_TUNING", "").strip()
+    if not raw:
+      return {"profile": "", "stamp": "mount-tuning:none"}
+    path = Path(raw).expanduser()
+    path = path.resolve() if path.is_absolute() else (self.c.repo / path).resolve()
+    if not path.is_file():
+      raise FileNotFoundError(f"BARITONE_MOUNT_TUNING does not name a readable file: {path}")
+    digest = hashlib.sha256()
+    digest.update(b"baritone-mount-tuning-v1\0")
+    digest.update(str(path).encode("utf-8"))
+    digest.update(b"\0")
+    data = path.read_bytes()
+    digest.update(str(len(data)).encode("ascii"))
+    digest.update(b"\0")
+    digest.update(data)
+    return {"profile": str(path), "stamp": "sha256:" + digest.hexdigest()}
+
+  def launch_stamp(self, code_stamp: str) -> str:
+    return code_stamp
+
+  def server_launch_stamp(self, code_stamp: str, world: WorldSpec) -> str:
+    physics = f"{self.c.physics_inbox.resolve()}:{self.c.physics_results.resolve()}"
+    return f"{code_stamp}\nworld={world.key}\nseed={world.seed}\nlevel_type={world.level_type}\nphysics={physics}"
+
+  def code_stamp_paths(self) -> list[Path]:
+    paths: set[Path] = set()
+    for raw in CODE_STAMP_FILES:
+      path = self.c.repo / raw
+      if path.is_file():
+        paths.add(Path(raw))
+    for raw in CODE_STAMP_ROOTS:
+      root = self.c.repo / raw
+      if not root.exists():
+        continue
+      for path in root.rglob("*"):
+        if path.is_file() and path.name != ".DS_Store" and path.suffix in CODE_STAMP_SUFFIXES:
+          paths.add(path.relative_to(self.c.repo))
+    return sorted(paths, key=lambda p: p.as_posix())
+
   def rcon_password(self) -> str:
     if self.c.rcon_password:
       return self.c.rcon_password
@@ -256,6 +367,24 @@ class Playtest:
       return False
     except PermissionError:
       return True
+
+  def client_pid_alive(self) -> bool:
+    try:
+      pid = int(self.c.client_pid.read_text().strip())
+    except (FileNotFoundError, ValueError):
+      return False
+    try:
+      os.kill(pid, 0)
+    except ProcessLookupError:
+      return False
+    except PermissionError:
+      return True
+    if self.process_matches_root(pid, self.c.root):
+      return True
+    self.c.client_pid.unlink(missing_ok=True)
+    self.c.client_stamp.unlink(missing_ok=True)
+    self.c.client_launch.unlink(missing_ok=True)
+    return False
 
   @staticmethod
   def process_matches_root(pid: int, root: Path) -> bool:
@@ -307,6 +436,25 @@ class Playtest:
         pids.add(pid)
     return pids
 
+  def client_processes(self) -> set[int]:
+    client = str(self.client_dir().resolve())
+    pids: set[int] = set()
+    self_pid = os.getpid()
+    for proc in Path("/proc").iterdir():
+      if not proc.name.isdecimal():
+        continue
+      pid = int(proc.name)
+      if pid == self_pid:
+        continue
+      try:
+        cmdline = [raw.decode("utf-8", "replace") for raw in (proc / "cmdline").read_bytes().split(b"\0") if raw]
+      except (FileNotFoundError, ProcessLookupError, PermissionError):
+        continue
+      command = "\0".join(cmdline)
+      if client in command or ":fabric:runPlaytestClient" in command or "baritone.playtest.enabled=true" in command:
+        pids.add(pid)
+    return pids
+
   @staticmethod
   def terminate_pids(pids: set[int], *, timeout: float = 8.0) -> None:
     pids = {pid for pid in pids if pid > 1 and pid != os.getpid()}
@@ -340,6 +488,14 @@ class Playtest:
     self.terminate_pids(self.process_roots(self.c.root))
     for pidfile in self.c.root.glob("*.pid"):
       pidfile.unlink(missing_ok=True)
+    self.c.server_stamp.unlink(missing_ok=True)
+
+  def stop_clients(self) -> None:
+    self.kill_pidfile(self.c.client_pid, self.c.root)
+    self.terminate_pids(self.client_processes())
+    self.c.client_pid.unlink(missing_ok=True)
+    self.c.client_stamp.unlink(missing_ok=True)
+    self.c.client_launch.unlink(missing_ok=True)
 
   def stop_all(self) -> None:
     roots = {self.c.root.resolve()}
@@ -390,7 +546,7 @@ class Playtest:
       "accepts-transfers": "false",
       "allow-flight": "false",
       "difficulty": "peaceful",
-      "enable-command-block": "false",
+      "enable-command-block": "true",
       "enable-query": "false",
       "enable-rcon": "true",
       "enforce-secure-profile": "false",
@@ -427,16 +583,66 @@ class Playtest:
   def server_ready(self, log: Path) -> bool:
     return log.exists() and "Done (" in log.read_text(encoding="utf-8", errors="replace")
 
-  def start_server(self, world: WorldSpec) -> None:
-    if self.pid_alive(self.c.server_pid):
+  def server_reachable(self) -> bool:
+    try:
+      self.rcon().command("list")
+      return True
+    except Exception:
+      return False
+
+  def stop_reachable_server(self) -> None:
+    try:
+      self.rcon().command("stop")
+    except Exception:
       return
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+      if not self.server_reachable():
+        return
+      time.sleep(0.5)
+
+  def start_server(self, world: WorldSpec) -> None:
+    launch_stamp = self.server_launch_stamp(self.code_stamp(), world)
+    if self.server_reachable():
+      try:
+        active_stamp = self.c.server_stamp.read_text(encoding="utf-8").strip()
+      except FileNotFoundError:
+        active_stamp = ""
+      if active_stamp == launch_stamp:
+        return
+      sys.stderr.write("playtest: restarting stale server; source stamp changed\n")
+      self.stop_reachable_server()
+      self.kill_pidfile(self.c.server_pid, self.c.root)
+      self.terminate_pids(self.process_roots(self.c.root))
+      self.c.server_stamp.unlink(missing_ok=True)
+    if self.pid_alive(self.c.server_pid):
+      for _ in range(5):
+        if self.server_reachable():
+          try:
+            active_stamp = self.c.server_stamp.read_text(encoding="utf-8").strip()
+          except FileNotFoundError:
+            active_stamp = ""
+          if active_stamp == launch_stamp:
+            return
+          break
+        time.sleep(1)
+      self.kill_pidfile(self.c.server_pid, self.c.root)
     directory = self.server_dir(world)
     self.prepare_server(directory, world)
     self.c.logs.mkdir(parents=True, exist_ok=True)
     log = self.c.logs / "server.log"
     with log.open("w", encoding="utf-8") as out:
       proc = subprocess.Popen(
-        ["bash", "-lc", 'tail -f /dev/null | env GRADLE_USER_HOME="$1" ./gradlew :fabric:runPlaytestServer -PbaritonePlaytestServerDir="$2"', "playtest-server", self.c.gradle_user_home, str(directory)],
+        [
+          "bash",
+          "-lc",
+          'tail -f /dev/null | env GRADLE_USER_HOME="$1" ./gradlew :fabric:runPlaytestServer -PbaritonePlaytestServerDir="$2" -PbaritonePhysicsInbox="$3" -PbaritonePhysicsResults="$4"',
+          "playtest-server",
+          self.c.gradle_user_home,
+          str(directory),
+          str(self.c.physics_inbox),
+          str(self.c.physics_results),
+        ],
         cwd=self.c.repo,
         stdin=subprocess.DEVNULL,
         stdout=out,
@@ -444,6 +650,7 @@ class Playtest:
         start_new_session=True,
       )
     self.c.server_pid.write_text(f"{proc.pid}\n", encoding="utf-8")
+    self.c.server_stamp.write_text(launch_stamp + "\n", encoding="utf-8")
     for _ in range(180):
       if self.server_ready(log):
         return
@@ -455,19 +662,44 @@ class Playtest:
     raise SystemExit(1)
 
   def start_client(self) -> None:
-    if self.pid_alive(self.c.client_pid):
-      return
+    code_stamp = self.code_stamp()
+    launch_stamp = self.launch_stamp(code_stamp)
+    if self.client_pid_alive():
+      try:
+        active_stamp = self.c.client_stamp.read_text(encoding="utf-8").strip()
+      except FileNotFoundError:
+        active_stamp = ""
+      if active_stamp == launch_stamp:
+        return
+      sys.stderr.write("playtest: restarting stale client; source stamp changed\n")
+      self.stop_clients()
     cdir = self.client_dir()
     self.c.inbox.mkdir(parents=True, exist_ok=True)
     self.c.results.mkdir(parents=True, exist_ok=True)
     self.c.logs.mkdir(parents=True, exist_ok=True)
     self.prepare_client_options(cdir)
     log = self.c.logs / "client.log"
+    env = os.environ.copy()
+    env.update(
+      {
+        "LIBGL_ALWAYS_SOFTWARE": "1",
+        "MESA_LOADER_DRIVER_OVERRIDE": "llvmpipe",
+        "__GLX_VENDOR_LIBRARY_NAME": "mesa",
+        "__EGL_VENDOR_LIBRARY_FILENAMES": "/usr/share/glvnd/egl_vendor.d/50_mesa.json",
+      }
+    )
+    if self.c.profile_event:
+      env["JDK_JAVA_OPTIONS"] = (env.get("JDK_JAVA_OPTIONS", "") + " -XX:+EnableDynamicAgentLoading").strip()
+    mount_tuning = self.mount_tuning_stamp()["profile"]
+    mount_tuning_args = [f"-PbaritoneMountTuning={mount_tuning}"] if mount_tuning else []
     with log.open("w", encoding="utf-8") as out:
       proc = subprocess.Popen(
         [
           "xvfb-run",
           "-a",
+          "--server-num=200",
+          "-e",
+          str(self.c.logs / "xvfb.log"),
           "-s",
           f"-screen 0 {self.c.screen}",
           "env",
@@ -480,19 +712,25 @@ class Playtest:
           f"-PbaritonePlaytestServer={self.c.host}:{self.c.port}",
           f"-PbaritonePlaytestUsername={self.c.username}",
           f"-PbaritonePlaytestUuid={self.c.uuid}",
+          f"-PbaritonePlaytestCodeStamp={code_stamp}",
+          *mount_tuning_args,
         ],
         cwd=self.c.repo,
         stdin=subprocess.DEVNULL,
         stdout=out,
         stderr=subprocess.STDOUT,
+        env=env,
         start_new_session=True,
       )
     self.c.client_pid.write_text(f"{proc.pid}\n", encoding="utf-8")
+    self.c.client_stamp.write_text(launch_stamp + "\n", encoding="utf-8")
+    write_json(self.c.client_launch, {"pid": proc.pid, "codeStamp": code_stamp, "mountTuning": self.mount_tuning_stamp(), "launchedAt": now()})
 
   def find_profile_target_pid(self) -> int | None:
     if self.c.profile_target != "client":
       raise SystemExit(f"unsupported PLAYTEST_PROFILE_TARGET={self.c.profile_target!r}; only 'client' is wired")
-    result_arg = f"-Dbaritone.playtest.results={self.c.results}"
+    result_prefix = "-Dbaritone.playtest.results="
+    result_path = str(self.c.results)
     for proc in Path("/proc").iterdir():
       if not proc.name.isdecimal():
         continue
@@ -500,9 +738,30 @@ class Playtest:
         cmdline = [raw.decode("utf-8", "replace") for raw in (proc / "cmdline").read_bytes().split(b"\0") if raw]
       except (FileNotFoundError, ProcessLookupError, PermissionError):
         continue
-      if "net.fabricmc.loader.impl.launch.knot.KnotClient" in cmdline and "-Dbaritone.playtest.enabled=true" in cmdline and result_arg in cmdline:
-        return int(proc.name)
+      if "-Dbaritone.playtest.enabled=true" not in cmdline:
+        continue
+      if not any(arg == result_path or arg == result_prefix + result_path for arg in cmdline):
+        continue
+      if not any("net.fabricmc.loader.impl.launch.knot.KnotClient" in arg or "net.fabricmc.devlaunchinjector.Main" in arg or arg.endswith("java") for arg in cmdline):
+        continue
+      return int(proc.name)
     return None
+
+  def profile_target_snapshot(self) -> str:
+    lines = ["profile target snapshot:"]
+    for proc in Path("/proc").iterdir():
+      if not proc.name.isdecimal():
+        continue
+      try:
+        cmdline = [raw.decode("utf-8", "replace") for raw in (proc / "cmdline").read_bytes().split(b"\0") if raw]
+      except (FileNotFoundError, ProcessLookupError, PermissionError):
+        continue
+      text = "\n".join(cmdline)
+      if "baritone.playtest" not in text and "runPlaytestClient" not in text and "KnotClient" not in text:
+        continue
+      selected = [arg for arg in cmdline if "baritone.playtest" in arg or "runPlaytestClient" in arg or "KnotClient" in arg or "playtest/results" in arg or arg.endswith("java")]
+      lines.append(proc.name + ": " + " ".join(selected))
+    return "\n".join(lines)
 
   def wait_profile_target_pid(self) -> int | None:
     deadline = time.monotonic() + self.c.profiler_start_timeout
@@ -521,7 +780,7 @@ class Playtest:
   def server_cmd(self, command: str) -> str:
     if not command:
       raise SystemExit("server command required")
-    if not self.pid_alive(self.c.server_pid):
+    if not self.pid_alive(self.c.server_pid) and not self.server_reachable():
       raise SystemExit("playtest server is not running")
     text = self.rcon().command(command)
     if text:
@@ -570,16 +829,12 @@ class Playtest:
     print(f"playtest server: world={world.key} seed={world.seed} server={self.c.host}:{self.c.port}")
 
   def ensure_python_env(self) -> Path:
-    venv = self.c.root / "py" / ".venv"
+    venv = self.c.repo / ".venv"
     python = venv / "bin" / "python"
-    if not python.exists():
+    if not python.exists() or subprocess.run([str(python), "-c", "import nbtlib"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
       if shutil.which("uv") is None:
         raise SystemExit("uv is required for playtest Python helpers")
-      subprocess.run(["uv", "venv", str(venv)], check=True, stdout=subprocess.DEVNULL)
-    if subprocess.run([str(python), "-c", "import nbtlib"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
-      if shutil.which("uv") is None:
-        raise SystemExit("uv is required to install nbtlib")
-      subprocess.run(["uv", "pip", "install", "--python", str(python), "nbtlib"], check=True, stdout=subprocess.DEVNULL)
+      subprocess.run(["uv", "sync"], cwd=self.c.repo, check=True)
     return python
 
   def prune_inbox(self) -> None:
@@ -598,7 +853,7 @@ class Playtest:
     calc_seconds = math.ceil(max(primary_ms, failure_ms) / 1000)
     return min(self.c.result_timeout, max(120, physics_seconds + calc_seconds + setup_commands + 90))
 
-  def write_harness_failure(self, scenario_path: Path, run_id: str, summary_path: Path, reason: str, message: str, elapsed_seconds: int) -> None:
+  def write_harness_failure(self, scenario_path: Path, run_id: str, summary_path: Path, reason: str, message: str, elapsed_seconds: int, extra: dict[str, Any] | None = None) -> None:
     scenario = read_json(scenario_path)
     result_scenario = summary_path.parent / "scenario.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -606,9 +861,7 @@ class Playtest:
       shutil.copyfile(scenario_path, result_scenario)
     start = scenario.get("start") or {}
     goal = scenario.get("goal") or {}
-    write_json(
-      summary_path,
-      {
+    summary = {
         "schema": 1,
         "id": scenario.get("id", run_id),
         "runId": run_id,
@@ -642,22 +895,98 @@ class Playtest:
         "sawBoat": False,
         "telemetry": None,
         "scenarioFile": str(result_scenario),
-      },
+      }
+    if extra:
+      summary.update(extra)
+    write_json(summary_path, summary)
+
+  def write_run_scenario(self, scenario_path: Path, target: Path, code_stamp: str) -> None:
+    scenario = read_json(scenario_path)
+    harness = scenario.get("harness")
+    if not isinstance(harness, dict):
+      harness = {}
+    harness.update({"expectedCodeStamp": code_stamp, "launcherPid": os.getpid(), "writtenAt": now()})
+    scenario["harness"] = harness
+    write_json(target, scenario)
+
+  def accepted_summary(self, scenario_path: Path, run_id: str, summary: Path, code_stamp: str, started: float) -> int | None:
+    try:
+      payload = read_json(summary)
+    except json.JSONDecodeError:
+      return 1
+    actual = payload.get("playtestCodeStamp")
+    expected = payload.get("expectedCodeStamp")
+    matched = actual == code_stamp and expected == code_stamp and payload.get("codeStampMatched") is True
+    if matched:
+      return 0 if bool(payload.get("success")) else 1
+    rejected = summary.parent / "summary.rejected-stale-client.json"
+    shutil.move(summary, rejected)
+    elapsed = int(time.monotonic() - started)
+    self.write_harness_failure(
+      scenario_path,
+      run_id,
+      summary,
+      "HARNESS_STALE_CLIENT",
+      f"playtest summary code stamp mismatch; expected {code_stamp}, summary playtestCodeStamp={actual!r}, expectedCodeStamp={expected!r}; rejected summary saved to {rejected}",
+      elapsed,
+      {"playtestCodeStamp": actual or "", "expectedCodeStamp": code_stamp, "codeStampMatched": False, "actualCodeStamp": actual, "summaryExpectedCodeStamp": expected, "rejectedSummary": str(rejected)},
     )
+    return 1
 
   def run_scenario(self, scenario_path: Path) -> int:
     with self.serial():
       return self.run_scenario_locked(scenario_path)
 
+  def run_physics_edge(self, scenario_path: Path) -> int:
+    with self.serial():
+      return self.run_physics_edge_locked(scenario_path)
+
+  def run_physics_edge_locked(self, scenario_path: Path) -> int:
+    if not scenario_path.is_file():
+      raise SystemExit(f"No physics scenario: {scenario_path}")
+    scenario = read_json(scenario_path)
+    runner = self.with_scenario_config(scenario)
+    if runner is not self:
+      return runner.run_physics_edge_locked(scenario_path)
+    self.c.physics_inbox.mkdir(parents=True, exist_ok=True)
+    self.c.physics_results.mkdir(parents=True, exist_ok=True)
+    for child in self.c.physics_inbox.glob("*.json"):
+      child.unlink()
+    self.server_only(WorldSpec.from_arg(self.c, str(scenario_path)))
+    base = safe_key(scenario_path.stem)
+    run_id = f"{base}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}"
+    target = self.c.physics_inbox / f"{run_id}.json"
+    result = self.c.physics_results / f"{run_id}.json"
+    scenario["runId"] = run_id
+    scenario.setdefault("harness", {})
+    scenario["harness"]["expectedCodeStamp"] = self.code_stamp()
+    write_json(target, scenario)
+    started = time.monotonic()
+    budget = int(scenario.get("timeoutSeconds", 120) or 120)
+    deadline = started + budget
+    while time.monotonic() < deadline:
+      if result.exists():
+        print(result)
+        payload = read_json(result)
+        return 0 if bool(payload.get("success")) else 1
+      if not self.pid_alive(self.c.server_pid):
+        raise SystemExit("physics server process died before writing result")
+      time.sleep(0.05)
+    raise SystemExit(f"timed out after {budget}s waiting for physics result {result}")
+
   def run_scenario_locked(self, scenario_path: Path) -> int:
     if not scenario_path.is_file():
       raise SystemExit(f"No scenario: {scenario_path}")
     scenario = read_json(scenario_path)
+    validate_scenario_commands(scenario_path, scenario)
     runner = self.with_scenario_config(scenario)
     if runner is not self:
       return runner.run_scenario_locked(scenario_path)
     self.prune_inbox()
+    if not self.c.keep_client:
+      self.stop_clients()
     self.daemon(WorldSpec.from_arg(self.c, str(scenario_path)))
+    code_stamp = self.code_stamp()
     base = safe_key(scenario_path.stem)
     run_id = f"{base}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}"
     target = self.c.inbox / f"{run_id}.json"
@@ -666,19 +995,16 @@ class Playtest:
     run_dir.mkdir(parents=True, exist_ok=True)
     budget = self.scenario_run_timeout(scenario_path)
     profiler = self.profiler_session(run_dir)
+    self.write_run_scenario(scenario_path, target, code_stamp)
     profiler.start()
-    shutil.copyfile(scenario_path, target)
     started = time.monotonic()
     deadline = started + budget
     try:
       while time.monotonic() < deadline:
         if summary.exists():
           print(summary)
-          try:
-            return 0 if bool(read_json(summary).get("success")) else 1
-          except json.JSONDecodeError:
-            return 1
-        if not self.pid_alive(self.c.client_pid):
+          return self.accepted_summary(scenario_path, run_id, summary, code_stamp, started)
+        if not self.client_pid_alive():
           elapsed = int(time.monotonic() - started)
           self.write_harness_failure(scenario_path, run_id, summary, "HARNESS_CLIENT_DIED", "playtest client process died before writing summary", elapsed)
           print(summary)
@@ -694,6 +1020,8 @@ class Playtest:
       return 1
     finally:
       profiler.stop()
+      if not self.c.keep_client:
+        self.stop_clients()
 
   def with_scenario_config(self, scenario: dict) -> "Playtest":
     config = self.c
@@ -708,24 +1036,24 @@ class Playtest:
       raise SystemExit(f"No suite manifest: {manifest}")
     status = 0
     with self.serial():
-      try:
-        for raw in manifest.read_text(encoding="utf-8").splitlines():
-          scenario = raw.split("#", 1)[0].strip()
-          if not scenario:
-            continue
-          print(f"playtest suite: {scenario}")
-          status = max(status, self.run_scenario_locked(Path(scenario)))
-      finally:
-        self.stop()
+      for raw in manifest.read_text(encoding="utf-8").splitlines():
+        scenario = raw.split("#", 1)[0].strip()
+        if not scenario:
+          continue
+        print(f"playtest suite: {scenario}")
+        status = max(status, self.run_scenario_locked(Path(scenario)))
     return status
 
-  def biome_pregen(self, world: WorldSpec, radius: int, tile_chunks: int) -> None:
+  def biome_pregen(self, world: WorldSpec, radius: int, tile_chunks: int, dimension: str = "minecraft:overworld") -> None:
     batch_tiles = int(os.environ.get("PLAYTEST_PREGEN_BATCH_TILES", "1"))
     self.server_only(world)
     min_c = -radius // 16
     max_c = radius // 16
     removals: list[str] = []
     labels: list[str] = []
+
+    def in_dimension(command: str) -> str:
+      return command if dimension == "minecraft:overworld" else f"execute in {dimension} run {command}"
 
     def flush() -> None:
       nonlocal removals, labels
@@ -747,8 +1075,8 @@ class Playtest:
       for cz in range(min_c, max_c + 1, tile_chunks):
         x1, z1 = cx * 16, cz * 16
         x2, z2 = ((cx + tile_chunks - 1) * 16) + 15, ((cz + tile_chunks - 1) * 16) + 15
-        self.server_cmd_retry(f"forceload add {x1} {z1} {x2} {z2}")
-        removals.append(f"forceload remove {x1} {z1} {x2} {z2}")
+        self.server_cmd_retry(in_dimension(f"forceload add {x1} {z1} {x2} {z2}"))
+        removals.append(in_dimension(f"forceload remove {x1} {z1} {x2} {z2}"))
         labels.append(f"{cx}..{cx + tile_chunks - 1} {cz}..{cz + tile_chunks - 1}")
         if len(removals) >= batch_tiles:
           flush()
@@ -782,11 +1110,12 @@ class Playtest:
   def stage(self, scenario_path: Path, provided_player: str | None) -> None:
     if not scenario_path.is_file():
       raise SystemExit(f"No scenario: {scenario_path}")
+    scenario = read_json(scenario_path)
+    validate_scenario_commands(scenario_path, scenario)
     self.server_only(WorldSpec.from_arg(self.c, str(scenario_path)))
     player = self.default_player(provided_player)
     if not PLAYER_RE.fullmatch(player):
       raise SystemExit(f"unsupported player name for command target: {player!r}")
-    scenario = read_json(scenario_path)
     for command in stage_commands(scenario, player):
       self.server_cmd(command)
 
@@ -826,7 +1155,7 @@ def stage_commands(scenario: dict, player: str) -> list[str]:
     "time set noon",
     "weather clear",
     "difficulty peaceful",
-    "kill @e[type=!minecraft:player]",
+    *trial_entity_cleanup_commands(scenario),
     f"gamemode survival {player}",
     f"effect clear {player}",
     f"effect give {player} minecraft:instant_health 1 10 true",
@@ -834,7 +1163,11 @@ def stage_commands(scenario: dict, player: str) -> list[str]:
   if scenario.get("saturationBoost", True):
     commands.append(f"effect give {player} minecraft:saturation 1 10 true")
   commands.append(f"clear {player}")
-  commands.extend(str(command) for command in scenario.get("setupCommands") or [])
+  start_x = math.floor(float(start.get("x", 0.0)))
+  start_z = math.floor(float(start.get("z", 0.0)))
+  forceload_start = f"execute in {dimension} run forceload add {start_x - 16} {start_z - 16} {start_x + 16} {start_z + 16}"
+  forceload_stop = f"execute in {dimension} run forceload remove {start_x - 16} {start_z - 16} {start_x + 16} {start_z + 16}"
+  commands.append(forceload_start)
   commands.append(
     "execute in %s run tp %s %.3f %.3f %.3f %.2f %.2f"
     % (
@@ -847,11 +1180,26 @@ def stage_commands(scenario: dict, player: str) -> list[str]:
       float(start.get("pitch", 0.0)),
     )
   )
+  commands.extend(bind_scenario_command(command, player) for command in scenario.get("setupCommands") or [])
+  commands.append(
+    "execute in %s run tp %s %.3f %.3f %.3f %.2f %.2f"
+    % (
+      dimension,
+      player,
+      float(start.get("x", 0.0)),
+      float(start.get("y", 80.0)),
+      float(start.get("z", 0.0)),
+      float(start.get("yaw", 0.0)),
+      float(start.get("pitch", 0.0)),
+    )
+  )
+  commands.append(forceload_stop)
   for item in loadout:
     item_id = item.get("item", "minecraft:air")
     count = int(item.get("count", 1))
     slot = int(item.get("slot", -1))
     commands.append(f"item replace entity {player} hotbar.{slot} with {item_id} {count}" if slot >= 0 else f"give {player} {item_id} {count}")
+  commands.extend(bind_scenario_command(command, player) for command in scenario.get("postSetupCommands") or [])
   commands.append(tellraw(player, [{"text": f"Staged playtest scenario {sid}.", "color": "green"}]))
   for name, value in settings.items():
     command = f"#set {name} {str(value).lower() if isinstance(value, bool) else value}"
@@ -863,9 +1211,57 @@ def stage_commands(scenario: dict, player: str) -> list[str]:
       commands.append(clickable(player, "Baritone goal: ", "#goto %d %d" % (int(goal.get("x", 0)), int(goal.get("z", 0))), "gold"))
     case other:
       commands.append(tellraw(player, [{"text": f"Unsupported manual Baritone goal type: {other}", "color": "red"}]))
+  for command in scenario.get("baritoneCommands") or []:
+    commands.append(clickable(player, "Baritone command: ", str(command), "dark_aqua"))
   if selected_slot is not None:
     commands.append(tellraw(player, [{"text": f"Select hotbar slot {int(selected_slot) + 1} before running if the scenario depends on held item.", "color": "yellow"}]))
   return commands
+
+
+def bind_scenario_command(command: object, player: str) -> str:
+  return str(command).replace("{player}", player)
+
+
+def trial_entity_cleanup_commands(scenario: dict) -> list[str]:
+  radius = 192
+  stride = 64
+  max_points = 24
+  forceload_radius = 24
+  dimension = scenario.get("dimension", "minecraft:overworld")
+  start = scenario.get("start") or {}
+  goal = scenario.get("goal") or {}
+  sx = float(start.get("x", 0.0))
+  sy = float(start.get("y", 80.0))
+  sz = float(start.get("z", 0.0))
+  commands = [bounded_trial_entity_kill(dimension, sx, sy, sz, radius)]
+  gx = float(goal.get("x", sx)) + 0.5
+  gy = float(goal.get("y", sy))
+  gz = float(goal.get("z", sz)) + 0.5
+  if (gx - sx) * (gx - sx) + (gz - sz) * (gz - sz) > radius * radius:
+    commands.append(bounded_trial_entity_kill(dimension, gx, gy, gz, radius))
+  distance = math.hypot(gx - sx, gz - sz)
+  intervals = math.ceil(distance / stride)
+  if intervals > 1 and intervals + 1 <= max_points:
+    for i in range(intervals + 1):
+      t = i / intervals
+      x = sx + (gx - sx) * t
+      y = sy + (gy - sy) * t
+      z = sz + (gz - sz) * t
+      commands.append(force_load_trial_entity_cleanup_tile(dimension, x, z, forceload_radius, True))
+      commands.append(bounded_trial_entity_kill(dimension, x, y, z, radius))
+      commands.append(force_load_trial_entity_cleanup_tile(dimension, x, z, forceload_radius, False))
+  return commands
+
+
+def bounded_trial_entity_kill(dimension: str, x: float, y: float, z: float, radius: int) -> str:
+  return f"execute in {dimension} positioned {x:.3f} {y:.3f} {z:.3f} run kill @e[tag=baritone_playtest,distance=..{radius}]"
+
+
+def force_load_trial_entity_cleanup_tile(dimension: str, x: float, z: float, radius: int, add: bool) -> str:
+  bx = math.floor(x)
+  bz = math.floor(z)
+  op = "add" if add else "remove"
+  return f"execute in {dimension} run forceload {op} {bx - radius} {bz - radius} {bx + radius} {bz + radius}"
 
 
 def tellraw(player: str, parts: list[dict]) -> str:
@@ -907,6 +1303,7 @@ class AsyncProfilerSession:
     self.pid = self.playtest.wait_profile_target_pid()
     if self.pid is None:
       self.log("target JVM not found before scenario dispatch")
+      self.log(self.playtest.profile_target_snapshot())
       return
     command = [self.playtest.c.profiler, "start", "-e", self.event, *self.event_options(), "-o", "jfr", "-f", str(self.run_dir / f"{self.artifact_stem}.jfr"), str(self.pid)]
     result = self.run(command, "start")
@@ -1119,6 +1516,10 @@ def main(argv: list[str] | None = None) -> int:
       return 0
     case "probe":
       return playtest.probe(args)
+    case "physedge":
+      if not args:
+        raise SystemExit("physics scenario json required")
+      return playtest.run_physics_edge(Path(args[0]))
     case "run":
       if not args:
         raise SystemExit("scenario json required")
@@ -1126,14 +1527,16 @@ def main(argv: list[str] | None = None) -> int:
     case "once":
       if not args:
         raise SystemExit("scenario json required")
-      try:
-        return playtest.run_scenario(Path(args[0]))
-      finally:
-        playtest.stop()
+      return playtest.run_scenario(Path(args[0]))
     case "suite":
       return playtest.run_suite(Path(args[0] if args else "scenarios/playtest/locked.txt"))
     case "biome-pregen":
-      playtest.biome_pregen(WorldSpec.from_arg(playtest.c, args[0] if args else "biome_large"), int(args[1]) if len(args) > 1 else 512, int(args[2]) if len(args) > 2 else 8)
+      playtest.biome_pregen(
+        WorldSpec.from_arg(playtest.c, args[0] if args else "biome_large"),
+        int(args[1]) if len(args) > 1 else 512,
+        int(args[2]) if len(args) > 2 else 8,
+        args[3] if len(args) > 3 else "minecraft:overworld",
+      )
       return 0
     case "biome-scan":
       if len(args) < 2:
@@ -1161,7 +1564,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def usage() -> None:
   print(
-    "usage: scripts/playtest server [worldKey|scenario.json] | stage <scenario.json> [player] | daemon [worldKey|scenario.json] | cmd <server command> | probe [worldKey|scenario.json] <x> <y> <z> [dimension] | run <scenario.json> | once <scenario.json> | suite [manifest] | biome-pregen [worldKey] [radius] [tileChunks] | biome-scan <worldKey> <outDir> [args...] | biome-aggregate [resultsDir] [outJson] | biome-facts <worldKey> [outJson] [args...] | stop | stop-all",
+    "usage: scripts/playtest server [worldKey|scenario.json] | stage <scenario.json> [player] | daemon [worldKey|scenario.json] | cmd <server command> | probe [worldKey|scenario.json] <x> <y> <z> [dimension] | physedge <scenario.json> | run <scenario.json> | once <scenario.json> | suite [manifest] | biome-pregen [worldKey] [radius] [tileChunks] [dimension] | biome-scan <worldKey> <outDir> [args...] | biome-aggregate [resultsDir] [outJson] | biome-facts <worldKey> [outJson] [args...] | stop | stop-all",
     file=sys.stderr,
   )
 

@@ -14,6 +14,8 @@ import baritone.command.manager.CommandManager;
 import baritone.event.GameEventHandler;
 import baritone.pathing.calc.PathingProfiler;
 import baritone.playtest.PlaytestHarnessBehavior;
+import baritone.profile.AsyncProfilerController;
+import baritone.profile.PathProfileController;
 import baritone.process.*;
 import baritone.selection.SelectionManager;
 import baritone.utils.BlockStateInterface;
@@ -58,6 +60,7 @@ public class Baritone implements IBaritone {
   private final GetToBlockProcess getToBlockProcess;
   private final CustomGoalProcess customGoalProcess;
   private final BuilderProcess builderProcess;
+  private final PortalTaskProcess portalTaskProcess;
   private final ExploreProcess exploreProcess;
   private final FarmProcess farmProcess;
   private final InventoryPauserProcess inventoryPauserProcess;
@@ -67,6 +70,8 @@ public class Baritone implements IBaritone {
   private final SelectionManager selectionManager;
   private final CommandManager commandManager;
   private final PathingProfiler pathingProfiler;
+  private final AsyncProfilerController asyncProfiler;
+  private final PathProfileController pathProfileController;
 
   private final IPlayerContext playerContext;
   private final WorldProvider worldProvider;
@@ -85,6 +90,7 @@ public class Baritone implements IBaritone {
       }
     }
     this.pathingProfiler = new PathingProfiler(this.directory.resolve("profiles"));
+    this.asyncProfiler = new AsyncProfilerController(this.directory.resolve("profiles"));
 
     // Define this before behaviors try and get it, or else it will be null and the builds will fail!
     this.playerContext = new BaritonePlayerContext(this, mc);
@@ -100,6 +106,7 @@ public class Baritone implements IBaritone {
         this.registerBehavior(PlaytestHarnessBehavior::new);
       }
     }
+    this.pathProfileController = new PathProfileController(this.pathingProfiler, this.asyncProfiler, this.mocapBehavior);
 
     this.pathingControlManager = new PathingControlManager(this);
     {
@@ -108,6 +115,7 @@ public class Baritone implements IBaritone {
       this.customGoalProcess = this.registerProcess(CustomGoalProcess::new); // very high iq
       this.getToBlockProcess = this.registerProcess(GetToBlockProcess::new);
       this.builderProcess = this.registerProcess(BuilderProcess::new);
+      this.portalTaskProcess = this.registerProcess(PortalTaskProcess::new);
       this.exploreProcess = this.registerProcess(ExploreProcess::new);
       this.farmProcess = this.registerProcess(FarmProcess::new);
       this.inventoryPauserProcess = this.registerProcess(InventoryPauserProcess::new);
@@ -159,6 +167,8 @@ public class Baritone implements IBaritone {
 
   public InventoryBehavior getInventoryBehavior() { return this.inventoryBehavior; }
 
+  public PortalTaskProcess getPortalTaskProcess() { return this.portalTaskProcess; }
+
   @Override
   public LookBehavior getLookBehavior() { return this.lookBehavior; }
 
@@ -206,7 +216,11 @@ public class Baritone implements IBaritone {
 
   public PathingProfiler getPathingProfiler() { return this.pathingProfiler; }
 
+  public AsyncProfilerController getAsyncProfiler() { return this.asyncProfiler; }
+
   public MocapBehavior getMocapBehavior() { return this.mocapBehavior; }
+
+  public PathProfileController getPathProfileController() { return this.pathProfileController; }
 
   public static Settings settings() {
     return BaritoneAPI.getSettings();

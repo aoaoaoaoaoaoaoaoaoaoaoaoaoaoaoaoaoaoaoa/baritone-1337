@@ -13,6 +13,10 @@ interface RouteLegController {
 
   boolean failed();
 
+  default String failureReason() {
+    return failed() ? getClass().getSimpleName() + " failed" : null;
+  }
+
   boolean finished();
 
   int getPosition();

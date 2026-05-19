@@ -12,6 +12,12 @@ import baritone.pathing.movement.water.WaterTransportPolicy;
 import baritone.utils.BlockStateInterface;
 import java.util.Optional;
 import java.util.OptionalInt;
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -23,6 +29,10 @@ import net.minecraft.world.level.block.state.BlockState;
  */
 public final class GoalTerminalPolicy {
   private static final int SWIM_EGRESS_RADIUS = 20;
+  public static final int HORSE_GOAL_XZ_RADIUS = 2;
+  public static final int HORSE_OBSTRUCTED_GOAL_XZ_RADIUS = 5;
+  public static final double HORSE_GOAL_XZ_PLANNING_MARGIN = 1.15D;
+  private static final double HULL_EPSILON = 1.0E-4D;
   private static final int[] DRY_Y_OFFSETS_FROM_WATER = {0, 1, 2};
 
   private GoalTerminalPolicy() {
@@ -36,6 +46,9 @@ public final class GoalTerminalPolicy {
     if (goal == null) {
       return true;
     }
+    if (ctx.player().getVehicle() instanceof AbstractHorse horse && goal instanceof GoalXZ xz) {
+      return horseGoalXZSatisfied(horse, xz, horseGoalXZRadius(ctx, horse, xz));
+    }
     if (unsafeSwimGoal(baritone, ctx, goal)) {
       Optional<BetterBlockPos> egress = egress(ctx, (GoalXZ) goal);
       return egress.map(pos::equals).orElseGet(() -> goal.isInGoal(pos));
@@ -43,8 +56,27 @@ public final class GoalTerminalPolicy {
     return goal.isInGoal(pos);
   }
 
+  public static boolean plannedHorseSatisfied(Goal goal, BetterBlockPos pos) {
+    if (goal == null) {
+      return true;
+    }
+    if (goal instanceof GoalXZ xz) {
+      double radius = horseGoalXZPlanningRadius(xz, HORSE_GOAL_XZ_RADIUS);
+      return horseGoalXZBlockCenterSatisfied(pos, xz, radius);
+    }
+    if (goal.isInGoal(pos)) {
+      return true;
+    }
+    return false;
+  }
+
+  public static double horseGoalXZPlanningRadius(GoalXZ goal, int policyRadius) {
+    return Math.max(0D, Math.max(goal.xzRadius(), policyRadius) - HORSE_GOAL_XZ_PLANNING_MARGIN);
+  }
+
   private static boolean unsafeSwimGoal(CalculationContext context, Goal goal) {
-    return goal instanceof GoalXZ && !context.waterTransport.boatAvailable() && !context.waterTransport.boatMounted();
+    return goal instanceof GoalXZ && !(context.getBaritone().getPlayerContext().player().getVehicle() instanceof AbstractHorse) && !context.waterTransport.boatAvailable()
+      && !context.waterTransport.boatMounted();
   }
 
   private static boolean unsafeSwimGoal(Baritone baritone, IPlayerContext ctx, Goal goal) {
@@ -53,6 +85,83 @@ public final class GoalTerminalPolicy {
     }
     WaterTransportPolicy transport = WaterTransportPolicy.snapshot(baritone);
     return !transport.boatAvailable() && !transport.boatMounted() && ctx.player().getVehicle() == null;
+  }
+
+  private static int horseGoalXZRadius(IPlayerContext ctx, AbstractHorse horse, GoalXZ goal) {
+    int mountedRadius = horseGoalXZObstructed(ctx, horse, goal) ? HORSE_OBSTRUCTED_GOAL_XZ_RADIUS : HORSE_GOAL_XZ_RADIUS;
+    return Math.max(goal.xzRadius(), mountedRadius);
+  }
+
+  private static boolean horseGoalXZSatisfied(Entity horse, GoalXZ goal, int radiusBlocks) {
+    double dx = horse.getX() - goal.getX();
+    double dz = horse.getZ() - goal.getZ();
+    return dx * dx + dz * dz <= radiusBlocks * radiusBlocks;
+  }
+
+  private static boolean horseGoalXZBlockCenterSatisfied(BetterBlockPos pos, GoalXZ goal, double radiusBlocks) {
+    double dx = pos.x - goal.getX();
+    double dz = pos.z - goal.getZ();
+    return dx * dx + dz * dz <= radiusBlocks * radiusBlocks;
+  }
+
+  private static boolean horseGoalXZObstructed(IPlayerContext ctx, AbstractHorse horse, GoalXZ goal) {
+    BlockStateInterface bsi = new BlockStateInterface(ctx);
+    boolean known = false;
+    int horseFeetY = Mth.floor(horse.getBoundingBox().minY + 0.01D);
+    int minY = Math.max(ctx.world().dimensionType().minY() + 1, horseFeetY - 2);
+    int maxY = Math.min(ctx.world().dimensionType().minY() + ctx.world().dimensionType().height() - 2, horseFeetY + 2);
+    for (int x = goal.getX() - HORSE_GOAL_XZ_RADIUS; x <= goal.getX() + HORSE_GOAL_XZ_RADIUS; x++) {
+      for (int z = goal.getZ() - HORSE_GOAL_XZ_RADIUS; z <= goal.getZ() + HORSE_GOAL_XZ_RADIUS; z++) {
+        if (!bsi.hasPathingData(x, z)) {
+          continue;
+        }
+        known = true;
+        for (int y = minY; y <= maxY; y++) {
+          if (horseStandable(bsi, horse, x, y, z)) {
+            return false;
+          }
+        }
+      }
+    }
+    return known;
+  }
+
+  private static boolean horseStandable(BlockStateInterface bsi, AbstractHorse horse, int x, int y, int z) {
+    return horseClearHull(bsi, horse, x + 0.5D, y, z + 0.5D) && (horseSolidSupport(bsi, x, y, z) || horseWaterSupport(bsi, x, y, z));
+  }
+
+  private static boolean horseClearHull(BlockStateInterface bsi, AbstractHorse horse, double centerX, int feetY, double centerZ) {
+    double halfWidth = horse.getBbWidth() * 0.5D;
+    int minX = Mth.floor(centerX - halfWidth + HULL_EPSILON);
+    int maxX = Mth.floor(centerX + halfWidth - HULL_EPSILON);
+    int minY = Mth.floor(feetY + HULL_EPSILON);
+    int maxY = Mth.floor(feetY + horse.getBbHeight() - HULL_EPSILON);
+    int minZ = Mth.floor(centerZ - halfWidth + HULL_EPSILON);
+    int maxZ = Mth.floor(centerZ + halfWidth - HULL_EPSILON);
+    BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+    for (int x = minX; x <= maxX; x++) {
+      for (int y = minY; y <= maxY; y++) {
+        for (int z = minZ; z <= maxZ; z++) {
+          if (!horsePassable(bsi, pos.set(x, y, z), bsi.get0(x, y, z))) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  private static boolean horsePassable(BlockStateInterface bsi, BlockPos.MutableBlockPos pos, BlockState state) {
+    return state.getFluidState().is(FluidTags.WATER) || state.getFluidState().isEmpty() && state.getCollisionShape(bsi.access, pos).isEmpty();
+  }
+
+  private static boolean horseSolidSupport(BlockStateInterface bsi, int x, int y, int z) {
+    BlockState support = bsi.get0(x, y - 1, z);
+    return !support.is(BlockTags.LEAVES) && support.getFluidState().isEmpty() && !support.getCollisionShape(bsi.access, new BlockPos(x, y - 1, z)).isEmpty();
+  }
+
+  private static boolean horseWaterSupport(BlockStateInterface bsi, int x, int y, int z) {
+    return bsi.get0(x, y, z).getFluidState().is(FluidTags.WATER) || bsi.get0(x, y - 1, z).getFluidState().is(FluidTags.WATER);
   }
 
   private static Optional<BetterBlockPos> egress(CalculationContext context, GoalXZ goal) {
@@ -68,9 +177,13 @@ public final class GoalTerminalPolicy {
     if (!context.hasPathingData(x, z)) {
       return OptionalInt.empty();
     }
+    BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
     for (int y = context.world.getMaxY() - 2; y >= context.world.getMinY() + 1; y--) {
       if (MovementHelper.surfaceSwimCell(context, x, y, z)) {
         return OptionalInt.of(y);
+      }
+      if (surfaceColumnCapped(context.bsi, pos.set(x, y, z), context.get(x, y, z))) {
+        return OptionalInt.empty();
       }
     }
     return OptionalInt.empty();
@@ -82,13 +195,21 @@ public final class GoalTerminalPolicy {
     }
     int minY = ctx.world().dimensionType().minY();
     int maxY = minY + ctx.world().dimensionType().height();
+    BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
     for (int y = maxY - 2; y >= minY + 1; y--) {
       BlockState feet = bsi.get0(x, y, z);
       if (MovementHelper.isWater(feet) && MovementHelper.isWater(bsi.get0(x, y - 1, z)) && !MovementHelper.isWater(bsi.get0(x, y + 1, z)) && MovementHelper.canSwimThrough(feet)) {
         return OptionalInt.of(y);
       }
+      if (surfaceColumnCapped(bsi, pos.set(x, y, z), feet)) {
+        return OptionalInt.empty();
+      }
     }
     return OptionalInt.empty();
+  }
+
+  private static boolean surfaceColumnCapped(BlockStateInterface bsi, BlockPos pos, BlockState state) {
+    return !state.is(BlockTags.LEAVES) && !state.getFluidState().is(FluidTags.WATER) && (!state.getFluidState().isEmpty() || !state.getCollisionShape(bsi.access, pos).isEmpty());
   }
 
   private static Optional<BetterBlockPos> nearestDryEgress(CalculationContext context, int waterX, int waterY, int waterZ) {

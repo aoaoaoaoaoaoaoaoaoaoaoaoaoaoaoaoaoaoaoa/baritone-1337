@@ -22,6 +22,11 @@ public class MacroAgentStateTest {
     assertTrue(swim.swimming());
     assertTrue(swim.surfaceWaterborne());
     assertFalse(swim.boatMounted());
+
+    MacroAgentState horse = MacroAgentState.horse();
+    assertEquals(TransportMode.HORSE, horse.mode());
+    assertTrue(horse.horseMounted());
+    assertFalse(horse.surfaceWaterborne());
     assertEquals(MacroAgentState.pedestrian(), pedestrian);
   }
 }

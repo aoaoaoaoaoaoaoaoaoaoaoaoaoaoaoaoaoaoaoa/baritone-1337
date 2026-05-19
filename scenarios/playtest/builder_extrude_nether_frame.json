@@ -1,0 +1,71 @@
+{
+  "id": "builder_extrude_nether_frame",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "action": "commands",
+  "start": {
+    "x": 939.5,
+    "y": 129.5,
+    "z": -1050.5,
+    "yaw": -90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 939,
+    "y": 129,
+    "z": -1051
+  },
+  "setupCommands": [
+    "fill 940 128 -1054 959 135 -1048 minecraft:air"
+  ],
+  "loadout": [
+    {
+      "slot": 0,
+      "item": "minecraft:nether_bricks",
+      "count": 64
+    },
+    {
+      "slot": 1,
+      "item": "minecraft:nether_brick_slab",
+      "count": 64
+    },
+    {
+      "slot": 2,
+      "item": "minecraft:nether_brick_wall",
+      "count": 64
+    },
+    {
+      "slot": 3,
+      "item": "minecraft:nether_brick_wall",
+      "count": 64
+    }
+  ],
+  "selectedSlot": 0,
+  "baritoneCommands": [
+    "sel clear",
+    "sel pos1 939 129 -1052",
+    "sel pos2 939 132 -1050",
+    "sel extrude east 20"
+  ],
+  "settings": {
+    "allowBreak": false,
+    "allowPlace": true,
+    "allowSprint": true,
+    "buildInLayers": false,
+    "buildIgnoreDirection": false,
+    "distanceTrim": false
+  },
+  "timeoutTicks": 1144,
+  "trace": true,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNoVehicle": true,
+    "requireNoDamage": true,
+    "requireBuilderSeen": true
+  }
+}

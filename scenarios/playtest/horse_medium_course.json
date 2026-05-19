@@ -1,0 +1,60 @@
+{
+  "id": "horse_medium_course",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1200.5,
+    "y": 80.0,
+    "z": -1200.5,
+    "yaw": -45.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "pointxz",
+    "x": 1222,
+    "y": 80,
+    "z": -1198
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld run forceload add 1192 -1216 1232 -1184",
+    "execute in minecraft:overworld run fill 1194 80 -1214 1228 94 -1184 minecraft:air",
+    "execute in minecraft:overworld run fill 1194 79 -1214 1228 79 -1184 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1194 80 -1212 1194 85 -1186 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1228 80 -1212 1228 85 -1186 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1194 80 -1212 1228 85 -1212 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1194 80 -1186 1228 85 -1186 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1207 80 -1210 1209 81 -1188 minecraft:stone",
+    "execute in minecraft:overworld run fill 1214 80 -1206 1214 81 -1194 minecraft:oak_log",
+    "execute in minecraft:overworld run fill 1219 80 -1205 1219 82 -1205 minecraft:oak_log",
+    "execute in minecraft:overworld run fill 1217 83 -1207 1221 85 -1203 minecraft:oak_leaves",
+    "execute in minecraft:overworld run summon minecraft:horse 1200.5 80 -1200.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}",
+    "execute in minecraft:overworld run forceload remove 1192 -1216 1232 -1184"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "timeoutTicks": 400,
+  "successRadius": 3.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "minJumpTicks": 1,
+    "maxTicksToPlanning": 100,
+    "maxTicksToActuation": 140
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

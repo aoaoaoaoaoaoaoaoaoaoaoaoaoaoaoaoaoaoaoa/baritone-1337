@@ -4,3 +4,7 @@ scenarios/playtest/boat_river_curve.json
 scenarios/playtest/distant_dark_goal_plan.json
 scenarios/playtest/macro_boat_unloaded_river_plan.json
 scenarios/playtest/macro_swim_unloaded_river.json
+scenarios/playtest/nether_bedrock_chamber_portal_1kit_plan.json
+scenarios/playtest/nether_bedrock_chamber_unlit_frame_1kit_plan.json
+scenarios/playtest/nether_bedrock_chamber_noportal_2kit_plan.json
+scenarios/playtest/nether_portal_50k_plan.json

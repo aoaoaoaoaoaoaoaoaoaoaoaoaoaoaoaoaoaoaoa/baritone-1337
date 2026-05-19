@@ -1,0 +1,61 @@
+{
+  "id": "horse_water_obstructed_goalxz",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1320.5,
+    "y": 80.0,
+    "z": -1300.5,
+    "yaw": 180.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "nearxz",
+    "x": 1316,
+    "y": 80,
+    "z": -1340,
+    "radius": 6
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld run forceload add 1308 -1352 1332 -1296",
+    "execute in minecraft:overworld run fill 1308 70 -1352 1332 96 -1324 minecraft:air",
+    "execute in minecraft:overworld run fill 1308 70 -1323 1332 96 -1296 minecraft:air",
+    "execute in minecraft:overworld run fill 1308 78 -1352 1332 78 -1296 minecraft:stone",
+    "execute in minecraft:overworld run fill 1308 79 -1352 1332 79 -1326 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1308 79 -1325 1332 79 -1296 minecraft:water",
+    "execute in minecraft:overworld run fill 1314 80 -1342 1318 84 -1338 minecraft:spruce_log",
+    "execute in minecraft:overworld run fill 1308 80 -1353 1332 84 -1353 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1308 80 -1295 1332 84 -1295 minecraft:bedrock",
+    "execute in minecraft:overworld run summon minecraft:horse 1320.5 80 -1300.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}",
+    "execute in minecraft:overworld run forceload remove 1308 -1352 1332 -1296"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "timeoutTicks": 420,
+  "successRadius": 6.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireWaterEncountered": true,
+    "requireNoDamage": true,
+    "maxJumpTicks": 0,
+    "maxRouteDestDistance": 6.0,
+    "maxTicksToPlanning": 100,
+    "maxTicksToActuation": 140
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

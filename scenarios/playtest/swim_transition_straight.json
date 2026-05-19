@@ -1,7 +1,8 @@
 {
   "id": "swim_transition_straight",
-  "worldKey": "smoke",
+  "worldKey": "smoke_vd10",
   "seed": "baritone-playtest-smoke",
+  "viewDistance": 10,
   "dimension": "minecraft:overworld",
   "start": {
     "x": 75.5,

@@ -22,18 +22,27 @@ import net.minecraft.client.gui.screens.DisconnectedScreen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 
 public final class PlaytestHarnessBehavior extends Behavior {
+  private static final String TRIAL_ENTITY_TAG = "baritone_playtest";
+  private static final int TRIAL_ENTITY_CLEANUP_RADIUS = 192;
+  private static final int TRIAL_ENTITY_CORRIDOR_CLEANUP_STRIDE = 64;
+  private static final int TRIAL_ENTITY_CORRIDOR_CLEANUP_MAX_POINTS = 24;
+  private static final int TRIAL_ENTITY_CORRIDOR_FORCELOAD_RADIUS = 24;
   private static final String ENABLED = "baritone.playtest.enabled";
   private static final String SCENARIO = "baritone.playtest.scenario";
   private static final String INBOX = "baritone.playtest.inbox";
   private static final String RESULTS = "baritone.playtest.results";
   private static final String SERVER = "baritone.playtest.server";
   private static final String QUIT = "baritone.playtest.quitOnFinish";
+  private static final String CODE_STAMP = "baritone.playtest.codeStamp";
   private static final int CONNECT_RETRY_TICKS = 80;
   private static final int SETUP_CONVERGENCE_TICKS = 30;
   private static final int SETUP_TIMEOUT_TICKS = 20 * 45;
   private static final int INACTIVE_STOP_TICKS = 40;
+  private static final int MOUNT_RETRY_TICKS = 20;
 
   private final Path inbox;
   private final Path results;
@@ -61,6 +70,10 @@ public final class PlaytestHarnessBehavior extends Behavior {
 
   public static boolean enabled() {
     return Boolean.getBoolean(ENABLED) || System.getProperty(SCENARIO) != null || System.getProperty(INBOX) != null;
+  }
+
+  static String codeStamp() {
+    return System.getProperty(CODE_STAMP, "unstamped");
   }
 
   @Override
@@ -168,6 +181,11 @@ public final class PlaytestHarnessBehavior extends Behavior {
         Files.deleteIfExists(starting.path());
       }
       pending = null;
+      if (!scenario.harness().acceptsCodeStamp(codeStamp())) {
+        finish(TerminalReason.STALE_CLIENT, false);
+        return;
+      }
+      scenario.mountTuning().installIfConfigured();
       dead = false;
       commandIndex = 0;
       phaseTicks = 0;
@@ -189,13 +207,14 @@ public final class PlaytestHarnessBehavior extends Behavior {
       return;
     }
     if (commandIndex < setupCommands.size()) {
-      player.connection.sendCommand(setupCommands.get(commandIndex++));
+      player.connection.sendCommand(bindScenarioCommand(setupCommands.get(commandIndex++), player));
       return;
     }
     if (phaseTicks > setupCommands.size() + SETUP_TIMEOUT_TICKS) {
       finish(TerminalReason.SETUP_TIMEOUT, false);
       return;
     }
+    retryRequiredMount(player);
     if (phaseTicks < setupCommands.size() + SETUP_CONVERGENCE_TICKS || !readyToRun(player)) {
       return;
     }
@@ -203,7 +222,14 @@ public final class PlaytestHarnessBehavior extends Behavior {
     if (runScenario().trace()) {
       baritone.getMocapBehavior().start(run.tracePath());
     }
-    baritone.getCustomGoalProcess().setGoalAndPath(runScenario().baritoneGoal());
+    switch (runScenario().action()) {
+      case GOTO -> baritone.getCustomGoalProcess().setGoalAndPath(runScenario().baritoneGoal());
+      case COMMANDS -> {
+        if (!executeBaritoneCommands(runScenario().baritoneCommands())) {
+          return;
+        }
+      }
+    }
     phase = Phase.RUNNING;
     phaseTicks = 0;
     inactiveTicks = 0;
@@ -212,10 +238,16 @@ public final class PlaytestHarnessBehavior extends Behavior {
   private void tickRun(Minecraft minecraft) {
     phaseTicks++;
     run.sample(baritone, minecraft);
-    boolean active = baritone.getPathingBehavior().isPathing() || baritone.getPathingBehavior().getInProgress().isPresent() || baritone.getPathingBehavior().getPlanningStart().isPresent();
+    boolean active = baritone.getPathingBehavior().isPathing() || baritone.getPathingBehavior().getInProgress().isPresent() || baritone.getPathingBehavior().getPlanningStart().isPresent()
+      || baritone.getBuilderProcess().isActive() || baritone.getPortalTaskProcess().isActive();
     inactiveTicks = active ? 0 : inactiveTicks + 1;
     if (dead) {
       finish(TerminalReason.DEATH, false);
+      return;
+    }
+    Optional<TerminalReason> earlyFailure = runScenario().acceptance().earlyFailure(minecraft.player, run);
+    if (earlyFailure.isPresent()) {
+      finish(earlyFailure.get(), false);
       return;
     }
     if (runScenario().succeeded(minecraft.player, active, run)) {
@@ -241,6 +273,9 @@ public final class PlaytestHarnessBehavior extends Behavior {
       baritone.getMocapBehavior().stop();
     }
     boolean staleBefore = PlaytestRun.staleInputs(baritone);
+    if (baritone.getBuilderProcess().isActive()) {
+      baritone.getBuilderProcess().onLostControl();
+    }
     baritone.getPathingBehavior().forceCancel();
     baritone.getInputOverrideHandler().clearAllKeys();
     boolean staleAfter = PlaytestRun.staleInputs(baritone);
@@ -251,6 +286,32 @@ public final class PlaytestHarnessBehavior extends Behavior {
     if (quitOnFinish) {
       ctx.minecraft().stop();
     }
+  }
+
+  private boolean executeBaritoneCommands(java.util.List<String> commands) {
+    for (String raw : commands) {
+      String command = normalizeBaritoneCommand(raw);
+      if (command.isBlank()) {
+        continue;
+      }
+      if (!baritone.getCommandManager().execute(command)) {
+        finish(TerminalReason.COMMAND_FAILED, false);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static String bindScenarioCommand(String command, LocalPlayer player) {
+    return command.replace("{player}", player.getScoreboardName());
+  }
+
+  private static String normalizeBaritoneCommand(String raw) {
+    String command = raw.trim();
+    while (command.startsWith("#")) {
+      command = command.substring(1).stripLeading();
+    }
+    return command;
   }
 
   private PlaytestScenario runScenario() {
@@ -264,7 +325,9 @@ public final class PlaytestHarnessBehavior extends Behavior {
     commands.add("time set noon");
     commands.add("weather clear");
     commands.add("difficulty peaceful");
-    commands.add("kill @e[type=!minecraft:player]");
+    commands.add("ride @s dismount");
+    commands.add(String.format(Locale.ROOT, "execute at @s run kill @e[tag=%s,distance=..16]", TRIAL_ENTITY_TAG));
+    commands.addAll(trialEntityCleanupCommands(scenario));
     commands.add("gamemode survival @s");
     commands.add("effect clear @s");
     commands.add("effect give @s minecraft:instant_health 1 10 true");
@@ -272,9 +335,16 @@ public final class PlaytestHarnessBehavior extends Behavior {
       commands.add("effect give @s minecraft:saturation 1 10 true");
     }
     commands.add("clear @s");
-    commands.addAll(scenario.setupCommands());
     PlaytestScenario.Start start = scenario.start();
+    int startX = (int) Math.floor(start.x());
+    int startZ = (int) Math.floor(start.z());
+    String forceLoadStart = String.format(Locale.ROOT, "execute in %s run forceload add %d %d %d %d", scenario.dimension(), startX - 16, startZ - 16, startX + 16, startZ + 16);
+    String forceLoadStop = String.format(Locale.ROOT, "execute in %s run forceload remove %d %d %d %d", scenario.dimension(), startX - 16, startZ - 16, startX + 16, startZ + 16);
+    commands.add(forceLoadStart);
     commands.add(String.format(Locale.ROOT, "execute in %s run tp @s %.3f %.3f %.3f %.2f %.2f", scenario.dimension(), start.x(), start.y(), start.z(), start.yaw(), start.pitch()));
+    commands.addAll(scenario.setupCommands());
+    commands.add(String.format(Locale.ROOT, "execute in %s run tp @s %.3f %.3f %.3f %.2f %.2f", scenario.dimension(), start.x(), start.y(), start.z(), start.yaw(), start.pitch()));
+    commands.add(forceLoadStop);
     for (PlaytestScenario.LoadoutItem item : scenario.loadout()) {
       if (item.slot() >= 0) {
         commands.add(String.format(Locale.ROOT, "item replace entity @s hotbar.%d with %s %d", item.slot(), item.item(), item.count()));
@@ -282,17 +352,80 @@ public final class PlaytestHarnessBehavior extends Behavior {
         commands.add(String.format(Locale.ROOT, "give @s %s %d", item.item(), item.count()));
       }
     }
+    commands.addAll(scenario.postSetupCommands());
     return commands;
   }
 
+  private static java.util.List<String> trialEntityCleanupCommands(PlaytestScenario scenario) {
+    java.util.ArrayList<String> commands = new java.util.ArrayList<>();
+    PlaytestScenario.Start start = scenario.start();
+    commands.add(boundedTrialEntityKill(scenario.dimension(), start.x(), start.y(), start.z()));
+    PlaytestScenario.GoalSpec goal = scenario.goal();
+    double goalX = goal.x() + 0.5D;
+    double goalZ = goal.z() + 0.5D;
+    double dx = goalX - start.x();
+    double dz = goalZ - start.z();
+    if (dx * dx + dz * dz > TRIAL_ENTITY_CLEANUP_RADIUS * TRIAL_ENTITY_CLEANUP_RADIUS) {
+      commands.add(boundedTrialEntityKill(scenario.dimension(), goalX, goal.y(), goalZ));
+    }
+    commands.addAll(corridorTrialEntityCleanupCommands(scenario, start, goalX, goal.y(), goalZ));
+    return commands;
+  }
+
+  private static java.util.List<String> corridorTrialEntityCleanupCommands(PlaytestScenario scenario, PlaytestScenario.Start start, double goalX, double goalY, double goalZ) {
+    double dx = goalX - start.x();
+    double dz = goalZ - start.z();
+    int intervals = (int) Math.ceil(Math.hypot(dx, dz) / TRIAL_ENTITY_CORRIDOR_CLEANUP_STRIDE);
+    if (intervals <= 1 || intervals + 1 > TRIAL_ENTITY_CORRIDOR_CLEANUP_MAX_POINTS) {
+      return java.util.List.of();
+    }
+    java.util.ArrayList<String> commands = new java.util.ArrayList<>((intervals + 1) * 3);
+    for (int i = 0; i <= intervals; i++) {
+      double t = i / (double) intervals;
+      double x = start.x() + dx * t;
+      double y = start.y() + (goalY - start.y()) * t;
+      double z = start.z() + dz * t;
+      commands.add(forceLoadTrialEntityCleanupTile(scenario.dimension(), x, z, true));
+      commands.add(boundedTrialEntityKill(scenario.dimension(), x, y, z));
+      commands.add(forceLoadTrialEntityCleanupTile(scenario.dimension(), x, z, false));
+    }
+    return commands;
+  }
+
+  private static String forceLoadTrialEntityCleanupTile(String dimension, double x, double z, boolean add) {
+    int bx = (int) Math.floor(x);
+    int bz = (int) Math.floor(z);
+    int minX = bx - TRIAL_ENTITY_CORRIDOR_FORCELOAD_RADIUS;
+    int minZ = bz - TRIAL_ENTITY_CORRIDOR_FORCELOAD_RADIUS;
+    int maxX = bx + TRIAL_ENTITY_CORRIDOR_FORCELOAD_RADIUS;
+    int maxZ = bz + TRIAL_ENTITY_CORRIDOR_FORCELOAD_RADIUS;
+    return String.format(Locale.ROOT, "execute in %s run forceload %s %d %d %d %d", dimension, add ? "add" : "remove", minX, minZ, maxX, maxZ);
+  }
+
+  private static String boundedTrialEntityKill(String dimension, double x, double y, double z) {
+    return String.format(Locale.ROOT, "execute in %s positioned %.3f %.3f %.3f run kill @e[tag=%s,distance=..%d]", dimension, x, y, z, TRIAL_ENTITY_TAG, TRIAL_ENTITY_CLEANUP_RADIUS);
+  }
+
+  private void retryRequiredMount(LocalPlayer player) {
+    if (!runScenario().acceptance().requireHorseEncountered() || player.getVehicle() != null || phaseTicks % MOUNT_RETRY_TICKS != 0) {
+      return;
+    }
+    player.connection.sendCommand("execute as " + player.getScoreboardName() + " at @s run ride @s mount @e[type=minecraft:horse,tag=" + TRIAL_ENTITY_TAG + ",limit=1,sort=nearest]");
+  }
+
   private boolean readyToRun(LocalPlayer player) {
+    if (runScenario().acceptance().requireHorseEncountered() && !(player.getVehicle() instanceof AbstractHorse)) {
+      return false;
+    }
     PlaytestScenario.Start start = runScenario().start();
     BlockPos pos = BlockPos.containing(start.x(), start.y(), start.z());
-    double dx = player.getX() - start.x();
-    double dy = player.getY() - start.y();
-    double dz = player.getZ() - start.z();
-    boolean physicallySettled = player.onGround() || player.isInWater() || player.isUnderWater() || MovementHelper.isWater(ctx, pos) || MovementHelper.isWater(ctx, pos.below());
-    return ctx.world().hasChunkAt(pos) && dx * dx + dy * dy + dz * dz <= 4D && physicallySettled;
+    Entity body = player.getVehicle() == null ? player : player.getVehicle();
+    double dx = body.getX() - start.x();
+    double dy = body.getY() - start.y();
+    double dz = body.getZ() - start.z();
+    boolean physicallySettled =
+      body.onGround() || body.getDeltaMovement().lengthSqr() < 1.0E-5D || player.isInWater() || player.isUnderWater() || MovementHelper.isWater(ctx, pos) || MovementHelper.isWater(ctx, pos.below());
+    return ctx.world().hasChunkAt(pos) && dx * dx + dy * dy + dz * dz <= 4D && physicallySettled && player.fallDistance <= 0.01F && player.getHealth() >= player.getMaxHealth() - 1.0E-4F;
   }
 
   private void connect(String address) {

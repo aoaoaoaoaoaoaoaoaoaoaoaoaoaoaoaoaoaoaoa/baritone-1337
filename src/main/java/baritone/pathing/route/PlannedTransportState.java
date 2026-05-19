@@ -25,4 +25,8 @@ public record PlannedTransportState(TransportMode mode, boolean boatAvailable, b
   public static PlannedTransportState boat(boolean boatAvailable) {
     return new PlannedTransportState(TransportMode.BOAT, boatAvailable, true);
   }
+
+  public static PlannedTransportState horse(boolean boatAvailable) {
+    return new PlannedTransportState(TransportMode.HORSE, boatAvailable, false);
+  }
 }

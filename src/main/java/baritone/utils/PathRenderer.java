@@ -100,7 +100,7 @@ public final class PathRenderer implements IRenderer {
       behavior.getRenderableMacroPlan().ifPresent(plan -> drawMacroPlan(view, ctx.player(), plan));
     }
     if (current != null) {
-      drawRoutePlan(view, ctx.player(), current.renderPlan(true), true);
+      drawRoutePlan(view, ctx.player(), current.renderPlan(true, behavior.committedRouteProgress()), true);
     }
     if (next != null) {
       drawRoutePlan(view, ctx.player(), next.renderPlan(false), false);
@@ -120,6 +120,17 @@ public final class PathRenderer implements IRenderer {
         drawPath(view, mr.positions(), 0, settings.colorMostRecentConsidered.value, settings.fadePath.value, 10, 20);
         drawManySelectionBoxes(view, ctx.player(), Collections.singletonList(mr.getDest()), settings.colorMostRecentConsidered.value);
       });
+    });
+    behavior.getPlanningProbe().ifPresent(probe -> {
+      if (probe.bestPath().size() >= 2) {
+        drawPath(view, probe.bestPath(), 0, settings.colorBestPathSoFar.value, settings.fadePath.value, 10, 20, 0.78D);
+      }
+      if (probe.recentPath().size() >= 2) {
+        drawPath(view, probe.recentPath(), 0, settings.colorMostRecentConsidered.value, settings.fadePath.value, 10, 20, 0.78D);
+      }
+      if (probe.recentNode() != null) {
+        drawManySelectionBoxes(view, ctx.player(), Collections.singletonList(probe.recentNode()), settings.colorMostRecentConsidered.value);
+      }
     });
   }
 
@@ -166,18 +177,35 @@ public final class PathRenderer implements IRenderer {
   }
 
   private static Color routeColor(RouteRenderPlan.Segment segment, boolean current) {
+    if (segment.role() == RouteRenderPlan.SegmentRole.CANDIDATE) {
+      return segment.kind() == RouteRenderPlan.SegmentKind.RELAXED ? blend(settings.colorBestPathSoFar.value, new Color(128, 255, 64), 0.42D) : settings.colorBestPathSoFar.value;
+    }
+    if (current) {
+      return segment.kind() == RouteRenderPlan.SegmentKind.RELAXED ? blend(settings.colorCurrentPath.value, new Color(128, 255, 64), 0.24D) : settings.colorCurrentPath.value;
+    }
     if (segment.mode() == TransportMode.SWIM) {
       return settings.colorMacroSwim.value;
     }
     if (segment.mode() == TransportMode.BOAT) {
       return segment.terminal() ? settings.colorMacroBoatTerminal.value : settings.colorMacroBoatTransit.value;
     }
-    return current ? settings.colorCurrentPath.value : settings.colorNextPath.value;
+    return settings.colorNextPath.value;
+  }
+
+  private static Color blend(Color a, Color b, double t) {
+    double u = 1D - t;
+    return new Color(clampColor(a.getRed() * u + b.getRed() * t), clampColor(a.getGreen() * u + b.getGreen() * t), clampColor(a.getBlue() * u + b.getBlue() * t),
+      clampColor(a.getAlpha() * u + b.getAlpha() * t));
+  }
+
+  private static int clampColor(double value) {
+    return Mth.clamp((int) Math.round(value), 0, 255);
   }
 
   private static double routeOffset(RouteRenderPlan.Segment segment) {
     return switch (segment.mode()) {
       case BOAT -> 0.70D;
+      case HORSE -> 0.78D;
       case SWIM -> 0.58D;
       default -> 0.5D;
     };
@@ -301,11 +329,12 @@ public final class PathRenderer implements IRenderer {
       GoalXZ goalPos = (GoalXZ) goal;
       minY = ctx.world().getMinY();
       maxY = ctx.world().getMaxY();
+      int radius = goalPos.xzRadius();
 
-      minX = view.x(goalPos.getX() + 0.002);
-      maxX = view.x(goalPos.getX() + 1 - 0.002);
-      minZ = view.z(goalPos.getZ() + 0.002);
-      maxZ = view.z(goalPos.getZ() + 1 - 0.002);
+      minX = view.x(goalPos.getX() - radius + 0.002);
+      maxX = view.x(goalPos.getX() + radius + 1 - 0.002);
+      minZ = view.z(goalPos.getZ() - radius + 0.002);
+      maxZ = view.z(goalPos.getZ() + radius + 1 - 0.002);
 
       y1 = 0;
       y2 = 0;

@@ -1,9 +1,7 @@
 package baritone.pathing.macro.core;
 
 import baritone.Baritone;
-import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.utils.BetterBlockPos;
-import baritone.pathing.macro.biome.BiomeSurfaceCost;
 import baritone.pathing.macro.value.DynamicValueGraph;
 import net.minecraft.world.level.Level;
 
@@ -12,15 +10,17 @@ final class MacroValueGraph implements DynamicValueGraph {
 
   private MacroAtlas atlas;
   private final MacroPolicy policy;
+  private final MacroTraversalProfile profile;
   private final int minCellX;
   private final int maxCellX;
   private final int minCellZ;
   private final int maxCellZ;
   private final boolean floor;
 
-  MacroValueGraph(MacroAtlas atlas, MacroPolicy policy, int minCellX, int maxCellX, int minCellZ, int maxCellZ, boolean floor) {
+  MacroValueGraph(MacroAtlas atlas, MacroPolicy policy, MacroTraversalProfile profile, int minCellX, int maxCellX, int minCellZ, int maxCellZ, boolean floor) {
     this.atlas = atlas;
     this.policy = policy;
+    this.profile = profile;
     this.minCellX = minCellX;
     this.maxCellX = maxCellX;
     this.minCellZ = minCellZ;
@@ -92,10 +92,9 @@ final class MacroValueGraph implements DynamicValueGraph {
     BetterBlockPos to = atlas.center(nx, nz);
     double distance = Math.hypot(to.x - from.x, to.z - from.z);
     if (floor) {
-      BiomeSurfaceCost prior = atlas.surfaceCost(costCellX, costCellZ);
-      double expected = policy.score(MacroCostVector.surfacePerBlock(prior).times(distance), MacroAgentState.pedestrian(), MacroAgentState.pedestrian());
-      return Math.min(expected, GoalXZ.calculate(to.x - from.x, to.z - from.z));
+      double expected = policy.score(profile.surfaceCost(atlas, costCellX, costCellZ, distance), profile.canonicalSurfaceState(), profile.canonicalSurfaceState());
+      return Math.min(expected, distance * profile.lowerBoundTicksPerBlock(atlas.context()));
     }
-    return policy.score(MacroCostVector.surfacePerBlock(atlas.surfaceCost(costCellX, costCellZ)).times(distance), MacroAgentState.pedestrian(), MacroAgentState.pedestrian());
+    return policy.score(profile.surfaceCost(atlas, costCellX, costCellZ, distance), profile.canonicalSurfaceState(), profile.canonicalSurfaceState());
   }
 }

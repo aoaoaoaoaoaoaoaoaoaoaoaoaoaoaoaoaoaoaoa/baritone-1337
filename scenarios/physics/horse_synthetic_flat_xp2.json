@@ -1,0 +1,42 @@
+{
+  "id": "horse_synthetic_flat_xp2",
+  "worldKey": "physics_synthetic_v1",
+  "seed": "baritone-playtest-physics",
+  "dimension": "minecraft:overworld",
+  "timeoutSeconds": 120,
+  "horse": {
+    "movementSpeed": 0.3,
+    "jumpStrength": 0.9
+  },
+  "input": {
+    "forward": true
+  },
+  "terrain": {
+    "minDx": -3,
+    "maxDx": 5,
+    "minDz": -3,
+    "maxDz": 3,
+    "floorDy": -3,
+    "clearDy": 5,
+    "defaultHeight": 0,
+    "block": "minecraft:stone"
+  },
+  "ticks": 35,
+  "endRadius": 0.9,
+  "maxEndYError": 1.25,
+  "requireNoDamage": true,
+  "requireMounted": true,
+  "perturbations": {
+    "longitudinal": [-0.12, 0.0, 0.12],
+    "lateral": [-0.12, 0.0, 0.12],
+    "yaw": [-3.0, 0.0, 3.0]
+  },
+  "cases": [
+    {
+      "id": "flat_xp2",
+      "start": {"x": 20.5, "y": 114.0, "z": 0.5, "yaw": -90.0},
+      "end": {"x": 22.5, "y": 114.0, "z": 0.5},
+      "minY": 113.8
+    }
+  ]
+}

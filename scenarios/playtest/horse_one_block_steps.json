@@ -1,0 +1,59 @@
+{
+  "id": "horse_one_block_steps",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1280.5,
+    "y": 80.0,
+    "z": -1280.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "pointxz",
+    "x": 1280,
+    "y": 80,
+    "z": -1255
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld run forceload add 1264 -1296 1296 -1248",
+    "execute in minecraft:overworld run fill 1268 70 -1292 1292 96 -1248 minecraft:air",
+    "execute in minecraft:overworld run fill 1268 78 -1292 1292 78 -1248 minecraft:stone",
+    "execute in minecraft:overworld run fill 1268 79 -1292 1292 79 -1274 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1268 79 -1273 1292 80 -1268 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1268 79 -1267 1292 79 -1262 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1268 79 -1261 1292 80 -1256 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1268 79 -1255 1292 79 -1248 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1267 80 -1292 1267 84 -1248 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1293 80 -1292 1293 84 -1248 minecraft:bedrock",
+    "execute in minecraft:overworld run summon minecraft:horse 1280.5 80 -1280.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}",
+    "execute in minecraft:overworld run forceload remove 1264 -1296 1296 -1248"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "timeoutTicks": 340,
+  "successRadius": 3.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "maxJumpTicks": 0,
+    "maxTicksToPlanning": 100,
+    "maxTicksToActuation": 140
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

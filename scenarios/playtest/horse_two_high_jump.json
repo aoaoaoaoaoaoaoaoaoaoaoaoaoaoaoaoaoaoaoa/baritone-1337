@@ -1,0 +1,56 @@
+{
+  "id": "horse_two_high_jump",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1270.5,
+    "y": 80.0,
+    "z": -1260.5,
+    "yaw": -90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "pointxz",
+    "x": 1288,
+    "y": 82,
+    "z": -1260
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld run forceload add 1260 -1272 1296 -1248",
+    "execute in minecraft:overworld run fill 1262 70 -1270 1294 96 -1250 minecraft:air",
+    "execute in minecraft:overworld run fill 1262 69 -1270 1294 69 -1250 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1264 79 -1264 1276 79 -1256 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1278 79 -1264 1292 81 -1256 minecraft:stone",
+    "execute in minecraft:overworld run fill 1264 80 -1265 1292 86 -1265 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1264 80 -1255 1292 86 -1255 minecraft:bedrock",
+    "execute in minecraft:overworld run summon minecraft:horse 1270.5 80 -1260.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}",
+    "execute in minecraft:overworld run forceload remove 1260 -1272 1296 -1248"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "timeoutTicks": 360,
+  "successRadius": 3.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "minJumpTicks": 1,
+    "maxTicksToPlanning": 100,
+    "maxTicksToActuation": 140
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

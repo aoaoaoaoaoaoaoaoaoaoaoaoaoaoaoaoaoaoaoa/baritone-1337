@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import net.minecraft.core.BlockPos;
 
-public sealed interface RouteLeg permits PathRouteLeg, SurfaceRouteLeg {
+public sealed interface RouteLeg permits PathRouteLeg, SurfaceRouteLeg, HorseRouteLeg {
   BetterBlockPos src();
 
   BetterBlockPos dest();

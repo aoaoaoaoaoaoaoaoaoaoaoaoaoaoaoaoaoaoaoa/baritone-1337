@@ -9,9 +9,11 @@ import baritone.pathing.macro.biome.BiomeTraversalPriorTable;
 import baritone.pathing.macro.biome.SeedlessBiomePredictor;
 import baritone.pathing.macro.water.SurfaceWaterAtlas;
 import baritone.pathing.movement.CalculationContext;
+import baritone.pathing.movement.MovementHelper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
@@ -32,6 +34,7 @@ public final class MacroAtlas {
   private final double unknownPenalty;
   private final int fallbackY;
   private final Long2ObjectOpenHashMap<BiomeMacroCell> factCache = new Long2ObjectOpenHashMap<>();
+  private final Long2ByteOpenHashMap surfaceWaterCostCache = new Long2ByteOpenHashMap();
   private final LongOpenHashSet factMisses = new LongOpenHashSet();
 
   private MacroAtlas(CalculationContext context, int cellBlocks, int scale, Optional<BiomeFactAtlas> biomeFacts, BiomeTraversalPriorTable biomePriors, boolean empiricalPriors,
@@ -46,6 +49,7 @@ public final class MacroAtlas {
     this.water = water;
     this.unknownPenalty = unknownPenalty;
     this.fallbackY = fallbackY;
+    this.surfaceWaterCostCache.defaultReturnValue((byte) 0);
   }
 
   public static MacroAtlas build(CalculationContext context, BetterBlockPos start) {
@@ -65,6 +69,10 @@ public final class MacroAtlas {
 
   public int cellBlocks() {
     return cellBlocks;
+  }
+
+  CalculationContext context() {
+    return context;
   }
 
   public int scale() {
@@ -128,6 +136,10 @@ public final class MacroAtlas {
     return biomeFact(cellX, cellZ).map(cell -> surfaceWaterBiome(cell.biome())).orElse(false);
   }
 
+  public boolean surfaceWaterCostCell(int cellX, int cellZ) {
+    return factualSurfaceWaterCostCell(cellX, cellZ) || configuredWaterFact(cellX, cellZ).isPresent() || biomeFact(cellX, cellZ).map(cell -> surfaceWaterBiome(cell.biome())).orElse(false);
+  }
+
   public BetterBlockPos surfaceWaterCenter(int cellX, int cellZ) {
     return configuredWaterFact(cellX, cellZ).or(() -> biomeFact(cellX, cellZ).filter(cell -> surfaceWaterBiome(cell.biome()))).map(cell -> cell.center(cellBlocks))
       .orElseGet(() -> center(cellX, cellZ));
@@ -147,6 +159,54 @@ public final class MacroAtlas {
 
   private Optional<BiomeMacroCell> configuredWaterFact(int cellX, int cellZ) {
     return biomeFacts.flatMap(atlas -> atlas.cell(cellX, cellZ)).filter(cell -> surfaceWaterBiome(cell.biome()));
+  }
+
+  private boolean factualSurfaceWaterCostCell(int cellX, int cellZ) {
+    if (!macroCellKnown(cellX, cellZ)) {
+      return false;
+    }
+    long key = BiomeMacroCell.pack(cellX, cellZ);
+    byte cached = surfaceWaterCostCache.get(key);
+    if (cached != 0) {
+      return cached == 1;
+    }
+    boolean water = computeFactualSurfaceWaterCostCell(cellX, cellZ);
+    surfaceWaterCostCache.put(key, water ? (byte) 1 : (byte) 2);
+    return water;
+  }
+
+  private boolean computeFactualSurfaceWaterCostCell(int cellX, int cellZ) {
+    int baseX = cellX * cellBlocks;
+    int baseZ = cellZ * cellBlocks;
+    int centerX = baseX + cellBlocks / 2;
+    int centerZ = baseZ + cellBlocks / 2;
+    int q = Math.max(1, cellBlocks / 4);
+    int hintY = center(cellX, cellZ).y;
+    if (surfaceWaterColumn(centerX, centerZ, hintY)) {
+      return true;
+    }
+    int hits = 0;
+    hits += surfaceWaterColumn(centerX - q, centerZ, hintY) ? 1 : 0;
+    hits += surfaceWaterColumn(centerX + q, centerZ, hintY) ? 1 : 0;
+    hits += surfaceWaterColumn(centerX, centerZ - q, hintY) ? 1 : 0;
+    hits += surfaceWaterColumn(centerX, centerZ + q, hintY) ? 1 : 0;
+    hits += surfaceWaterColumn(centerX - q, centerZ - q, hintY) ? 1 : 0;
+    hits += surfaceWaterColumn(centerX + q, centerZ + q, hintY) ? 1 : 0;
+    return hits >= 3;
+  }
+
+  private boolean surfaceWaterColumn(int x, int z, int hintY) {
+    if (!context.hasPathingData(x, z)) {
+      return false;
+    }
+    int minY = Math.max(context.world.getMinY(), hintY - 4);
+    int maxY = Math.min(context.world.getMaxY() - 2, hintY + 1);
+    for (int y = maxY; y >= minY; y--) {
+      if (MovementHelper.isWater(context.get(x, y, z)) && !MovementHelper.isWater(context.get(x, y + 1, z))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private boolean macroCellKnown(int cellX, int cellZ) {

@@ -1,0 +1,1837 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import html
+import itertools
+import json
+import math
+import random
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+
+REPO = Path(__file__).resolve().parents[1]
+PLAYTEST = REPO / "scripts" / "playtest"
+START_X = 20.0
+START_Y = 114.0
+START_Z = 0.0
+HALF_WIDTH = 1.3965 / 2.0
+
+MOVES: dict[str, tuple[int, int]] = {
+  "XP": (1, 0),
+  "XN": (-1, 0),
+  "ZP": (0, 1),
+  "ZN": (0, -1),
+  "XP_ZP": (1, 1),
+  "XP_ZN": (1, -1),
+  "XN_ZP": (-1, 1),
+  "XN_ZN": (-1, -1),
+}
+ROUTELETS = ("XP:XP", "XP:XP_ZP", "XP:ZP", "XP:XN_ZP", "XP_ZP:XP", "XP_ZP:ZP", "XP_ZP:XP_ZN")
+
+SURFACE_DEEP = -128
+NO_CEILING = 127
+TRACE_FALL_CLIP_BELOW = 3.0
+
+
+@dataclass(frozen=True, order=True)
+class Cell:
+  dx: int
+  dz: int
+
+
+@dataclass(frozen=True)
+class Profile:
+  surface: int
+  ceiling: int = NO_CEILING
+
+  @staticmethod
+  def parse(raw: str) -> "Profile":
+    surface, _, ceiling = raw.partition("/")
+    return Profile(parse_surface(surface), parse_ceiling(ceiling or "none"))
+
+  def mask(self, floor_dy: int, clear_dy: int) -> int:
+    mask = 0
+    if self.surface != SURFACE_DEEP:
+      for dy in range(floor_dy, clear_dy + 1):
+        if floor_dy < dy <= self.surface:
+          mask |= 1 << (dy - floor_dy)
+    if self.ceiling != NO_CEILING and floor_dy <= self.ceiling <= clear_dy:
+      mask |= 1 << (self.ceiling - floor_dy)
+    return mask
+
+  def label(self) -> str:
+    s = "deep" if self.surface == SURFACE_DEEP else str(self.surface)
+    c = "open" if self.ceiling == NO_CEILING else str(self.ceiling)
+    return f"{s}/{c}"
+
+
+def parse_surface(raw: str) -> int:
+  token = raw.strip().lower()
+  return SURFACE_DEEP if token in ("deep", "pit", "void", "none") else int(token, 0)
+
+
+def parse_ceiling(raw: str) -> int:
+  token = raw.strip().lower()
+  return NO_CEILING if token in ("", "none", "open", "air", "n") else int(token, 0)
+
+
+def yaw_for(dx: int, dz: int) -> float:
+  return math.degrees(math.atan2(-dx, dz))
+
+
+def prefix_mask(height: int, floor_dy: int, clear_dy: int) -> int:
+  mask = 0
+  for dy in range(floor_dy, clear_dy + 1):
+    if floor_dy < dy <= height:
+      mask |= 1 << (dy - floor_dy)
+  return mask
+
+
+def segment_intersects_cell(sx: float, sz: float, ex: float, ez: float, cell: Cell, radius: float, min_t: float = 1.0e-6) -> bool:
+  t0 = 0.0
+  t1 = 1.0
+  vx = ex - sx
+  vz = ez - sz
+  planes = (
+    (-vx, sx - (cell.dx - radius)),
+    (vx, (cell.dx + 1 + radius) - sx),
+    (-vz, sz - (cell.dz - radius)),
+    (vz, (cell.dz + 1 + radius) - sz),
+  )
+  for p, q in planes:
+    if abs(p) < 1.0e-12:
+      if q < 0.0:
+        return False
+      continue
+    r = q / p
+    if p < 0.0:
+      if r > t1:
+        return False
+      t0 = max(t0, r)
+    else:
+      if r < t0:
+        return False
+      t1 = min(t1, r)
+  return t1 > min_t
+
+
+def source_only(cell: Cell, radius: float) -> bool:
+  return source_only_at(cell, 0.0, 0.0, radius)
+
+
+def source_only_at(cell: Cell, sx: float, sz: float, radius: float) -> bool:
+  return cell.dx < sx + radius and cell.dx + 1 > sx - radius and cell.dz < sz + radius and cell.dz + 1 > sz - radius
+
+
+def candidate_cells(dx: int, dz: int, radius: float, perturbation_radius: float, overshoot: float) -> list[Cell]:
+  return candidate_cells_segment(0.0, 0.0, float(dx), float(dz), radius, perturbation_radius, overshoot)
+
+
+def candidate_cells_segment(sx: float, sz: float, tx: float, tz: float, radius: float, perturbation_radius: float, overshoot: float) -> list[Cell]:
+  dx = tx - sx
+  dz = tz - sz
+  ux, uz = unit(dx, dz)
+  ex = tx + ux * overshoot
+  ez = tz + uz * overshoot
+  r = radius + perturbation_radius
+  min_x = math.floor(min(sx, ex) - r)
+  max_x = math.floor(max(sx, ex) + r)
+  min_z = math.floor(min(sz, ez) - r)
+  max_z = math.floor(max(sz, ez) + r)
+  out: list[Cell] = []
+  for x in range(min_x, max_x + 1):
+    for z in range(min_z, max_z + 1):
+      cell = Cell(x, z)
+      if source_only_at(cell, sx, sz, r):
+        continue
+      if segment_intersects_cell(sx, sz, ex, ez, cell, r):
+        out.append(cell)
+  return sorted(set(out))
+
+
+def unit(dx: int, dz: int) -> tuple[float, float]:
+  length = math.hypot(dx, dz)
+  return dx / length, dz / length
+
+
+def default_bounds(cells: Iterable[Cell], halo: int) -> tuple[int, int, int, int]:
+  cells = list(cells)
+  return (
+    min([cell.dx for cell in cells] + [0]) - halo,
+    max([cell.dx for cell in cells] + [0]) + halo,
+    min([cell.dz for cell in cells] + [0]) - halo,
+    max([cell.dz for cell in cells] + [0]) + halo,
+  )
+
+
+def profile_domain(raw: str) -> tuple[Profile, ...]:
+  out = tuple(Profile.parse(token) for token in raw.split(",") if token.strip())
+  if not out:
+    raise SystemExit("empty profile domain")
+  if len({profile.label() for profile in out}) != len(out):
+    raise SystemExit("duplicate profile labels")
+  return out
+
+
+def product_or_sample(domain: tuple[Profile, ...], width: int, max_cases: int, seed: str) -> Iterable[tuple[Profile, ...]]:
+  total = len(domain) ** width
+  if max_cases <= 0 or max_cases >= total:
+    return itertools.product(domain, repeat=width)
+  rng = random.Random(seed)
+  seen: set[tuple[int, ...]] = set()
+
+  def sampled() -> Iterable[tuple[Profile, ...]]:
+    while len(seen) < max_cases:
+      ordinal = tuple(rng.randrange(len(domain)) for _ in range(width))
+      if ordinal in seen:
+        continue
+      seen.add(ordinal)
+      yield tuple(domain[i] for i in ordinal)
+
+  return sampled()
+
+
+def terrain_columns(cells: list[Cell], vector: tuple[Profile, ...], floor_dy: int, clear_dy: int) -> list[dict[str, int]]:
+  return [{"dx": cell.dx, "dz": cell.dz, "mask": profile.mask(floor_dy, clear_dy)} for cell, profile in zip(cells, vector, strict=True)]
+
+
+def support_quadrants(center_x: float, center_z: float, cells: list[Cell], vector: tuple[Profile, ...], default: Profile, feet_dy: int, half_width: float) -> int:
+  profiles = dict(zip(cells, vector, strict=True))
+  support = 0
+  eps = 1.0e-6
+  for ox in (-half_width + eps, half_width - eps):
+    for oz in (-half_width + eps, half_width - eps):
+      profile = profiles.get(Cell(math.floor(center_x + ox), math.floor(center_z + oz)), default)
+      support += profile.surface == feet_dy
+  return support
+
+
+def digest(vector: tuple[Profile, ...]) -> str:
+  return "-".join(profile.label().replace("/", "") for profile in vector)
+
+
+def archetype_cases(args: argparse.Namespace, move: str, dx: int, dz: int, cells: list[Cell], bounds: tuple[int, int, int, int]) -> list[dict[str, Any]]:
+  floor = Profile(0)
+  deep = Profile(SURFACE_DEEP)
+  cases: list[dict[str, Any]] = []
+  for kind, side in (("flat", 0), ("left_void", -1), ("right_void", 1), ("one_wide_bridge", 2)):
+    vector: list[Profile] = []
+    for cell in cells:
+      value = floor
+      if kind in ("left_void", "right_void"):
+        value = deep if lateral_side(dx, dz, cell) == side else floor
+      elif kind == "one_wide_bridge":
+        value = floor if near_centerline(dx, dz, cell, 0.75) else deep
+      vector.append(value)
+    cases.append(case(args, f"{move}_{kind}", dx, dz, cells, tuple(vector), bounds, 0))
+  return cases
+
+
+def lateral_side(dx: int, dz: int, cell: Cell) -> int:
+  cx = cell.dx + 0.5
+  cz = cell.dz + 0.5
+  cross = dx * cz - dz * cx
+  return -1 if cross < -1.0e-9 else 1 if cross > 1.0e-9 else 0
+
+
+def near_centerline(dx: int, dz: int, cell: Cell, radius: float) -> bool:
+  ux, uz = unit(dx, dz)
+  cx = cell.dx + 0.5
+  cz = cell.dz + 0.5
+  progress = cx * ux + cz * uz
+  lateral = abs(cx * -uz + cz * ux)
+  return -0.75 <= progress <= math.hypot(dx, dz) + 0.75 and lateral <= radius
+
+
+def case(args: argparse.Namespace, case_id: str, dx: int, dz: int, cells: list[Cell], vector: tuple[Profile, ...], bounds: tuple[int, int, int, int], end_dy: int) -> dict[str, Any]:
+  min_dx, max_dx, min_dz, max_dz = bounds
+  default = Profile(0)
+  return {
+    "id": case_id,
+    "start": {"x": START_X, "y": START_Y, "z": START_Z, "yaw": yaw_for(dx, dz)},
+    "end": {"x": START_X + dx, "y": START_Y + end_dy, "z": START_Z + dz},
+    "minY": START_Y + min(0, end_dy) - args.fall_tolerance,
+    "terrain": {
+      "minDx": min_dx,
+      "maxDx": max_dx,
+      "minDz": min_dz,
+      "maxDz": max_dz,
+      "floorDy": args.floor_dy,
+      "clearDy": args.clear_dy,
+      "defaultMask": prefix_mask(0, args.floor_dy, args.clear_dy),
+      "block": "minecraft:stone",
+      "columns": terrain_columns(cells, vector, args.floor_dy, args.clear_dy),
+    },
+    "cornerCruise": {
+      "move": [dx, dz],
+      "cells": [[cell.dx, cell.dz] for cell in cells],
+      "profiles": [profile.label() for profile in vector],
+      "sourceSupport": support_quadrants(0.0, 0.0, cells, vector, default, 0, args.horse_half_width),
+      "targetSupport": support_quadrants(float(dx), float(dz), cells, vector, default, end_dy, args.horse_half_width),
+      "endDy": end_dy,
+    },
+  }
+
+
+def scenario(args: argparse.Namespace) -> dict[str, Any]:
+  cases: list[dict[str, Any]] = []
+  mining: list[dict[str, Any]] = []
+  domain = profile_domain(args.profiles)
+  moves = args.move or ["XP", "ZP", "XP_ZP", "XP_ZN"]
+  for move in moves:
+    dx, dz = MOVES[move]
+    cells = candidate_cells(dx, dz, args.horse_half_width, args.perturbation_radius, args.overshoot_horizon)
+    bounds = default_bounds(cells, args.halo)
+    mining.append({"move": move, "dx": dx, "dz": dz, "cells": [[cell.dx, cell.dz] for cell in cells], "profiles": [profile.label() for profile in domain]})
+    if args.archetypes:
+      cases.extend(c for c in archetype_cases(args, move, dx, dz, cells, bounds) if support_allowed(args, c))
+    for ordinal, vector in enumerate(product_or_sample(domain, len(cells), args.max_cases, f"{args.seed}:{move}:{args.sample_seed}")):
+      c = case(args, f"{move}_{ordinal:06d}_{digest(vector)}", dx, dz, cells, vector, bounds, args.end_dy)
+      if support_allowed(args, c):
+        cases.append(c)
+  return {
+    "id": args.id,
+    "worldKey": args.world_key,
+    "seed": args.seed,
+    "dimension": "minecraft:overworld",
+    "timeoutSeconds": args.timeout_seconds,
+    "horse": {"movementSpeed": args.movement_speed, "jumpStrength": args.jump_strength, "initialSpeed": 0.0},
+    "input": {"forward": True},
+    "ticks": args.ticks,
+    "endRadius": args.end_radius,
+    "maxEndYError": args.max_end_y_error,
+    "requireNoDamage": True,
+    "requireMounted": True,
+    "stopAtEnd": True,
+    "failOnOvershoot": True,
+    "overshootSlack": args.overshoot_slack,
+    "emitTrials": args.emit_trials,
+    "perturbations": {
+      "longitudinal": args.longitudinal,
+      "lateral": args.lateral,
+      "yaw": args.yaw,
+      "initialSpeed": args.initial_speed,
+      "initialLateralSpeed": args.initial_lateral_speed,
+    },
+    "cornerCruiseMining": {"schema": 1, "moves": mining, "archetypes": args.archetypes},
+    "cases": cases,
+  }
+
+
+def translated_cells(cells: Iterable[Cell], ox: int, oz: int) -> list[Cell]:
+  return [Cell(cell.dx + ox, cell.dz + oz) for cell in cells]
+
+
+def routelet_case(args: argparse.Namespace, case_id: str, first: str, second: str, cells: list[Cell], vector: tuple[Profile, ...], bounds: tuple[int, int, int, int]) -> dict[str, Any]:
+  dx1, dz1 = MOVES[first]
+  dx2, dz2 = MOVES[second]
+  lead = args.lead_in_blocks
+  tail = args.tail_blocks
+  sx = START_X - lead * dx1
+  sz = START_Z - lead * dz1
+  ox = lead * dx1
+  oz = lead * dz1
+  min_dx, max_dx, min_dz, max_dz = bounds
+  terrain_cells = translated_cells(cells, ox, oz)
+  default = Profile(0)
+  pivot_support = support_quadrants(0.0, 0.0, cells, vector, default, args.end_dy, args.horse_half_width)
+  target_supports = [pivot_support]
+  for i in range(1, tail + 2):
+    target_supports.append(support_quadrants(float(dx2 * i), float(dz2 * i), cells, vector, default, args.end_dy, args.horse_half_width))
+  targets = [{"x": START_X, "y": START_Y + args.end_dy, "z": START_Z}]
+  for i in range(1, tail + 2):
+    targets.append({"x": START_X + dx2 * i, "y": START_Y + args.end_dy, "z": START_Z + dz2 * i})
+  terminal = targets[-1]
+  return {
+    "id": case_id,
+    "start": {"x": sx, "y": START_Y, "z": sz, "yaw": yaw_for(dx1, dz1)},
+    "targets": targets,
+    "end": terminal,
+    "minY": START_Y + min(0, args.end_dy) - args.fall_tolerance,
+    "terrain": {
+      "minDx": min_dx + ox,
+      "maxDx": max_dx + ox,
+      "minDz": min_dz + oz,
+      "maxDz": max_dz + oz,
+      "floorDy": args.floor_dy,
+      "clearDy": args.clear_dy,
+      "defaultMask": prefix_mask(0, args.floor_dy, args.clear_dy),
+      "block": "minecraft:stone",
+      "columns": terrain_columns(terrain_cells, vector, args.floor_dy, args.clear_dy),
+    },
+    "cornerCruise": {
+      "routelet": f"{first}:{second}",
+      "move": [dx2, dz2],
+      "leadInMove": [dx1, dz1],
+      "leadInBlocks": lead,
+      "tailBlocks": tail,
+      "cells": [[cell.dx, cell.dz] for cell in cells],
+      "profiles": [profile.label() for profile in vector],
+      "sourceSupport": support_quadrants(float(-dx1), float(-dz1), cells, vector, default, args.end_dy, args.horse_half_width),
+      "targetSupport": pivot_support,
+      "outgoingSupport": target_supports[1],
+      "finalSupport": target_supports[-1],
+      "targetSupports": target_supports,
+      "endDy": args.end_dy,
+    },
+  }
+
+
+def routelet_cells(first: str, second: str, args: argparse.Namespace) -> list[Cell]:
+  dx1, dz1 = MOVES[first]
+  dx2, dz2 = MOVES[second]
+  incoming = candidate_cells_segment(float(-dx1), float(-dz1), 0.0, 0.0, args.horse_half_width, args.perturbation_radius, args.overshoot_horizon)
+  outgoing = candidate_cells_segment(0.0, 0.0, float(dx2 * (args.tail_blocks + 1)), float(dz2 * (args.tail_blocks + 1)), args.horse_half_width, args.perturbation_radius, args.overshoot_horizon)
+  return sorted(set(incoming) | set(outgoing))
+
+
+def parse_routelet(raw: str) -> tuple[str, str]:
+  first, sep, second = raw.partition(":")
+  if sep != ":" or first not in MOVES or second not in MOVES:
+    raise SystemExit(f"invalid routelet {raw!r}; expected MOVE:MOVE")
+  return first, second
+
+
+def routelet_scenario(args: argparse.Namespace) -> dict[str, Any]:
+  cases: list[dict[str, Any]] = []
+  mining: list[dict[str, Any]] = []
+  domain = profile_domain(args.profiles)
+  for raw in args.routelet or list(ROUTELETS):
+    first, second = parse_routelet(raw)
+    cells = routelet_cells(first, second, args)
+    dx1, dz1 = MOVES[first]
+    dx2, dz2 = MOVES[second]
+    bounds = default_bounds(cells + [Cell(-args.lead_in_blocks * dx1, -args.lead_in_blocks * dz1), Cell(dx2 * (args.tail_blocks + 1), dz2 * (args.tail_blocks + 1))], args.halo)
+    mining.append({
+      "routelet": f"{first}:{second}",
+      "first": [dx1, dz1],
+      "second": [dx2, dz2],
+      "leadInBlocks": args.lead_in_blocks,
+      "tailBlocks": args.tail_blocks,
+      "cells": [[cell.dx, cell.dz] for cell in cells],
+      "profiles": [profile.label() for profile in domain],
+    })
+    filtering = args.target_support is not None or args.min_successor_support > 0 and not args.allow_known_bad
+    sample_budget = args.max_cases if args.max_cases == 0 or not filtering else args.max_cases * 128
+    accepted = 0
+    for ordinal, vector in enumerate(product_or_sample(domain, len(cells), sample_budget, f"{args.seed}:routelet:{first}:{second}:{args.sample_seed}")):
+      c = routelet_case(args, f"{first}_TO_{second}_{ordinal:06d}_{digest(vector)}", first, second, cells, vector, bounds)
+      if support_allowed(args, c):
+        cases.append(c)
+        accepted += 1
+        if args.max_cases > 0 and accepted >= args.max_cases:
+          break
+  return {
+    "id": args.id,
+    "worldKey": args.world_key,
+    "seed": args.seed,
+    "dimension": "minecraft:overworld",
+    "timeoutSeconds": args.timeout_seconds,
+    "horse": {"movementSpeed": args.movement_speed, "jumpStrength": args.jump_strength, "initialSpeed": 0.0},
+    "input": {"forward": True},
+    "ticks": args.ticks,
+    "endRadius": args.end_radius,
+    "maxEndYError": args.max_end_y_error,
+    "requireNoDamage": True,
+    "requireMounted": True,
+    "stopAtEnd": True,
+    "failOnOvershoot": True,
+    "overshootSlack": args.overshoot_slack,
+    "emitTrials": args.emit_trials,
+    "perturbations": {
+      "longitudinal": args.longitudinal,
+      "lateral": args.lateral,
+      "yaw": args.yaw,
+      "initialSpeed": args.initial_speed,
+      "initialLateralSpeed": args.initial_lateral_speed,
+    },
+    "cornerCruiseMining": {"schema": 2, "routelets": mining},
+    "cases": cases,
+  }
+
+
+def support_allowed(args: argparse.Namespace, c: dict[str, Any]) -> bool:
+  meta = c["cornerCruise"]
+  if args.target_support is not None and meta["targetSupport"] not in args.target_support:
+    return False
+  if getattr(args, "allow_known_bad", False):
+    return True
+  min_successor = getattr(args, "min_successor_support", None)
+  return min_successor is None or all(support >= min_successor for support in meta.get("targetSupports", [])[1:])
+
+
+def write_json(path: Path, payload: Any) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  tmp = path.with_suffix(path.suffix + ".tmp")
+  tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+  tmp.replace(path)
+
+
+def read_json(path: Path) -> Any:
+  return json.loads(path.read_text())
+
+
+def iter_trace(path: Path) -> Iterable[dict[str, Any]]:
+  with path.open(encoding="utf-8") as file:
+    for line in file:
+      line = line.strip()
+      if not line:
+        continue
+      sample = json.loads(line)
+      if sample.get("scope") == "mocap" and sample.get("type") == "tick" and sample.get("vehicle"):
+        yield sample
+
+
+def result_dir(raw: Path) -> Path:
+  if raw.is_dir():
+    return raw
+  if raw.name == "trace.jsonl":
+    return raw.parent
+  return raw.parent if (raw.parent / "trace.jsonl").is_file() else raw
+
+
+def trace_path(raw: Path) -> Path:
+  d = result_dir(raw)
+  return raw if raw.name == "trace.jsonl" else d / "trace.jsonl"
+
+
+def summary_path(raw: Path) -> Path:
+  return result_dir(raw) / "summary.json"
+
+
+def plan_of(sample: dict[str, Any]) -> dict[str, Any]:
+  return (((sample.get("transport") or {}).get("current") or {}).get("plan") or {})
+
+
+def same_plan(a: dict[str, Any], b: dict[str, Any]) -> bool:
+  return a.get("movement") == b.get("movement") and a.get("src") == b.get("src") and a.get("dest") == b.get("dest")
+
+
+def vector3(raw: dict[str, Any] | None) -> dict[str, float]:
+  raw = raw or {}
+  return {"x": float(raw.get("x", 0.0)), "y": float(raw.get("y", 0.0)), "z": float(raw.get("z", 0.0))}
+
+
+def pose3_from_trace(sample: dict[str, Any]) -> dict[str, float]:
+  vehicle = sample.get("vehicle") or {}
+  pos = vehicle.get("pos") or {}
+  return {"x": float(pos.get("x", 0.0)), "y": float(pos.get("y", 0.0)), "z": float(pos.get("z", 0.0)), "yaw": float(vehicle.get("yaw", 0.0))}
+
+
+def pose3_from_plan(raw: dict[str, Any]) -> dict[str, float]:
+  return {"x": float(raw["x"]), "y": float(raw["y"]), "z": float(raw["z"])}
+
+
+def future_edges_from_trace(samples: list[dict[str, Any]], root_i: int, max_edges: int) -> list[dict[str, Any]]:
+  edges: list[dict[str, Any]] = []
+  last_key: tuple[Any, Any, Any] | None = None
+  for sample in samples[root_i:]:
+    plan = plan_of(sample)
+    movement = plan.get("movement")
+    src = plan.get("src")
+    dest = plan.get("dest")
+    if not isinstance(movement, str) or not isinstance(src, dict) or not isinstance(dest, dict):
+      continue
+    key = (movement, tuple(sorted(src.items())), tuple(sorted(dest.items())))
+    if key == last_key:
+      continue
+    last_key = key
+    edges.append({"tick": int(sample.get("tick", 0)), "movement": movement, "src": pose3_from_plan(src), "dest": pose3_from_plan(dest)})
+    if len(edges) >= max_edges:
+      break
+  return edges
+
+
+def input_from_trace(sample: dict[str, Any]) -> dict[str, bool]:
+  raw = sample.get("physicalInputs") or sample.get("inputs") or {}
+  return {
+    "forward": bool(raw.get("MOVE_FORWARD", False)),
+    "backward": bool(raw.get("MOVE_BACK", False)),
+    "left": bool(raw.get("MOVE_LEFT", False)),
+    "right": bool(raw.get("MOVE_RIGHT", False)),
+    "sprint": bool(raw.get("SPRINT", False)),
+  }
+
+
+def movement_slug(raw: str | None) -> str:
+  if not raw:
+    return "unknown"
+  raw = raw.removeprefix("HorseRoute:")
+  return re.sub(r"[^A-Za-z0-9_.+-]+", "_", raw).strip("_")[:64] or "unknown"
+
+
+def fall_episodes(samples: list[dict[str, Any]], threshold: float) -> list[tuple[int, int, int]]:
+  episodes: list[tuple[int, int, int]] = []
+  active = False
+  start = peak = 0
+  for i, sample in enumerate(samples):
+    fall_distance = float(((sample.get("vehicle") or {}).get("fallDistance") or 0.0))
+    if fall_distance > 1.0e-9 and not active:
+      start = max(0, i - 1)
+      peak = i
+      active = True
+    if active:
+      peak_fall = float(((samples[peak].get("vehicle") or {}).get("fallDistance") or 0.0))
+      if fall_distance > peak_fall:
+        peak = i
+      if fall_distance == 0.0 and i > start + 1:
+        if float(((samples[peak].get("vehicle") or {}).get("fallDistance") or 0.0)) >= threshold:
+          episodes.append((start, peak, i))
+        active = False
+  if active:
+    if float(((samples[peak].get("vehicle") or {}).get("fallDistance") or 0.0)) >= threshold:
+      episodes.append((start, peak, len(samples) - 1))
+  return episodes
+
+
+def trace_fall_case(args: argparse.Namespace, run_dir: Path, samples: list[dict[str, Any]], episode: tuple[int, int, int], ordinal: int) -> dict[str, Any] | None:
+  start_i, peak_i, end_i = episode
+  fall_start = samples[start_i]
+  peak = samples[peak_i]
+  end_sample = samples[end_i]
+  plan = plan_of(fall_start) or plan_of(peak)
+  movement = plan.get("movement")
+  dest = plan.get("dest")
+  if args.require_route and (not isinstance(movement, str) or not movement.startswith(args.require_route)):
+    return None
+  if not isinstance(dest, dict):
+    return None
+  root_i = start_i
+  if args.replay_root == "route-entry":
+    while root_i > 0 and same_plan(plan_of(samples[root_i - 1]), plan):
+      root_i -= 1
+  start = samples[root_i]
+  start_pose = pose3_from_trace(start)
+  end_pose = pose3_from_plan(dest)
+  peak_fd = float(((peak.get("vehicle") or {}).get("fallDistance") or 0.0))
+  start_tick = int(start.get("tick", 0))
+  fall_start_tick = int(fall_start.get("tick", start_tick))
+  peak_tick = int(peak.get("tick", start_tick))
+  end_tick = int(end_sample.get("tick", peak_tick))
+  case_id = f"{run_dir.name}_fall{ordinal:02d}_t{start_tick}_p{peak_tick}_{movement_slug(movement)}"
+  return {
+    "id": case_id,
+    "start": start_pose,
+    "initialVelocity": vector3((start.get("vehicle") or {}).get("velocity")),
+    "initialOnGround": bool((start.get("vehicle") or {}).get("onGround", False)),
+    "initialFallDistance": float(((start.get("vehicle") or {}).get("fallDistance") or 0.0)),
+    "targets": [end_pose],
+    "end": end_pose,
+    "input": input_from_trace(start) if args.trace_input else {"forward": args.forward, "backward": False, "left": False, "right": False, "sprint": False},
+    "ticks": args.ticks,
+    "minY": min(start_pose["y"], end_pose["y"]) - args.fall_tolerance,
+    "stopAtEnd": False,
+    "failOnOvershoot": False,
+    "emitTrials": True,
+    "thiswayFallReplay": {
+      "sourceRun": str(run_dir),
+      "sourceTick": start_tick,
+      "fallStartTick": fall_start_tick,
+      "peakTick": peak_tick,
+      "endTick": end_tick,
+      "replayRoot": args.replay_root,
+      "peakFallDistance": peak_fd,
+      "movement": movement,
+      "planSrc": plan.get("src"),
+      "planDest": dest,
+      "futureEdges": future_edges_from_trace(samples, root_i, args.future_edges),
+      "sourceFinalY": float(((end_sample.get("vehicle") or {}).get("pos") or {}).get("y", 0.0)),
+    },
+  }
+
+
+def trace_falls_scenario(args: argparse.Namespace) -> dict[str, Any]:
+  cases: list[dict[str, Any]] = []
+  selected_world: tuple[str, str] | None = None
+  for raw in args.result:
+    run_dir = result_dir(raw)
+    trace = trace_path(raw)
+    if not trace.is_file():
+      raise SystemExit(f"missing trace {trace}")
+    summary = read_json(summary_path(run_dir)) if summary_path(run_dir).is_file() else {}
+    world = (str(args.world_key or summary.get("worldKey") or "smoke_vd10"), str(args.seed or summary.get("seed") or "baritone-playtest-smoke"))
+    selected_world = selected_world or world
+    if world != selected_world:
+      raise SystemExit(f"mixed replay worlds: {run_dir} has {world}, expected {selected_world}")
+    samples = list(iter_trace(trace))
+    episodes = fall_episodes(samples, args.min_fall_distance)
+    episodes.sort(key=lambda ep: float(((samples[ep[1]].get("vehicle") or {}).get("fallDistance") or 0.0)), reverse=True)
+    accepted = 0
+    for ordinal, episode in enumerate(episodes):
+      c = trace_fall_case(args, run_dir, samples, episode, ordinal)
+      if c is None:
+        continue
+      cases.append(c)
+      accepted += 1
+      if args.max_cases_per_run > 0 and accepted >= args.max_cases_per_run:
+        break
+  if selected_world is None:
+    selected_world = (str(args.world_key or "smoke_vd10"), str(args.seed or "baritone-playtest-smoke"))
+  return {
+    "id": args.id,
+    "worldKey": selected_world[0],
+    "seed": selected_world[1],
+    "dimension": "minecraft:overworld",
+    "timeoutSeconds": args.timeout_seconds,
+    "horse": {"movementSpeed": args.movement_speed, "jumpStrength": args.jump_strength, "initialSpeed": 0.0},
+    "input": {"forward": args.forward},
+    "ticks": args.ticks,
+    "endRadius": args.end_radius,
+    "maxEndYError": args.max_end_y_error,
+    "requireNoDamage": False,
+    "requireMounted": True,
+    "stopAtEnd": False,
+    "failOnOvershoot": False,
+    "emitTrials": True,
+    "perturbations": {"longitudinal": [0.0], "lateral": [0.0], "yaw": [0.0], "initialSpeed": [0.0], "initialLateralSpeed": [0.0]},
+    "thiswayFallReplayMining": {"schema": 1, "minFallDistance": args.min_fall_distance, "requireRoute": args.require_route, "sources": [str(result_dir(path)) for path in args.result]},
+    "cases": cases,
+  }
+
+
+def command_make(args: argparse.Namespace) -> int:
+  payload = scenario(args)
+  write_json(args.out, payload)
+  print(args.out)
+  print(f"cases={len(payload['cases'])}")
+  return 0
+
+
+def command_run(args: argparse.Namespace) -> int:
+  args.out_dir.mkdir(parents=True, exist_ok=True)
+  scenario_path = args.out_dir / "corner-cruise-scenario.json"
+  payload = scenario(args)
+  write_json(scenario_path, payload)
+  proc = subprocess.run([str(PLAYTEST), "physedge", str(scenario_path)], cwd=REPO, text=True, capture_output=True)
+  if proc.stdout:
+    print(proc.stdout, end="")
+  if proc.stderr:
+    print(proc.stderr, end="", file=sys.stderr)
+  result_path = Path(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else None
+  if result_path is not None and result_path.is_file():
+    copied = args.out_dir / "corner-cruise-result.json"
+    shutil.copy2(result_path, copied)
+    summarize_result(copied, args.out_dir / "corner-cruise-summary.json")
+  return proc.returncode
+
+
+def command_routelet_make(args: argparse.Namespace) -> int:
+  payload = routelet_scenario(args)
+  write_json(args.out, payload)
+  print(args.out)
+  print(f"cases={len(payload['cases'])}")
+  return 0
+
+
+def command_routelet_run(args: argparse.Namespace) -> int:
+  args.out_dir.mkdir(parents=True, exist_ok=True)
+  scenario_path = args.out_dir / "corner-cruise-scenario.json"
+  payload = routelet_scenario(args)
+  write_json(scenario_path, payload)
+  proc = subprocess.run([str(PLAYTEST), "physedge", str(scenario_path)], cwd=REPO, text=True, capture_output=True)
+  if proc.stdout:
+    print(proc.stdout, end="")
+  if proc.stderr:
+    print(proc.stderr, end="", file=sys.stderr)
+  result_path = Path(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else None
+  if result_path is not None and result_path.is_file():
+    copied = args.out_dir / "corner-cruise-result.json"
+    shutil.copy2(result_path, copied)
+    summarize_result(copied, args.out_dir / "corner-cruise-summary.json")
+  return proc.returncode
+
+
+def command_trace_falls_make(args: argparse.Namespace) -> int:
+  payload = trace_falls_scenario(args)
+  write_json(args.out, payload)
+  print(args.out)
+  print(f"cases={len(payload['cases'])}")
+  return 0
+
+
+def command_trace_falls_run(args: argparse.Namespace) -> int:
+  args.out_dir.mkdir(parents=True, exist_ok=True)
+  scenario_path = args.out_dir / "thisway-fall-replay-scenario.json"
+  payload = trace_falls_scenario(args)
+  write_json(scenario_path, payload)
+  print(scenario_path)
+  print(f"cases={len(payload['cases'])}")
+  if not payload["cases"]:
+    return 1
+  proc = subprocess.run([str(PLAYTEST), "physedge", str(scenario_path)], cwd=REPO, text=True, capture_output=True)
+  if proc.stdout:
+    print(proc.stdout, end="")
+  if proc.stderr:
+    print(proc.stderr, end="", file=sys.stderr)
+  result_path = Path(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else None
+  if result_path is not None and result_path.is_file():
+    copied = args.out_dir / "thisway-fall-replay-result.json"
+    shutil.copy2(result_path, copied)
+    summarize_result(copied, args.out_dir / "thisway-fall-replay-summary.json")
+  return proc.returncode
+
+
+def summarize_result(result: Path, out: Path | None) -> dict[str, Any]:
+  payload = read_json(result)
+  scenario_cases = load_scenario_cases(payload, result)
+  cases = payload.get("cases", [])
+  rows = []
+  for case_payload in cases:
+    case_id = case_payload.get("id", "")
+    spec = scenario_cases.get(case_id, {})
+    metadata = spec.get("cornerCruise") or spec.get("thiswayFallReplay", {})
+    trial_count = int(case_payload.get("trialCount", 0))
+    success_count = int(case_payload.get("successCount", 0))
+    overshot_count = count(case_payload, "overshotCount", "overshot")
+    overrun_count = count(case_payload, "overrunCount", None)
+    accepted_overrun_count = count(case_payload, "acceptedOverrunCount", None)
+    fell_below_count = count(case_payload, "fellBelowCount", "fellBelow")
+    damaged_count = count(case_payload, "damagedCount", "damaged")
+    dismounted_count = count(case_payload, "dismountedCount", "dismounted")
+    missed_count = count(case_payload, "missedCount", None)
+    rows.append({
+      "id": case_id,
+      "success": bool(case_payload.get("success")),
+      "successCount": success_count,
+      "trialCount": trial_count,
+      "successRate": 0.0 if trial_count == 0 else success_count / trial_count,
+      "overshotCount": overshot_count,
+      "overrunCount": overrun_count,
+      "acceptedOverrunCount": accepted_overrun_count,
+      "fellBelowCount": fell_below_count,
+      "damagedCount": damaged_count,
+      "dismountedCount": dismounted_count,
+      "missedCount": missed_count,
+      "targetSupport": metadata.get("targetSupport"),
+      "sourceSupport": metadata.get("sourceSupport"),
+      "move": move_name(metadata),
+      "worstBestEndDistance": case_payload.get("worstBestEndDistance"),
+      "worstEndDistance": case_payload.get("worstEndDistance"),
+      "worstMaxFallDistance": case_payload.get("worstMaxFallDistance"),
+      "minFinalProgress": case_payload.get("minFinalProgress"),
+      "maxFinalProgress": case_payload.get("maxFinalProgress"),
+    })
+  rows.sort(key=lambda row: (row["successRate"], -row["overshotCount"], -row["acceptedOverrunCount"], -row["fellBelowCount"], row["id"]))
+  groups = grouped(rows)
+  summary = {
+    "result": str(result),
+    "caseCount": len(rows),
+    "successCases": sum(1 for row in rows if row["success"]),
+    "overshotCases": sum(1 for row in rows if row["overshotCount"] > 0),
+    "overrunCases": sum(1 for row in rows if row["overrunCount"] > 0),
+    "acceptedOverrunCases": sum(1 for row in rows if row["acceptedOverrunCount"] > 0),
+    "fellBelowCases": sum(1 for row in rows if row["fellBelowCount"] > 0),
+    "missedCases": sum(1 for row in rows if row["missedCount"] > 0),
+    "byMoveAndTargetSupport": groups,
+    "worst": rows[:32],
+  }
+  if out is not None:
+    write_json(out, summary)
+  print(f"cases={summary['caseCount']} successCases={summary['successCases']}")
+  for row in rows[:16]:
+    print(
+      f"{row['successRate']:.3f} {row['successCount']:>4}/{row['trialCount']:<4} "
+      f"ov={row['overshotCount']:<3} over={row['acceptedOverrunCount']:<3} fall={row['fellBelowCount']:<3} maxFD={row['worstMaxFallDistance'] or 0:>5.2f} miss={row['missedCount']:<3} "
+      f"support={row['targetSupport']} move={row['move']} {row['id']}"
+    )
+  return summary
+
+
+def load_scenario_cases(result_payload: dict[str, Any], result: Path) -> dict[str, dict[str, Any]]:
+  candidates: list[Path] = []
+  raw = result_payload.get("request")
+  if raw:
+    request = Path(raw)
+    candidates.append(request if request.is_absolute() else REPO / request)
+  candidates.extend((
+    result.parent / "corner-cruise-scenario.json",
+    result.parent / "thisway-fall-replay-scenario.json",
+    result.parent / "scenario.json",
+    result.with_name("corner-cruise-scenario.json"),
+    result.with_name("thisway-fall-replay-scenario.json"),
+  ))
+  scenario_payload = None
+  for path in candidates:
+    if not path.is_file():
+      continue
+    try:
+      scenario_payload = read_json(path)
+      break
+    except Exception:
+      pass
+  if scenario_payload is None:
+    return {}
+  return {case.get("id", ""): case for case in scenario_payload.get("cases", [])}
+
+
+def count(case_payload: dict[str, Any], aggregate_key: str, trial_key: str | None) -> int:
+  if aggregate_key in case_payload:
+    return int(case_payload[aggregate_key])
+  if trial_key is None:
+    return 0
+  return sum(1 for trial in case_payload.get("trials", []) if trial.get(trial_key))
+
+
+def move_name(metadata: dict[str, Any]) -> str | None:
+  routelet = metadata.get("routelet")
+  if isinstance(routelet, str):
+    return routelet
+  move = metadata.get("move")
+  movement = metadata.get("movement")
+  if isinstance(movement, str):
+    return movement
+  if not isinstance(move, list) or len(move) != 2:
+    return None
+  dx, dz = move
+  for name, vector in MOVES.items():
+    if vector == (dx, dz):
+      return name
+  return f"{dx},{dz}"
+
+
+def grouped(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+  buckets: dict[tuple[Any, Any], dict[str, Any]] = {}
+  for row in rows:
+    key = (row["move"], row["targetSupport"])
+    bucket = buckets.setdefault(key, {
+      "move": row["move"],
+      "targetSupport": row["targetSupport"],
+      "caseCount": 0,
+      "trialCount": 0,
+      "successCount": 0,
+      "overshotCount": 0,
+      "overrunCount": 0,
+      "acceptedOverrunCount": 0,
+      "fellBelowCount": 0,
+      "damagedCount": 0,
+      "dismountedCount": 0,
+      "missedCount": 0,
+    })
+    bucket["caseCount"] += 1
+    bucket["trialCount"] += row["trialCount"]
+    bucket["successCount"] += row["successCount"]
+    bucket["overshotCount"] += row["overshotCount"]
+    bucket["overrunCount"] += row["overrunCount"]
+    bucket["acceptedOverrunCount"] += row["acceptedOverrunCount"]
+    bucket["fellBelowCount"] += row["fellBelowCount"]
+    bucket["damagedCount"] += row["damagedCount"]
+    bucket["dismountedCount"] += row["dismountedCount"]
+    bucket["missedCount"] += row["missedCount"]
+  out = list(buckets.values())
+  for bucket in out:
+    trials = bucket["trialCount"]
+    bucket["successRate"] = 0.0 if trials == 0 else bucket["successCount"] / trials
+    bucket["overshootRate"] = 0.0 if trials == 0 else bucket["overshotCount"] / trials
+    bucket["acceptedOverrunRate"] = 0.0 if trials == 0 else bucket["acceptedOverrunCount"] / trials
+  out.sort(key=lambda bucket: (str(bucket["move"]), -1 if bucket["targetSupport"] is None else bucket["targetSupport"]))
+  return out
+
+
+def command_render_danger(args: argparse.Namespace) -> int:
+  result = read_json(args.result)
+  scenario_cases = load_scenario_cases(result, args.result)
+  out_dir = args.out_dir
+  out_dir.mkdir(parents=True, exist_ok=True)
+  dangerous = []
+  by_id = {case.get("id", ""): case for case in result.get("cases", [])}
+  for case_id, spec in scenario_cases.items():
+    case = by_id.get(case_id)
+    if case is None:
+      continue
+    if args.include_overruns:
+      keep = int(case.get("overshotCount", 0)) > 0 or int(case.get("fellBelowCount", 0)) > 0 or int(case.get("acceptedOverrunCount", 0)) > 0 or not bool(case.get("success"))
+    else:
+      keep = int(case.get("overshotCount", 0)) > 0 or int(case.get("fellBelowCount", 0)) > 0 or not bool(case.get("success"))
+    if keep:
+      dangerous.append((case, spec))
+  dangerous.sort(key=lambda pair: (pair[0].get("success", False), -int(pair[0].get("overshotCount", 0)), -int(pair[0].get("fellBelowCount", 0)), pair[0].get("id", "")))
+  if args.limit > 0:
+    dangerous = dangerous[:args.limit]
+  cards = []
+  scenes = []
+  for case, spec in dangerous:
+    svg_name = safe_filename(case["id"]) + ".svg"
+    (out_dir / svg_name).write_text(render_danger_svg(case, spec), encoding="utf-8")
+    cards.append(render_card(case, spec, svg_name))
+    scenes.append(danger_scene(case, spec))
+  index = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Horse Dangerous Routelets</title>
+<style>
+body{font:14px system-ui,sans-serif;background:#f5f2ec;color:#181510;margin:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:18px}
+.card{background:#fff;border:1px solid #d9ccba;border-radius:14px;box-shadow:0 2px 10px #0001;overflow:hidden}
+.meta{padding:12px 14px;border-bottom:1px solid #eee;background:#fffaf1}
+.meta b{font-size:16px}.stats{color:#5b5145;margin-top:4px}.profiles{font-family:ui-monospace,monospace;font-size:11px;color:#7a4d00;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+iframe{width:100%;height:430px;border:0;background:#fbfaf7}
+</style></head><body>
+<h1>Horse Dangerous Routelets</h1>
+<p><a href="interactive.html">Open draggable 3D viewer</a>. Red markers are failing perturbation endpoints. Orange line is commanded routelet. Dark red tiles are void/deep columns; amber columns are support/steps.</p>
+<div class="grid">
+""" + "\n".join(cards) + """
+</div></body></html>
+"""
+  (out_dir / "index.html").write_text(index, encoding="utf-8")
+  (out_dir / "interactive.html").write_text(render_interactive_html(scenes), encoding="utf-8")
+  print(out_dir / "index.html")
+  print(out_dir / "interactive.html")
+  print(f"rendered={len(dangerous)}")
+  return 0
+
+
+def render_card(case: dict[str, Any], spec: dict[str, Any], svg_name: str) -> str:
+  meta = spec.get("cornerCruise", {})
+  replay = spec.get("thiswayFallReplay", {})
+  if meta:
+    cells = [Cell(int(x), int(z)) for x, z in meta.get("cells", [])]
+    profiles_raw = meta.get("profiles", [])
+    profile_by_cell = dict(zip(cells, (Profile.parse(raw) for raw in profiles_raw), strict=False))
+    supports = meta.get("targetSupports", render_path_supports(spec, profile_by_cell)[1:])
+    profiles = " ".join(meta.get("profiles", []))
+    route = meta.get("routelet", meta.get("move"))
+  else:
+    supports = "sampled-world"
+    profiles = f"{replay.get('sourceRun','')} tick={replay.get('sourceTick')} peak={replay.get('peakTick')} peakFall={replay.get('peakFallDistance')}"
+    route = replay.get("movement", "trace-replay")
+  return f"""<section class="card">
+<div class="meta"><b>{html.escape(case.get("id", ""))}</b>
+<div class="stats">route={html.escape(str(route))} support targets={html.escape(str(supports))} success={case.get("successCount")}/{case.get("trialCount")} overshot={case.get("overshotCount",0)} fell={case.get("fellBelowCount",0)} overrun={case.get("acceptedOverrunCount",0)} maxFall={case.get("worstMaxFallDistance",0):.3f}</div>
+<div class="profiles">{html.escape(profiles)}</div></div>
+<iframe src="{html.escape(svg_name)}"></iframe>
+</section>"""
+
+
+def render_danger_svg(case: dict[str, Any], spec: dict[str, Any]) -> str:
+  if not spec.get("cornerCruise"):
+    scene = danger_scene(case, spec)
+    title = f"{scene['route']} · {scene['id']}"
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180">
+<rect width="100%" height="100%" fill="#fbfaf7"/>
+<text x="18" y="34" font-family="monospace" font-size="16" font-weight="800" fill="#28190b">{html.escape(str(title))}</text>
+<text x="18" y="62" font-family="monospace" font-size="13" fill="#6f5943">sampled-world replay; open interactive.html for exact trace + terrain orbit viewer</text>
+<text x="18" y="92" font-family="monospace" font-size="13" fill="#6f5943">success {case.get("successCount")}/{case.get("trialCount")} fell {case.get("fellBelowCount",0)} overrun {case.get("acceptedOverrunCount",0)} maxFall {case.get("worstMaxFallDistance",0):.3f}</text>
+</svg>"""
+  meta = spec.get("cornerCruise", {})
+  cells = [Cell(int(x), int(z)) for x, z in meta.get("cells", [])]
+  profiles = [Profile.parse(raw) for raw in meta.get("profiles", [])]
+  profile_by_cell = dict(zip(cells, profiles, strict=False))
+  path = render_path_points(spec, profile_by_cell)
+  bounds_cells = cells + [Cell(math.floor(x), math.floor(z)) for x, z, _ in path]
+  min_x = min((c.dx for c in bounds_cells), default=-2) - 1
+  max_x = max((c.dx for c in bounds_cells), default=2) + 1
+  min_z = min((c.dz for c in bounds_cells), default=-2) - 1
+  max_z = max((c.dz for c in bounds_cells), default=2) + 1
+  projector = IsoProjector(min_x, max_x, min_z, max_z)
+  shapes: list[tuple[float, str]] = []
+  for z in range(min_z, max_z + 1):
+    for x in range(min_x, max_x + 1):
+      cell = Cell(x, z)
+      profile = profile_by_cell.get(cell, Profile(0))
+      if profile.surface == SURFACE_DEEP:
+        shapes.append((x + z - 0.1, top_tile(projector, x, z, 0, "#5f0f1a", "#8f1d2c", 0.35, "stroke-dasharray='4 3'")))
+      elif profile.surface == 0 and cell not in profile_by_cell:
+        shapes.append((x + z - 0.2, top_tile(projector, x, z, 0, "#eee5d6", "#d6c8b6", 0.45, "")))
+      else:
+        bottom = min(-1, profile.surface - 1)
+        shapes.extend(cube(projector, x, z, bottom, profile.surface, "#e49a24" if profile.surface <= 0 else "#d77b1f", "#ffbe3d", "#b66814"))
+  supports = render_path_supports(spec, profile_by_cell)
+  path_svg = render_path(projector, path, supports)
+  fail_svg = render_failures(projector, case)
+  shapes.sort(key=lambda pair: pair[0])
+  width, height = projector.width, projector.height
+  return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+<rect width="100%" height="100%" fill="#fbfaf7"/>
+<g>{"".join(shape for _, shape in shapes)}</g>
+{path_svg}
+{fail_svg}
+{axis_svg(projector)}
+<text x="14" y="24" font-family="monospace" font-size="13" font-weight="700" fill="#28190b">{html.escape(str(meta.get("routelet", meta.get("move"))))}</text>
+<text x="14" y="43" font-family="monospace" font-size="11" fill="#6f5943">success {case.get("successCount")}/{case.get("trialCount")} overshot {case.get("overshotCount",0)} fell {case.get("fellBelowCount",0)} overrun {case.get("acceptedOverrunCount",0)} q={html.escape(str(meta.get("targetSupports", supports[1:])))}</text>
+</svg>"""
+
+
+def relative_path(spec: dict[str, Any]) -> list[tuple[float, float, float]]:
+  start = spec.get("start", {})
+  pivot_x = START_X
+  pivot_z = START_Z
+  out = [(float(start.get("x", START_X)) - pivot_x, float(start.get("z", START_Z)) - pivot_z, float(start.get("y", START_Y)) - START_Y)]
+  for target in spec.get("targets", []):
+    out.append((float(target.get("x", START_X)) - pivot_x, float(target.get("z", START_Z)) - pivot_z, float(target.get("y", START_Y)) - START_Y))
+  if len(out) == 1 and "end" in spec:
+    end = spec["end"]
+    out.append((float(end.get("x", START_X)) - pivot_x, float(end.get("z", START_Z)) - pivot_z, float(end.get("y", START_Y)) - START_Y))
+  return out
+
+
+def render_path_points(spec: dict[str, Any], profile_by_cell: dict[Cell, Profile]) -> list[tuple[float, float, float]]:
+  return [(x, z, display_feet_y(x, z, y, profile_by_cell)) for x, z, y in relative_path(spec)]
+
+
+def render_path_supports(spec: dict[str, Any], profile_by_cell: dict[Cell, Profile]) -> list[int]:
+  return [support_quadrants(x, z, list(profile_by_cell.keys()), tuple(profile_by_cell.values()), Profile(0), math.floor(y + 1.0e-6), HALF_WIDTH) for x, z, y in render_path_points(spec, profile_by_cell)]
+
+
+def display_feet_y(cx: float, zc: float, nominal_y: float, profile_by_cell: dict[Cell, Profile]) -> float:
+  # The routelet harness targets an XZ point with a generous vertical tolerance. A horse that hits a +1 riser in the target footprint may legitimately
+  # occupy the target XZ at feetY+1. Rendering every target AABB at nominal feetY therefore shows bogus clipping through step blocks. For visualization,
+  # lift each schematic AABB to the lowest integer feet plane that is collision-free in the displayed full-cube terrain.
+  base = math.floor(nominal_y + 1.0e-6)
+  for dy in range(0, 4):
+    y = base + dy
+    if not clips_display_solids(cx, zc, y, profile_by_cell):
+      return float(y)
+  return nominal_y
+
+
+def clips_display_solids(cx: float, zc: float, feet_y: float, profile_by_cell: dict[Cell, Profile]) -> bool:
+  eps = 1.0e-7
+  min_x = math.floor(cx - HALF_WIDTH + eps)
+  max_x = math.floor(cx + HALF_WIDTH - eps)
+  min_z = math.floor(zc - HALF_WIDTH + eps)
+  max_z = math.floor(zc + HALF_WIDTH - eps)
+  for x in range(min_x, max_x + 1):
+    for z in range(min_z, max_z + 1):
+      profile = profile_by_cell.get(Cell(x, z), Profile(0))
+      if profile.surface != SURFACE_DEEP and profile.surface > feet_y + eps:
+        return True
+  return False
+
+
+class IsoProjector:
+  def __init__(self, min_x: int, max_x: int, min_z: int, max_z: int):
+    self.sx = 38
+    self.sy = 21
+    self.hy = 31
+    corners = [(min_x, min_z, 0), (min_x, max_z + 1, 0), (max_x + 1, min_z, 0), (max_x + 1, max_z + 1, 0), (min_x, min_z, 3), (max_x + 1, max_z + 1, -3)]
+    raw = [self.raw(*c) for c in corners]
+    min_px = min(x for x, _ in raw)
+    max_px = max(x for x, _ in raw)
+    min_py = min(y for _, y in raw)
+    max_py = max(y for _, y in raw)
+    self.ox = 70 - min_px
+    self.oy = 60 - min_py
+    self.width = int(max_px - min_px + 140)
+    self.height = int(max_py - min_py + 150)
+
+  def raw(self, x: float, z: float, y: float) -> tuple[float, float]:
+    return ((x - z) * self.sx, (x + z) * self.sy - y * self.hy)
+
+  def p(self, x: float, z: float, y: float) -> tuple[float, float]:
+    px, py = self.raw(x, z, y)
+    return px + self.ox, py + self.oy
+
+
+def points(projector: IsoProjector, pts: list[tuple[float, float, float]]) -> str:
+  return " ".join(f"{x:.1f},{y:.1f}" for x, y in (projector.p(px, pz, py) for px, pz, py in pts))
+
+
+def top_tile(projector: IsoProjector, x: float, z: float, y: float, fill: str, stroke: str, opacity: float, extra: str) -> str:
+  return f"<polygon points='{points(projector, [(x,z,y),(x+1,z,y),(x+1,z+1,y),(x,z+1,y)])}' fill='{fill}' fill-opacity='{opacity}' stroke='{stroke}' stroke-width='1' {extra}/>"
+
+
+def cube(projector: IsoProjector, x: int, z: int, bottom: int, top: int, left: str, top_color: str, right: str) -> list[tuple[float, str]]:
+  b, t = bottom, top
+  return [
+    (x + z + t + 0.01, f"<polygon points='{points(projector, [(x,z,t),(x+1,z,t),(x+1,z+1,t),(x,z+1,t)])}' fill='{top_color}' stroke='#6a481f' stroke-width='1'/>"),
+    (x + z + t + 0.02, f"<polygon points='{points(projector, [(x+1,z,t),(x+1,z+1,t),(x+1,z+1,b),(x+1,z,b)])}' fill='{right}' stroke='#6a481f' stroke-width='1'/>"),
+    (x + z + t + 0.03, f"<polygon points='{points(projector, [(x,z+1,t),(x+1,z+1,t),(x+1,z+1,b),(x,z+1,b)])}' fill='{left}' stroke='#6a481f' stroke-width='1'/>"),
+  ]
+
+
+def render_path(projector: IsoProjector, path: list[tuple[float, float, float]], supports: list[int]) -> str:
+  pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (projector.p(x, z, y + 1.85) for x, z, y in path))
+  labels = []
+  for i, (x, z, y) in enumerate(path):
+    px, py = projector.p(x, z, y + 1.9)
+    if i == 0:
+      labels.append(
+        f"<circle cx='{px:.1f}' cy='{py:.1f}' r='8' fill='#22c55e' stroke='#052e16' stroke-width='2.5'/>"
+        f"<text x='{px+11:.1f}' y='{py-9:.1f}' font-size='13' font-weight='800' fill='#063b1a' stroke='#fff' stroke-width='3' paint-order='stroke'>START</text>"
+      )
+    else:
+      q = supports[i] if i < len(supports) else "?"
+      labels.append(f"<circle cx='{px:.1f}' cy='{py:.1f}' r='5' fill='#fff' stroke='#d62613' stroke-width='2'/><text x='{px+7:.1f}' y='{py-7:.1f}' font-size='12' font-weight='700' fill='#a5190a'>{i} q{q}</text>")
+  return f"<polyline points='{pts}' fill='none' stroke='#d62613' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/>{''.join(labels)}"
+
+
+def render_failures(projector: IsoProjector, case: dict[str, Any]) -> str:
+  out = []
+  for trial in case.get("trials", []):
+    if trial.get("success") and not trial.get("fellBelow") and not trial.get("overshot"):
+      continue
+    final = trial.get("final", {})
+    x = float(final.get("x", START_X)) - START_X
+    z = float(final.get("z", START_Z)) - START_Z
+    raw_y = float(final.get("y", START_Y)) - START_Y
+    y = (max(raw_y, -0.45) if trial.get("fellBelow") else raw_y) + 1.9
+    px, py = projector.p(x, z, y)
+    color = "#d00000" if trial.get("fellBelow") else "#8d00d0"
+    label = f"fall {raw_y:.1f}" if trial.get("fellBelow") else "overshoot"
+    out.append(
+      f"<g><circle cx='{px:.1f}' cy='{py:.1f}' r='7' fill='{color}' fill-opacity='0.85' stroke='#fff' stroke-width='2'/>"
+      f"<line x1='{px-9:.1f}' y1='{py-9:.1f}' x2='{px+9:.1f}' y2='{py+9:.1f}' stroke='#fff' stroke-width='2'/>"
+      f"<line x1='{px+9:.1f}' y1='{py-9:.1f}' x2='{px-9:.1f}' y2='{py+9:.1f}' stroke='#fff' stroke-width='2'/>"
+      f"<text x='{px+10:.1f}' y='{py+4:.1f}' font-size='11' font-weight='700' fill='{color}' stroke='#fff' stroke-width='3' paint-order='stroke'>{html.escape(label)}</text></g>"
+    )
+  return "".join(out)
+
+
+def axis_svg(projector: IsoProjector) -> str:
+  ox, oy = 45, 68
+  return f"<g font-size='10' font-family='monospace' stroke-width='2'><line x1='{ox}' y1='{oy}' x2='{ox+32}' y2='{oy+18}' stroke='#c52424'/><text x='{ox+36}' y='{oy+23}' fill='#c52424' stroke='none'>x</text><line x1='{ox}' y1='{oy}' x2='{ox-32}' y2='{oy+18}' stroke='#2468c5'/><text x='{ox-43}' y='{oy+25}' fill='#2468c5' stroke='none'>z</text><line x1='{ox}' y1='{oy}' x2='{ox}' y2='{oy-36}' stroke='#209245'/><text x='{ox+4}' y='{oy-39}' fill='#209245' stroke='none'>y</text></g>"
+
+
+def safe_filename(raw: str) -> str:
+  return "".join(c if c.isalnum() or c in "._-" else "_" for c in raw)[:180]
+
+
+def danger_scene(case: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+  if not spec.get("cornerCruise"):
+    return replay_scene(case, spec)
+  meta = spec.get("cornerCruise", {})
+  cells = [Cell(int(x), int(z)) for x, z in meta.get("cells", [])]
+  profiles = [Profile.parse(raw) for raw in meta.get("profiles", [])]
+  profile_by_cell = dict(zip(cells, profiles, strict=False))
+  path = render_path_points(spec, profile_by_cell)
+  supports = render_path_supports(spec, profile_by_cell)
+  bounds_cells = cells + [Cell(math.floor(x), math.floor(z)) for x, z, _ in path]
+  min_x = min((c.dx for c in bounds_cells), default=-2) - 1
+  max_x = max((c.dx for c in bounds_cells), default=2) + 1
+  min_z = min((c.dz for c in bounds_cells), default=-2) - 1
+  max_z = max((c.dz for c in bounds_cells), default=2) + 1
+  blocks = []
+  for z in range(min_z, max_z + 1):
+    for x in range(min_x, max_x + 1):
+      cell = Cell(x, z)
+      profile = profile_by_cell.get(cell, Profile(0))
+      if profile.surface == SURFACE_DEEP:
+        blocks.append({"x": x, "z": z, "bottom": -0.04, "top": 0, "kind": "void"})
+      elif cell in profile_by_cell:
+        blocks.append({"x": x, "z": z, "bottom": min(-1, profile.surface - 1), "top": profile.surface, "kind": "support" if profile.surface <= 0 else "step"})
+      else:
+        blocks.append({"x": x, "z": z, "bottom": -0.03, "top": 0, "kind": "floor"})
+  failures = []
+  floor_y = min((block["top"] for block in blocks if block["kind"] != "void"), default=0.0)
+  trace_floor = floor_y - TRACE_FALL_CLIP_BELOW
+  traces = []
+  for trial in case.get("trials", []):
+    if trial.get("success") and not trial.get("fellBelow") and not trial.get("overshot"):
+      continue
+    final = trial.get("final", {})
+    raw_y = float(final.get("y", START_Y)) - START_Y
+    failures.append({
+      "x": float(final.get("x", START_X)) - START_X,
+      "z": float(final.get("z", START_Z)) - START_Z,
+      "y": max(raw_y, -0.45),
+      "rawY": raw_y,
+      "fellBelow": bool(trial.get("fellBelow")),
+      "overshot": bool(trial.get("overshot")),
+      "progress": trial.get("maxSegmentProgress", trial.get("finalProgress", 0)),
+    })
+    samples = []
+    clipped = False
+    for sample in trial.get("samples", []):
+      box = sample.get("box", {})
+      relative_y = float(sample.get("y", START_Y)) - START_Y
+      if samples and relative_y < trace_floor:
+        clipped = True
+        break
+      samples.append({
+        "tick": int(sample.get("tick", 0)),
+        "x": float(sample.get("x", START_X)) - START_X,
+        "y": relative_y,
+        "z": float(sample.get("z", START_Z)) - START_Z,
+        "yaw": float(sample.get("yaw", 0.0)),
+        "box": {
+          "minX": float(box.get("minX", START_X)) - START_X,
+          "minY": float(box.get("minY", START_Y)) - START_Y,
+          "minZ": float(box.get("minZ", START_Z)) - START_Z,
+          "maxX": float(box.get("maxX", START_X)) - START_X,
+          "maxY": float(box.get("maxY", START_Y)) - START_Y,
+          "maxZ": float(box.get("maxZ", START_Z)) - START_Z,
+        },
+      })
+    if samples:
+      perturbation = trial.get("perturbation", {})
+      traces.append({
+        "label": f"l={perturbation.get('longitudinal', 0)} lat={perturbation.get('lateral', 0)} yaw={perturbation.get('yaw', 0)}",
+        "fellBelow": bool(trial.get("fellBelow")),
+        "overshot": bool(trial.get("overshot")),
+        "success": bool(trial.get("success")),
+        "clippedBelow": clipped,
+        "clipFloor": trace_floor,
+        "samples": samples,
+      })
+  return {
+    "id": case.get("id", ""),
+    "route": meta.get("routelet", meta.get("move")),
+    "stats": {
+      "success": case.get("successCount", 0),
+      "trials": case.get("trialCount", 0),
+      "overshot": case.get("overshotCount", 0),
+      "fell": case.get("fellBelowCount", 0),
+      "overrun": case.get("acceptedOverrunCount", 0),
+      "pivotSupport": meta.get("targetSupport"),
+      "finalSupport": meta.get("finalSupport"),
+      "targetSupports": meta.get("targetSupports", supports[1:]),
+    },
+    "bounds": {"minX": min_x, "maxX": max_x, "minZ": min_z, "maxZ": max_z, "traceClipBelow": trace_floor},
+    "startLabel": "START",
+    "blocks": blocks,
+    "path": [{"x": x, "y": y, "z": z, "support": supports[i] if i < len(supports) else None} for i, (x, z, y) in enumerate(path)],
+    "failures": failures,
+    "traces": traces,
+  }
+
+
+def replay_scene(case: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+  replay = spec.get("thiswayFallReplay", {})
+  start = spec.get("start", {})
+  origin_x = math.floor(float(start.get("x", 0.0)))
+  origin_y = math.floor(float(start.get("y", 0.0)) + 1.0e-6)
+  origin_z = math.floor(float(start.get("z", 0.0)))
+  signature = case.get("terrainSignature", {})
+  blocks = sampled_blocks(signature)
+  future_edges = replay_future_edges(replay, origin_x, origin_y, origin_z)
+  path = []
+  for raw in [start, *spec.get("targets", [])]:
+    path.append({"x": float(raw.get("x", origin_x)) - origin_x, "y": float(raw.get("y", origin_y)) - origin_y, "z": float(raw.get("z", origin_z)) - origin_z, "support": None})
+  if len(path) == 1 and spec.get("end"):
+    raw = spec["end"]
+    path.append({"x": float(raw.get("x", origin_x)) - origin_x, "y": float(raw.get("y", origin_y)) - origin_y, "z": float(raw.get("z", origin_z)) - origin_z, "support": None})
+  min_x = min([math.floor(p["x"]) for p in path] + [int(signature.get("minDx", -2))]) - 1
+  max_x = max([math.floor(p["x"]) for p in path] + [int(signature.get("maxDx", 2))]) + 1
+  min_z = min([math.floor(p["z"]) for p in path] + [int(signature.get("minDz", -2))]) - 1
+  max_z = max([math.floor(p["z"]) for p in path] + [int(signature.get("maxDz", 2))]) + 1
+  floor_y = min((block["top"] for block in blocks), default=0.0)
+  trace_floor = floor_y - TRACE_FALL_CLIP_BELOW
+  failures = []
+  traces = []
+  for trial in case.get("trials", []):
+    final = trial.get("final", {})
+    raw_y = float(final.get("y", origin_y)) - origin_y
+    failures.append({
+      "x": float(final.get("x", origin_x)) - origin_x,
+      "z": float(final.get("z", origin_z)) - origin_z,
+      "y": max(raw_y, trace_floor),
+      "rawY": raw_y,
+      "fellBelow": bool(trial.get("fellBelow")),
+      "overshot": bool(trial.get("overshot")),
+      "progress": trial.get("maxSegmentProgress", trial.get("finalProgress", 0)),
+    })
+    samples = []
+    clipped = False
+    for sample in trial.get("samples", []):
+      box = sample.get("box", {})
+      relative_y = float(sample.get("y", origin_y)) - origin_y
+      if samples and relative_y < trace_floor:
+        clipped = True
+        break
+      samples.append({
+        "tick": int(sample.get("tick", 0)),
+        "x": float(sample.get("x", origin_x)) - origin_x,
+        "y": relative_y,
+        "z": float(sample.get("z", origin_z)) - origin_z,
+        "yaw": float(sample.get("yaw", 0.0)),
+        "fallDistance": float(sample.get("fallDistance", 0.0)),
+        "onGround": bool(sample.get("onGround", False)),
+        "box": {
+          "minX": float(box.get("minX", origin_x)) - origin_x,
+          "minY": float(box.get("minY", origin_y)) - origin_y,
+          "minZ": float(box.get("minZ", origin_z)) - origin_z,
+          "maxX": float(box.get("maxX", origin_x)) - origin_x,
+          "maxY": float(box.get("maxY", origin_y)) - origin_y,
+          "maxZ": float(box.get("maxZ", origin_z)) - origin_z,
+        },
+      })
+    if samples:
+      traces.append({
+        "label": f"source t={replay.get('sourceTick')} peak t={replay.get('peakTick')} sourceFD={float(replay.get('peakFallDistance', 0.0)):.3f}",
+        "fellBelow": bool(trial.get("fellBelow")),
+        "overshot": bool(trial.get("overshot")),
+        "success": bool(trial.get("success")),
+        "clippedBelow": clipped,
+        "clipFloor": trace_floor,
+        "samples": samples,
+      })
+  blocks = causal_terrain(blocks, traces)
+  min_x, max_x, min_z, max_z = causal_scene_bounds(blocks, path, future_edges, traces, failures)
+  return {
+    "id": case.get("id", ""),
+    "route": replay.get("movement", "thisway-fall-replay"),
+    "stats": {
+      "success": case.get("successCount", 0),
+      "trials": case.get("trialCount", 0),
+      "overshot": case.get("overshotCount", 0),
+      "fell": case.get("fellBelowCount", 0),
+      "overrun": case.get("acceptedOverrunCount", 0),
+      "pivotSupport": None,
+      "finalSupport": None,
+      "targetSupports": [f"maxFD {case.get('worstMaxFallDistance', 0):.3f}", f"srcFD {float(replay.get('peakFallDistance', 0.0)):.3f}"],
+    },
+    "bounds": {"minX": min_x, "maxX": max_x, "minZ": min_z, "maxZ": max_z, "traceClipBelow": trace_floor},
+    "startLabel": "EDGE START" if replay.get("replayRoot") == "route-entry" else "FALL ROOT",
+    "blocks": blocks,
+    "path": path,
+    "futureEdges": future_edges,
+    "failures": failures,
+    "traces": traces,
+  }
+
+
+def replay_future_edges(replay: dict[str, Any], origin_x: int, origin_y: int, origin_z: int) -> list[dict[str, Any]]:
+  out = []
+  for edge in replay.get("futureEdges", []):
+    src = edge.get("src", {})
+    dest = edge.get("dest", {})
+    out.append({
+      "tick": edge.get("tick"),
+      "movement": edge.get("movement"),
+      "src": {"x": float(src.get("x", origin_x)) - origin_x, "y": float(src.get("y", origin_y)) - origin_y, "z": float(src.get("z", origin_z)) - origin_z},
+      "dest": {"x": float(dest.get("x", origin_x)) - origin_x, "y": float(dest.get("y", origin_y)) - origin_y, "z": float(dest.get("z", origin_z)) - origin_z},
+    })
+  return out
+
+
+def causal_terrain(blocks: list[dict[str, Any]], traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+  samples = [sample for trace in traces for sample in trace.get("samples", [])]
+  if not samples:
+    return blocks
+  solid = [block for block in blocks if block.get("kind") != "void"]
+  kept = []
+  for block in solid:
+    if any(block_intersects_box(block, box) for box in swept_boxes(samples)) or any(block_supports_sample(block, sample) for sample in samples):
+      kept.append(block)
+  support_tops = {(int(block["x"]), int(block["z"]), round(float(block["top"]))) for block in solid}
+  voids: dict[tuple[int, int, int], dict[str, Any]] = {}
+  for sample in samples:
+    support_y = round(float(sample["y"]))
+    for x, z in footprint_cells(sample.get("box", {})):
+      if (x, z, support_y) not in support_tops:
+        voids[(x, z, support_y)] = {"x": x, "z": z, "bottom": support_y - 0.04, "top": support_y, "kind": "void"}
+  out = kept + sorted(voids.values(), key=lambda block: (block["top"], block["z"], block["x"]))
+  return sorted(out, key=lambda block: (block["z"], block["x"], block["top"], block["kind"]))
+
+
+def swept_boxes(samples: list[dict[str, Any]]) -> Iterable[dict[str, float]]:
+  previous = None
+  for sample in samples:
+    box = sample.get("box", {})
+    current = {key: float(box.get(key, 0.0)) for key in ("minX", "minY", "minZ", "maxX", "maxY", "maxZ")}
+    yield current
+    if previous is not None:
+      yield {
+        "minX": min(previous["minX"], current["minX"]),
+        "minY": min(previous["minY"], current["minY"]),
+        "minZ": min(previous["minZ"], current["minZ"]),
+        "maxX": max(previous["maxX"], current["maxX"]),
+        "maxY": max(previous["maxY"], current["maxY"]),
+        "maxZ": max(previous["maxZ"], current["maxZ"]),
+      }
+    previous = current
+
+
+def block_intersects_box(block: dict[str, Any], box: dict[str, float]) -> bool:
+  eps = 1.0e-7
+  return (
+    float(block["x"]) < box["maxX"] - eps
+    and float(block["x"]) + 1.0 > box["minX"] + eps
+    and float(block["z"]) < box["maxZ"] - eps
+    and float(block["z"]) + 1.0 > box["minZ"] + eps
+    and float(block["bottom"]) < box["maxY"] - eps
+    and float(block["top"]) > box["minY"] + eps
+  )
+
+
+def block_supports_sample(block: dict[str, Any], sample: dict[str, Any]) -> bool:
+  if not bool(sample.get("onGround", False)):
+    return False
+  if abs(float(block["top"]) - float(sample["y"])) > 1.0e-4:
+    return False
+  x = int(block["x"])
+  z = int(block["z"])
+  return (x, z) in footprint_cells(sample.get("box", {}))
+
+
+def footprint_cells(box: dict[str, Any]) -> list[tuple[int, int]]:
+  eps = 1.0e-6
+  min_x = math.floor(float(box.get("minX", 0.0)) + eps)
+  max_x = math.floor(float(box.get("maxX", 0.0)) - eps)
+  min_z = math.floor(float(box.get("minZ", 0.0)) + eps)
+  max_z = math.floor(float(box.get("maxZ", 0.0)) - eps)
+  return [(x, z) for z in range(min_z, max_z + 1) for x in range(min_x, max_x + 1)]
+
+
+def sampled_blocks(signature: dict[str, Any]) -> list[dict[str, Any]]:
+  min_dx = int(signature.get("minDx", -2))
+  max_dx = int(signature.get("maxDx", 2))
+  min_dz = int(signature.get("minDz", -2))
+  max_dz = int(signature.get("maxDz", 2))
+  floor_dy = int(signature.get("floorDy", -3))
+  clear_dy = int(signature.get("clearDy", 5))
+  masks = signature.get("occupancyMasks", [])
+  width = max_dx - min_dx + 1
+  blocks: list[dict[str, Any]] = []
+  for dz in range(min_dz, max_dz + 1):
+    for dx in range(min_dx, max_dx + 1):
+      index = (dz - min_dz) * width + (dx - min_dx)
+      mask = int(masks[index]) if index < len(masks) else 0
+      for dy in range(floor_dy, clear_dy + 1):
+        if mask & (1 << (dy - floor_dy)):
+          blocks.append({"x": dx, "z": dz, "bottom": dy - 1, "top": dy, "kind": "support" if dy <= 0 else "step"})
+  return blocks
+
+
+def causal_scene_bounds(blocks: list[dict[str, Any]], path: list[dict[str, Any]], future_edges: list[dict[str, Any]], traces: list[dict[str, Any]], failures: list[dict[str, Any]]) -> tuple[int, int, int, int]:
+  xs: list[float] = []
+  zs: list[float] = []
+  for block in blocks:
+    xs.extend((float(block["x"]), float(block["x"]) + 1.0))
+    zs.extend((float(block["z"]), float(block["z"]) + 1.0))
+  for p in path:
+    xs.append(float(p["x"]))
+    zs.append(float(p["z"]))
+  for edge in future_edges:
+    xs.extend((float(edge["src"]["x"]), float(edge["dest"]["x"])))
+    zs.extend((float(edge["src"]["z"]), float(edge["dest"]["z"])))
+  for trace in traces:
+    for sample in trace.get("samples", []):
+      box = sample.get("box", {})
+      xs.extend((float(box.get("minX", 0.0)), float(box.get("maxX", 0.0))))
+      zs.extend((float(box.get("minZ", 0.0)), float(box.get("maxZ", 0.0))))
+  for failure in failures:
+    xs.append(float(failure["x"]))
+    zs.append(float(failure["z"]))
+  if not xs:
+    return -2, 2, -2, 2
+  return math.floor(min(xs)) - 1, math.ceil(max(xs)) + 1, math.floor(min(zs)) - 1, math.ceil(max(zs)) + 1
+
+
+def render_interactive_html(scenes: list[dict[str, Any]]) -> str:
+  template = r"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Horse Routelet 3D Viewer</title>
+<style>
+html,body{height:100%;margin:0;background:#181611;color:#eee0c8;font:14px system-ui,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column}
+#bar{display:flex;gap:12px;align-items:center;padding:10px 14px;background:#241f18;border-bottom:1px solid #4b3d2a}
+select{max-width:58vw;background:#fff8ea;color:#22180f;border:1px solid #8b7658;border-radius:6px;padding:5px}
+button{background:#40331f;color:#fff3d6;border:1px solid #7a6038;border-radius:6px;padding:5px 9px}
+#stats{color:#d9ba82}#wrap{flex:1;min-height:0;position:relative}canvas{width:100%;height:100%;display:block;cursor:grab}canvas:active{cursor:grabbing}
+#hint{position:absolute;left:14px;bottom:12px;color:#ffedca;background:#0009;padding:7px 10px;border-radius:8px}
+</style></head><body>
+<div id="bar"><b>Horse Routelet 3D Viewer</b><select id="case"></select><select id="trace"></select><button id="reset">reset view</button><span id="stats"></span></div>
+<div id="wrap"><canvas id="view"></canvas><div id="hint">drag rotate · wheel zoom · green = exact sampled horse AABB trace · orange = replayed edge · blue = source-trace continuation · dark red = missing support actually swept/overhung</div></div>
+<script>
+const scenes = __SCENES__;
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+const sel = document.getElementById('case');
+const traceSel = document.getElementById('trace');
+const stats = document.getElementById('stats');
+let sceneIndex = 0, traceIndex = 0, yaw = -0.78, pitch = 0.62, zoom = 54, dragging = false, lastX = 0, lastY = 0;
+for (let i = 0; i < scenes.length; i++) {
+  const o = document.createElement('option');
+  o.value = i;
+  o.textContent = scenes[i].route + ' · ' + scenes[i].id;
+  sel.appendChild(o);
+}
+sel.onchange = () => { sceneIndex = Number(sel.value); traceIndex = 0; populateTraces(); reset(false); draw(); };
+traceSel.onchange = () => { traceIndex = Number(traceSel.value); draw(); };
+document.getElementById('reset').onclick = () => { reset(true); draw(); };
+function populateTraces() {
+  traceSel.replaceChildren();
+  const traces = scenes[sceneIndex].traces || [];
+  if (!traces.length) {
+    const o = document.createElement('option'); o.value = 0; o.textContent = 'no emitted trace samples'; traceSel.appendChild(o); traceSel.disabled = true; traceIndex = 0; return;
+  }
+  traceSel.disabled = false;
+  for (let i = 0; i < traces.length; i++) {
+    const t = traces[i], o = document.createElement('option');
+    o.value = i; o.textContent = `${i}: ${t.fellBelow?'fall ':''}${t.overshot?'overshot ':''}${t.clippedBelow?'clipped ':''}${t.label}`;
+    traceSel.appendChild(o);
+  }
+  traceSel.value = String(Math.min(traceIndex, traces.length - 1));
+}
+function reset(resetAngles) {
+  if (resetAngles) { yaw = -0.78; pitch = 0.62; zoom = 54; }
+  const s = scenes[sceneIndex].stats;
+  stats.textContent = `success ${s.success}/${s.trials} · overshot ${s.overshot} · fell ${s.fell} · overrun ${s.overrun} · q ${JSON.stringify(s.targetSupports)}`;
+}
+function resize() {
+  const dpr = devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function center(s) {
+  let xs = [], ys = [], zs = [];
+  for (const b of s.blocks) { xs.push(b.x, b.x+1); ys.push(b.bottom, b.top); zs.push(b.z, b.z+1); }
+  for (const p of s.path) { xs.push(p.x); ys.push(p.y); zs.push(p.z); }
+  for (const e of s.futureEdges || []) { xs.push(e.src.x,e.dest.x); ys.push(e.src.y,e.dest.y); zs.push(e.src.z,e.dest.z); }
+  for (const t of s.traces || []) for (const sample of t.samples || []) { const b = sample.box; xs.push(b.minX,b.maxX); ys.push(b.minY,b.maxY); zs.push(b.minZ,b.maxZ); }
+  return [(Math.min(...xs)+Math.max(...xs))/2, (Math.min(...ys)+Math.max(...ys))/2, (Math.min(...zs)+Math.max(...zs))/2];
+}
+function camera(c, w, h, p) {
+  let x = p[0]-c[0], y = p[1]-c[1], z = p[2]-c[2];
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = x*cy - z*sy, z1 = x*sy + z*cy;
+  const y2 = y*cp - z1*sp, z2 = y*sp + z1*cp;
+  return {x:w/2 + x1*zoom, y:h/2 - y2*zoom, d:z2};
+}
+function poly(c, w, h, pts) { return pts.map(p => camera(c,w,h,p)); }
+function depth(ps) { return ps.reduce((a,p)=>a+p.d,0)/ps.length; }
+function face(kind, pts, fill, stroke='#3b2c1a', alpha=1) { return {kind, pts, fill, stroke, alpha}; }
+function blockFaces(b) {
+  const x=b.x, z=b.z, y0=b.bottom, y1=b.top;
+  if (b.kind === 'void') return [face('void', [[x,y1,z],[x+1,y1,z],[x+1,y1,z+1],[x,y1,z+1]], '#68131d', '#c02a3b', .42)];
+  if (b.kind === 'floor') return [face('floor', [[x,y1,z],[x+1,y1,z],[x+1,y1,z+1],[x,y1,z+1]], '#d8cebd', '#a99b87', .38)];
+  const top = b.kind === 'step' ? '#ffb13c' : '#f0a72c', left = b.kind === 'step' ? '#c96e21' : '#d1821d', right = '#9f5c16';
+  return [
+    face('top', [[x,y1,z],[x+1,y1,z],[x+1,y1,z+1],[x,y1,z+1]], top),
+    face('x+', [[x+1,y1,z],[x+1,y0,z],[x+1,y0,z+1],[x+1,y1,z+1]], right),
+    face('z+', [[x,y1,z+1],[x+1,y1,z+1],[x+1,y0,z+1],[x,y0,z+1]], left),
+    face('x-', [[x,y1,z],[x,y1,z+1],[x,y0,z+1],[x,y0,z]], '#b96f1b'),
+    face('z-', [[x,y1,z],[x,y0,z],[x+1,y0,z],[x+1,y1,z]], '#c77a20')
+  ];
+}
+function drawFace(f, c, w, h) {
+  const ps = poly(c,w,h,f.pts);
+  ctx.beginPath(); ctx.moveTo(ps[0].x, ps[0].y); for (let i=1;i<ps.length;i++) ctx.lineTo(ps[i].x,ps[i].y); ctx.closePath();
+  ctx.globalAlpha = f.alpha; ctx.fillStyle = f.fill; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = f.stroke; ctx.lineWidth = f.kind === 'void' ? 1.5 : 1; ctx.stroke();
+}
+function line3(c,w,h,a,b,color,width=2,dash=[]) {
+  const p=camera(c,w,h,a), q=camera(c,w,h,b); ctx.setLineDash(dash); ctx.strokeStyle=color; ctx.lineWidth=width; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke(); ctx.setLineDash([]);
+}
+function wireBox(c,w,h,b,color,width=1.4,dash=[]) {
+  const v=[[b.minX,b.minY,b.minZ],[b.maxX,b.minY,b.minZ],[b.maxX,b.minY,b.maxZ],[b.minX,b.minY,b.maxZ],[b.minX,b.maxY,b.minZ],[b.maxX,b.maxY,b.minZ],[b.maxX,b.maxY,b.maxZ],[b.minX,b.maxY,b.maxZ]];
+  for (const [a,e] of [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]]) line3(c,w,h,v[a],v[e],color,width,dash);
+}
+function controlSamples(samples) {
+  if (samples.length <= 2) return samples.map((_, i) => i);
+  // Endpoint cap deltas are zero, but endpoints are control frames by definition: a trace without its source/terminal boxes is a lie.
+  const out = [0], minStepSq = 1e-6, sinThreshold = 0.075;
+  for (let i = 1; i < samples.length - 1; i++) {
+    const a = samples[i-1], b = samples[i], d = samples[i+1];
+    const bx = b.x - a.x, bz = b.z - a.z, fx = d.x - b.x, fz = d.z - b.z;
+    const bm = bx*bx + bz*bz, fm = fx*fx + fz*fz;
+    if (bm < minStepSq || fm < minStepSq) continue;
+    const cross = bx*fz - bz*fx, dot = bx*fx + bz*fz;
+    if (dot <= 0 || Math.abs(cross) / Math.sqrt(bm * fm) > sinThreshold) out.push(i);
+  }
+  if (out[out.length - 1] !== samples.length - 1) out.push(samples.length - 1);
+  return out;
+}
+function drawPath(s,c,w,h) {
+  for (let i=1;i<(s.futureEdges||[]).length;i++) {
+    const e=s.futureEdges[i];
+    line3(c,w,h,[e.src.x,e.src.y+1.72,e.src.z],[e.dest.x,e.dest.y+1.72,e.dest.z],'#47a3ff',3,[7,5]);
+    const q=camera(c,w,h,[e.dest.x,e.dest.y+1.72,e.dest.z]);
+    ctx.fillStyle='#d7edff'; ctx.strokeStyle='#05294e'; ctx.lineWidth=3; ctx.font='800 10px ui-monospace,monospace';
+    ctx.strokeText(String(i),q.x+5,q.y+3); ctx.fillText(String(i),q.x+5,q.y+3);
+  }
+  for (let i=1;i<s.path.length;i++) line3(c,w,h,[s.path[i-1].x,s.path[i-1].y+1.85,s.path[i-1].z],[s.path[i].x,s.path[i].y+1.85,s.path[i].z],'#ff4a21',4);
+  for (let i=0;i<s.path.length;i++) {
+    const p=s.path[i], q=camera(c,w,h,[p.x,p.y+1.85,p.z]);
+    if (i === 0) {
+      ctx.fillStyle='#24c764'; ctx.strokeStyle='#083d1c'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(q.x,q.y,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      const startLabel = s.startLabel || 'START';
+      ctx.fillStyle='#caffda'; ctx.strokeStyle='#001b0b'; ctx.lineWidth=4; ctx.font='800 13px system-ui,sans-serif'; ctx.strokeText(startLabel,q.x+12,q.y-9); ctx.fillText(startLabel,q.x+12,q.y-9);
+    } else {
+      ctx.fillStyle='#fff3e0'; ctx.strokeStyle='#ff4a21'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(q.x,q.y,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      const label = Number.isFinite(p.support) ? `${i} q${p.support}` : String(i);
+      ctx.fillStyle='#fff3e0'; ctx.font='700 11px ui-monospace,monospace'; ctx.fillText(label,q.x+8,q.y-7);
+    }
+  }
+}
+function drawTrace(s,c,w,h) {
+  const traces = s.traces || [];
+  if (!traces.length) return;
+  const trace = traces[Math.min(traceIndex, traces.length - 1)];
+  const samples = trace.samples || [];
+  if (!samples.length) return;
+  ctx.globalAlpha = 0.78;
+  for (let i=1;i<samples.length;i++) line3(c,w,h,[samples[i-1].x,samples[i-1].y+0.08,samples[i-1].z],[samples[i].x,samples[i].y+0.08,samples[i].z],'#4cff87',2);
+  ctx.globalAlpha = 1;
+  const controls = controlSamples(samples);
+  for (const i of controls.slice(0, -1)) wireBox(c,w,h,samples[i].box,'#4cff87',1.15);
+  wireBox(c,w,h,samples[samples.length-1].box,trace.fellBelow?'#ff2334':'#f8ff7a',2.6);
+  const last = samples[samples.length-1], p = camera(c,w,h,[last.x,last.y+1.8,last.z]);
+  ctx.fillStyle=trace.fellBelow?'#ff2334':'#f8ff7a'; ctx.strokeStyle='#101010'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  const label = trace.clippedBelow ? `tick ${last.tick} clipped` : `tick ${last.tick}`;
+  ctx.fillStyle='#d7ffd8'; ctx.strokeStyle='#001b0b'; ctx.lineWidth=4; ctx.font='800 12px ui-monospace,monospace'; ctx.strokeText(label,p.x+10,p.y+4); ctx.fillText(label,p.x+10,p.y+4);
+}
+function drawFailures(s,c,w,h) {
+  for (const f of s.failures) {
+    const p=camera(c,w,h,[f.x,f.y+1.9,f.z]); ctx.fillStyle=f.fellBelow?'#e00013':'#a200ff'; ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle='#fff'; ctx.beginPath(); ctx.moveTo(p.x-8,p.y-8); ctx.lineTo(p.x+8,p.y+8); ctx.moveTo(p.x+8,p.y-8); ctx.lineTo(p.x-8,p.y+8); ctx.stroke();
+    ctx.fillStyle=f.fellBelow?'#ffabb1':'#e3b4ff'; ctx.font='700 11px ui-monospace,monospace'; ctx.fillText(f.fellBelow?`fall ${f.rawY.toFixed(1)}`:'overshoot',p.x+10,p.y+4);
+  }
+}
+function drawAxes(c,w,h) {
+  const o=[-4,2.4,-4]; line3(c,w,h,o,[o[0]+1,o[1],o[2]],'#ff5a5a',3); line3(c,w,h,o,[o[0],o[1],o[2]+1],'#68a4ff',3); line3(c,w,h,o,[o[0],o[1]+1,o[2]],'#58cf75',3);
+}
+function draw() {
+  resize(); const w=canvas.clientWidth, h=canvas.clientHeight, s=scenes[sceneIndex], c=center(s);
+  ctx.clearRect(0,0,w,h); ctx.fillStyle='#191611'; ctx.fillRect(0,0,w,h);
+  let faces=[]; for (const b of s.blocks) for (const f of blockFaces(b)) { const ps=poly(c,w,h,f.pts); faces.push({f, d:depth(ps)}); }
+  faces.sort((a,b)=>a.d-b.d); for (const item of faces) drawFace(item.f,c,w,h);
+  drawPath(s,c,w,h); drawTrace(s,c,w,h); drawFailures(s,c,w,h); drawAxes(c,w,h);
+  ctx.fillStyle='#eee0c8'; ctx.font='700 14px ui-monospace,monospace'; ctx.fillText(String(s.route),14,24);
+}
+canvas.addEventListener('mousedown', e => { dragging=true; lastX=e.clientX; lastY=e.clientY; });
+addEventListener('mouseup', () => dragging=false);
+addEventListener('mousemove', e => { if (!dragging) return; yaw += (e.clientX-lastX)*0.01; pitch = Math.max(-1.35, Math.min(1.35, pitch + (e.clientY-lastY)*0.01)); lastX=e.clientX; lastY=e.clientY; draw(); });
+canvas.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(18, Math.min(160, zoom * Math.exp(-e.deltaY*0.001))); draw(); }, {passive:false});
+addEventListener('resize', draw);
+populateTraces(); reset(false); draw();
+</script></body></html>
+"""
+  return template.replace("__SCENES__", json.dumps(scenes, separators=(",", ":")))
+
+
+def command_summarize(args: argparse.Namespace) -> int:
+  summarize_result(args.result, args.out)
+  return 0
+
+
+def floats(raw: str) -> list[float]:
+  return [float(part) for part in raw.split(",") if part]
+
+
+def parser() -> argparse.ArgumentParser:
+  root = argparse.ArgumentParser(description="Mine actual-physics corner-lattice horse CRUISE8 edges.")
+  sub = root.add_subparsers(dest="command", required=True)
+  for name in ("make", "run"):
+    p = sub.add_parser(name)
+    p.add_argument("--id", default="horse_corner_cruise_grind")
+    p.add_argument("--move", action="append", choices=sorted(MOVES), default=None, help="repeatable; defaults to XP,ZP,XP_ZP,XP_ZN")
+    p.add_argument("--profiles", default="deep,0,1", help="comma-separated surface[/ceiling] profiles; surface deep means no support in tested window")
+    p.add_argument("--target-support", type=int, action="append", choices=range(5), default=None, help="repeatable; keep only cases with this target support quadrant count")
+    p.add_argument("--max-cases", type=int, default=64, help="per move; 0 means complete Cartesian product")
+    p.add_argument("--sample-seed", default="corner-cruise-v1")
+    p.add_argument("--archetypes", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--end-dy", type=int, default=0)
+    p.add_argument("--floor-dy", type=int, default=-3)
+    p.add_argument("--clear-dy", type=int, default=5)
+    p.add_argument("--horse-half-width", type=float, default=HALF_WIDTH)
+    p.add_argument("--perturbation-radius", type=float, default=0.16)
+    p.add_argument("--overshoot-horizon", type=float, default=0.45)
+    p.add_argument("--halo", type=int, default=1)
+    p.add_argument("--movement-speed", type=float, default=0.30)
+    p.add_argument("--jump-strength", type=float, default=0.90)
+    p.add_argument("--ticks", type=int, default=22)
+    p.add_argument("--end-radius", type=float, default=0.55)
+    p.add_argument("--max-end-y-error", type=float, default=1.25)
+    p.add_argument("--fall-tolerance", type=float, default=0.20)
+    p.add_argument("--overshoot-slack", type=float, default=0.0)
+    p.add_argument("--longitudinal", type=floats, default=floats("-0.08,0,0.08"))
+    p.add_argument("--lateral", type=floats, default=floats("-0.08,0,0.08"))
+    p.add_argument("--yaw", type=floats, default=floats("-2,0,2"))
+    p.add_argument("--initial-speed", type=floats, default=floats("0,0.22"))
+    p.add_argument("--initial-lateral-speed", type=floats, default=floats("-0.28,0,0.28"))
+    p.add_argument("--timeout-seconds", type=int, default=240)
+    p.add_argument("--seed", default="baritone-playtest-physics")
+    p.add_argument("--world-key", default="physics_corner_cruise_v1")
+    p.add_argument("--emit-trials", action=argparse.BooleanOptionalAction, default=False)
+    if name == "make":
+      p.add_argument("--out", type=Path, default=REPO / "run" / "playtest" / "corner-cruise" / "scenario.json")
+      p.set_defaults(func=command_make)
+    else:
+      p.add_argument("--out-dir", type=Path, default=REPO / "run" / "playtest" / "corner-cruise")
+      p.set_defaults(func=command_run)
+  for name in ("routelet-make", "routelet-run"):
+    p = sub.add_parser(name)
+    p.add_argument("--id", default="horse_corner_cruise_routelets")
+    p.add_argument("--routelet", action="append", default=None, help="repeatable MOVE:MOVE; defaults to high-value pivot slate")
+    p.add_argument("--lead-in-blocks", type=int, default=6, help="straight run-in before the pivot, to hit the turn at realistic cruise speed")
+    p.add_argument("--tail-blocks", type=int, default=1, help="straight continuation after the pivot move; catches accepted final-target overruns")
+    p.add_argument("--profiles", default="deep,0,1", help="comma-separated surface[/ceiling] profiles; surface deep means no support in tested window")
+    p.add_argument("--target-support", type=int, action="append", choices=range(5), default=None, help="repeatable; keep only cases with this pivot support quadrant count")
+    p.add_argument("--min-successor-support", type=int, choices=range(5), default=1, help="minimum support quadrants for every post-pivot target; use --allow-known-bad to disable")
+    p.add_argument("--allow-known-bad", action=argparse.BooleanOptionalAction, default=False, help="keep routelets that deliberately steer into unsupported successor targets")
+    p.add_argument("--max-cases", type=int, default=256, help="per routelet; 0 means complete Cartesian product")
+    p.add_argument("--sample-seed", default="corner-routelet-v1")
+    p.add_argument("--end-dy", type=int, default=0)
+    p.add_argument("--floor-dy", type=int, default=-3)
+    p.add_argument("--clear-dy", type=int, default=5)
+    p.add_argument("--horse-half-width", type=float, default=HALF_WIDTH)
+    p.add_argument("--perturbation-radius", type=float, default=0.16)
+    p.add_argument("--overshoot-horizon", type=float, default=0.45)
+    p.add_argument("--halo", type=int, default=1)
+    p.add_argument("--movement-speed", type=float, default=0.30)
+    p.add_argument("--jump-strength", type=float, default=0.90)
+    p.add_argument("--ticks", type=int, default=60)
+    p.add_argument("--end-radius", type=float, default=0.55)
+    p.add_argument("--max-end-y-error", type=float, default=1.25)
+    p.add_argument("--fall-tolerance", type=float, default=0.20)
+    p.add_argument("--overshoot-slack", type=float, default=0.0)
+    p.add_argument("--longitudinal", type=floats, default=floats("-0.08,0,0.08"))
+    p.add_argument("--lateral", type=floats, default=floats("-0.08,0,0.08"))
+    p.add_argument("--yaw", type=floats, default=floats("-2,0,2"))
+    p.add_argument("--initial-speed", type=floats, default=floats("0"))
+    p.add_argument("--initial-lateral-speed", type=floats, default=floats("0"))
+    p.add_argument("--timeout-seconds", type=int, default=240)
+    p.add_argument("--seed", default="baritone-playtest-physics")
+    p.add_argument("--world-key", default="physics_corner_routelet_v1")
+    p.add_argument("--emit-trials", action=argparse.BooleanOptionalAction, default=False)
+    if name == "routelet-make":
+      p.add_argument("--out", type=Path, default=REPO / "run" / "playtest" / "corner-cruise-routelet" / "scenario.json")
+      p.set_defaults(func=command_routelet_make)
+    else:
+      p.add_argument("--out-dir", type=Path, default=REPO / "run" / "playtest" / "corner-cruise-routelet")
+      p.set_defaults(func=command_routelet_run)
+  for name in ("trace-falls-make", "trace-falls-run"):
+    p = sub.add_parser(name)
+    p.add_argument("result", nargs="+", type=Path, help="modern thisway200 result directories or trace.jsonl files")
+    p.add_argument("--id", default="horse_thisway_fall_replay")
+    p.add_argument("--min-fall-distance", type=float, default=1.50)
+    p.add_argument("--max-cases-per-run", type=int, default=4)
+    p.add_argument("--require-route", default="HorseRoute:CRUISE", help="movement prefix to replay; empty string accepts any routed fall")
+    p.add_argument("--replay-root", choices=("fall-onset", "route-entry"), default="fall-onset")
+    p.add_argument("--future-edges", type=int, default=10, help="distinct source-trace planned edges to render in blue")
+    p.add_argument("--forward", action=argparse.BooleanOptionalAction, default=True, help="hold W during replay; CRUISE traces currently do not expose mounted W reliably")
+    p.add_argument("--trace-input", action=argparse.BooleanOptionalAction, default=False, help="use mocap physicalInputs instead of the CRUISE hold-W doctrine")
+    p.add_argument("--movement-speed", type=float, default=0.30)
+    p.add_argument("--jump-strength", type=float, default=0.90)
+    p.add_argument("--ticks", type=int, default=50)
+    p.add_argument("--end-radius", type=float, default=0.55)
+    p.add_argument("--max-end-y-error", type=float, default=1.25)
+    p.add_argument("--fall-tolerance", type=float, default=0.20)
+    p.add_argument("--timeout-seconds", type=int, default=240)
+    p.add_argument("--world-key", default=None)
+    p.add_argument("--seed", default=None)
+    if name == "trace-falls-make":
+      p.add_argument("--out", type=Path, default=REPO / "run" / "playtest" / "thisway-fall-replay" / "scenario.json")
+      p.set_defaults(func=command_trace_falls_make)
+    else:
+      p.add_argument("--out-dir", type=Path, default=REPO / "run" / "playtest" / "thisway-fall-replay")
+      p.set_defaults(func=command_trace_falls_run)
+  summarize = sub.add_parser("summarize")
+  summarize.add_argument("result", type=Path)
+  summarize.add_argument("--out", type=Path)
+  summarize.set_defaults(func=command_summarize)
+  render = sub.add_parser("render-danger")
+  render.add_argument("result", type=Path)
+  render.add_argument("--out-dir", type=Path, default=REPO / "run" / "playtest" / "corner-routelet-danger-gallery")
+  render.add_argument("--limit", type=int, default=64)
+  render.add_argument("--include-overruns", action=argparse.BooleanOptionalAction, default=False)
+  render.set_defaults(func=command_render_danger)
+  return root
+
+
+def main() -> int:
+  args = parser().parse_args()
+  return args.func(args)
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

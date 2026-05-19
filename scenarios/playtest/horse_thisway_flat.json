@@ -1,0 +1,56 @@
+{
+  "id": "horse_thisway_flat",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1280.5,
+    "y": 80.0,
+    "z": -1280.5,
+    "yaw": 0.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "pointxz",
+    "x": 1280,
+    "y": 80,
+    "z": -1271
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld run forceload add 1264 -1296 1312 -1264",
+    "execute in minecraft:overworld run fill 1268 80 -1292 1304 94 -1268 minecraft:air",
+    "execute in minecraft:overworld run fill 1268 79 -1292 1304 79 -1268 minecraft:grass_block",
+    "execute in minecraft:overworld run fill 1268 80 -1293 1304 84 -1293 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1268 80 -1267 1304 84 -1267 minecraft:bedrock",
+    "execute in minecraft:overworld run summon minecraft:horse 1280.5 80 -1280.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}",
+    "execute in minecraft:overworld run forceload remove 1264 -1296 1312 -1264"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "baritoneCommands": [
+    "#thisway 10"
+  ],
+  "timeoutTicks": 180,
+  "successRadius": 2.5,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true,
+    "maxTicksToPlanning": 80,
+    "maxTicksToActuation": 100
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

@@ -28,9 +28,13 @@ import net.minecraft.world.level.block.LadderBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 public class MovementTraverse extends Movement {
+  private static final double SLAB_BRIDGE_SNEAK_ARM_DISTANCE = 1.05D;
+
   /**
    * Did we have to place a bridge block or was it always there
    */
@@ -145,8 +149,8 @@ public class MovementTraverse extends Movement {
           }
         }
         // now that we've checked all possible directions to side place, we actually need to backplace
-        if (srcDownBlock == Blocks.SOUL_SAND || (srcDownBlock instanceof SlabBlock && srcDown.getValue(SlabBlock.TYPE) != SlabType.DOUBLE)) {
-          return COST_INF; // can't sneak and backplace against soul sand or half slabs (regardless of whether it's top half or bottom half) =/
+        if (srcDownBlock == Blocks.SOUL_SAND) {
+          return COST_INF; // can't sneak and backplace against soul sand =/
         }
         if (!standingOnABlock) { // standing on water / swimming
           return COST_INF; // this is obviously impossible
@@ -155,7 +159,7 @@ public class MovementTraverse extends Movement {
         if ((blockSrc == Blocks.LILY_PAD || blockSrc instanceof CarpetBlock) && !srcDown.getFluidState().isEmpty()) {
           return COST_INF; // we can stand on these but can't place against them
         }
-        WC = WC * (SNEAK_ONE_BLOCK_COST / WALK_ONE_BLOCK_COST); // since we are sneak backplacing, we are sneaking lol
+        WC = WC * (SNEAK_ONE_BLOCK_COST / WALK_ONE_BLOCK_COST);
         return WC + placeCost + hardness1 + hardness2;
       }
       return COST_INF;
@@ -282,8 +286,9 @@ public class MovementTraverse extends Movement {
       return state;
     } else {
       wasTheBridgeBlockAlwaysThere = false;
-      Block standingOn = BlockStateInterface.get(ctx, feet.below()).getBlock();
-      if (standingOn.equals(Blocks.SOUL_SAND) || standingOn instanceof SlabBlock) { // see issue #118
+      BlockState standingOnState = BlockStateInterface.get(ctx, feet.below());
+      Block standingOn = standingOnState.getBlock();
+      if (standingOn.equals(Blocks.SOUL_SAND)) { // see issue #118
         double dist = Math.max(Math.abs(dest.getX() + 0.5 - ctx.player().position().x), Math.abs(dest.getZ() + 0.5 - ctx.player().position().z));
         if (dist < 0.85) { // 0.5 + 0.3 + epsilon
           MovementHelper.moveTowards(ctx, state, dest);
@@ -292,8 +297,13 @@ public class MovementTraverse extends Movement {
       }
       double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
       PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, !Baritone.settings().assumeSafeWalk.value);
-      if ((p == PlaceResult.READY_TO_PLACE || dist1 < 0.6) && !Baritone.settings().assumeSafeWalk.value) {
+      boolean slabBridgeSneakArmed = standingOn instanceof SlabBlock && standingOnState.getValue(SlabBlock.TYPE) != SlabType.DOUBLE
+        && distanceToDestCenterOnTraverseAxis() < SLAB_BRIDGE_SNEAK_ARM_DISTANCE && !Baritone.settings().assumeSafeWalk.value;
+      if ((p == PlaceResult.READY_TO_PLACE || dist1 < 0.6 || slabBridgeSneakArmed) && !Baritone.settings().assumeSafeWalk.value) {
         state.setInput(Input.SNEAK, true);
+      }
+      if (slabBridgeSneakArmed && !ctx.player().isCrouching()) {
+        return state.setInput(Input.MOVE_FORWARD, false).setInput(Input.MOVE_BACK, false).setInput(Input.MOVE_LEFT, false).setInput(Input.MOVE_RIGHT, false);
       }
       switch (p) {
         case READY_TO_PLACE : {
@@ -323,7 +333,7 @@ public class MovementTraverse extends Movement {
         // If we are in the block that we are trying to get to, we are sneaking over air and we need to place a block beneath us against the one we just walked off of
         // Out.log(from + " " + to + " " + faceX + "," + faceY + "," + faceZ + " " + whereAmI);
         double faceX = (dest.getX() + src.getX() + 1.0D) * 0.5D;
-        double faceY = (dest.getY() + src.getY() - 1.0D) * 0.5D;
+        double faceY = backplaceFaceY();
         double faceZ = (dest.getZ() + src.getZ() + 1.0D) * 0.5D;
         // faceX, faceY, faceZ is the middle of the face between from and to
         BlockPos goalLook = src.below(); // this is the block we were just standing on, and the one we want to place against
@@ -338,7 +348,8 @@ public class MovementTraverse extends Movement {
         } else {
           state.setTarget(new ControlFrame.MovementTarget(backToFace, true));
         }
-        if (ctx.isLookingAt(goalLook)) {
+        ((Baritone) baritone).getInventoryBehavior().findThrowawayHotbarSlotForLocation(positionToPlace.getX(), positionToPlace.getY(), positionToPlace.getZ()).ifPresent(state::selectHotbarSlot);
+        if (lookingAtBackplaceFace(goalLook)) {
           return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
         }
         // Out.log("Trying to look at " + goalLook + ", actually looking at" + Baritone.whatAreYouLookingAt());
@@ -350,6 +361,36 @@ public class MovementTraverse extends Movement {
       MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
       return state;
     }
+  }
+
+  private double backplaceFaceY() {
+    BlockState desired = ((Baritone) baritone).getBuilderProcess().placeAt(positionToPlace.getX(), positionToPlace.getY(), positionToPlace.getZ(), BlockStateInterface.get(ctx, positionToPlace));
+    if (desired != null && desired.getBlock() instanceof SlabBlock) {
+      return switch (desired.getValue(SlabBlock.TYPE)) {
+        case BOTTOM -> positionToPlace.getY() + 0.25D;
+        case TOP -> positionToPlace.getY() + 0.75D;
+        case DOUBLE -> positionToPlace.getY() + 0.5D;
+      };
+    }
+    return (dest.getY() + src.getY() - 1.0D) * 0.5D;
+  }
+
+  private double distanceToDestCenterOnTraverseAxis() {
+    BlockPos direction = getDirection();
+    double length = Math.hypot(direction.getX(), direction.getZ());
+    if (length == 0D) {
+      return 0D;
+    }
+    double dx = dest.getX() + 0.5D - ctx.player().position().x;
+    double dz = dest.getZ() + 0.5D - ctx.player().position().z;
+    return (dx * direction.getX() + dz * direction.getZ()) / length;
+  }
+
+  private boolean lookingAtBackplaceFace(BlockPos placeAgainst) {
+    if (!(ctx.objectMouseOver() instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+      return false;
+    }
+    return hit.getBlockPos().equals(placeAgainst) && hit.getBlockPos().relative(hit.getDirection()).equals(positionToPlace);
   }
 
   @Override

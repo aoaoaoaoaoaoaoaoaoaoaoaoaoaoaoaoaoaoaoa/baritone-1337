@@ -65,6 +65,11 @@ gradle.taskGraph.whenReady { graph ->
       run.systemProperty "baritone.playtest.results", findProperty("baritonePlaytestResults") ?: new File(playtestRoot, "results").absolutePath
       run.systemProperty "baritone.playtest.server", findProperty("baritonePlaytestServer") ?: "127.0.0.1:25565"
       run.systemProperty "baritone.playtest.quitOnFinish", findProperty("baritonePlaytestQuitOnFinish") ?: "false"
+      run.systemProperty "baritone.playtest.codeStamp", findProperty("baritonePlaytestCodeStamp") ?: "unstamped"
+      def mountTuning = findProperty("baritoneMountTuning") ?: System.getenv("BARITONE_MOUNT_TUNING")
+      if (mountTuning != null && mountTuning.toString().trim()) {
+        run.systemProperty "baritone.mountTuning", mountTuning.toString()
+      }
       run.setProperty("auth_player_name") { (findProperty("baritonePlaytestUsername") ?: "BaritoneTest").toString() }
       run.setProperty("auth_uuid") { (findProperty("baritonePlaytestUuid") ?: "8b53c6c6-93e4-3df0-8b0c-415e38e60014").toString() }
       run.setProperty("auth_access_token") { "0" }
@@ -75,6 +80,9 @@ gradle.taskGraph.whenReady { graph ->
   if (playtestServer) {
     tasks.named("runServer").configure {
       workingDir = file(findProperty("baritonePlaytestServerDir") ?: new File(playtestRoot, "server"))
+      systemProperty "baritone.physics.enabled", findProperty("baritonePhysicsEnabled") ?: "true"
+      systemProperty "baritone.physics.inbox", findProperty("baritonePhysicsInbox") ?: new File(playtestRoot, "physics-inbox").absolutePath
+      systemProperty "baritone.physics.results", findProperty("baritonePhysicsResults") ?: new File(playtestRoot, "physics-results").absolutePath
     }
   }
 }

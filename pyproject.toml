@@ -1,0 +1,11 @@
+[project]
+name = "baritone-playtest-tools"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = [
+  "nbtlib>=2.0.4",
+  "optuna>=4.6.0",
+]
+
+[tool.uv]
+package = false

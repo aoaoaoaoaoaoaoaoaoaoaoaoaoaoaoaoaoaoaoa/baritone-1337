@@ -26,7 +26,10 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.ItemStack;
@@ -142,6 +145,13 @@ public final class MocapBehavior extends Behavior {
       field(json, "effectiveYaw", effective.getYaw()).append(',');
       field(json, "effectivePitch", effective.getPitch()).append(',');
       field(json, "onGround", player.onGround()).append(',');
+      field(json, "fallDistance", player.fallDistance).append(',');
+      field(json, "hurtTime", player.hurtTime).append(',');
+      field(json, "invulnerableTime", player.invulnerableTime).append(',');
+      field(json, "inWall", player.isInWall()).append(',');
+      field(json, "lastDamageSource", damageSource(player.getLastDamageSource())).append(',');
+      field(json, "health", player.getHealth()).append(',');
+      field(json, "maxHealth", player.getMaxHealth()).append(',');
       field(json, "inWater", player.isInWater()).append(',');
       field(json, "underWater", player.isUnderWater()).append(',');
       field(json, "eyeInWater", player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER)).append(',');
@@ -445,8 +455,17 @@ public final class MocapBehavior extends Behavior {
       json.append('{');
       field(json, "type", BuiltInRegistries.ENTITY_TYPE.getKey(vehicle.getType()).toString()).append(',');
       field(json, "pos", vehicle.position()).append(',');
+      field(json, "feet", new BlockPos(Mth.floor(vehicle.getX()), Mth.floor(vehicle.getBoundingBox().minY + 0.01D), Mth.floor(vehicle.getZ()))).append(',');
       field(json, "velocity", vehicle.getDeltaMovement()).append(',');
       field(json, "horizontalSpeed", horizontalSpeed(vehicle.getDeltaMovement())).append(',');
+      field(json, "onGround", vehicle.onGround()).append(',');
+      field(json, "fallDistance", vehicle.fallDistance).append(',');
+      field(json, "invulnerableTime", vehicle.invulnerableTime).append(',');
+      field(json, "inWall", vehicle.isInWall()).append(',');
+      field(json, "health", vehicle instanceof LivingEntity living ? living.getHealth() : null).append(',');
+      field(json, "maxHealth", vehicle instanceof LivingEntity living ? living.getMaxHealth() : null).append(',');
+      field(json, "hurtTime", vehicle instanceof LivingEntity living ? living.hurtTime : null).append(',');
+      field(json, "lastDamageSource", vehicle instanceof LivingEntity living ? damageSource(living.getLastDamageSource()) : null).append(',');
       field(json, "yaw", vehicle.getYRot()).append(',');
       field(json, "pitch", vehicle.getXRot()).append(',');
       field(json, "controlled", vehicle == ctx.player().getControlledVehicle()).append(',');
@@ -459,6 +478,10 @@ public final class MocapBehavior extends Behavior {
       }
       json.append('}');
     };
+  }
+
+  private static Object damageSource(DamageSource source) {
+    return source == null ? null : source.getMsgId();
   }
 
   private static int boatItems(LocalPlayer player) {

@@ -24,6 +24,7 @@ public final class PathingProfiler {
   private final Path outputDirectory;
   private int nextSequence;
   private boolean pending;
+  private boolean sessionActive;
   private Active active;
   private Path lastOutput;
   private IOException lastFailure;
@@ -67,7 +68,10 @@ public final class PathingProfiler {
 
   public synchronized String status() {
     if (active != null) {
-      return "Path microprofiler is active for calculation segment #" + active.sequence;
+      return sessionActive ? "Path microprofiler is session-active for calculation segment #" + active.sequence : "Path microprofiler is active for calculation segment #" + active.sequence;
+    }
+    if (sessionActive) {
+      return "Path microprofiler is session-active";
     }
     if (pending) {
       return "Path microprofiler is armed for the next A* calculation segment";
@@ -85,9 +89,20 @@ public final class PathingProfiler {
     return Optional.ofNullable(lastOutput);
   }
 
-  Active begin(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, long primaryTimeout, long failureTimeout) {
+  public synchronized void beginSession() {
+    sessionActive = true;
+    pending = false;
+    lastFailure = null;
+  }
+
+  public synchronized void endSession() {
+    sessionActive = false;
+    pending = false;
+  }
+
+  public Active begin(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, long primaryTimeout, long failureTimeout) {
     synchronized (this) {
-      if (!pending || active != null) {
+      if ((!pending && !sessionActive) || active != null) {
         return null;
       }
       pending = false;
@@ -209,7 +224,7 @@ public final class PathingProfiler {
       this.staticCutoffNanos = staticCutoffNanos;
     }
 
-    void finish(PathCalculationResult result) {
+    public void finish(PathCalculationResult result) {
       owner.finish(this, result);
     }
 

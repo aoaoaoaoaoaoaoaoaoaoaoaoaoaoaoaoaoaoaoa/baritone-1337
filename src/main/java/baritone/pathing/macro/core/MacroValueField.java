@@ -5,6 +5,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.macro.value.DStarLiteValueField;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import net.minecraft.world.level.Level;
 
 public final class MacroValueField {
@@ -33,9 +34,10 @@ public final class MacroValueField {
     this.floorRepair = floorRepair;
   }
 
-  static MacroValueField build(MacroAtlas atlas, MacroPolicy policy, long start, long target, int minCellX, int maxCellX, int minCellZ, int maxCellZ, double expectedTerminal, double floorTerminal) {
-    MacroValueGraph expectedGraph = new MacroValueGraph(atlas, policy, minCellX, maxCellX, minCellZ, maxCellZ, false);
-    MacroValueGraph floorGraph = new MacroValueGraph(atlas, policy, minCellX, maxCellX, minCellZ, maxCellZ, true);
+  static MacroValueField build(MacroAtlas atlas, MacroPolicy policy, MacroTraversalProfile profile, long start, long target, int minCellX, int maxCellX, int minCellZ, int maxCellZ,
+    double expectedTerminal, double floorTerminal) {
+    MacroValueGraph expectedGraph = new MacroValueGraph(atlas, policy, profile, minCellX, maxCellX, minCellZ, maxCellZ, false);
+    MacroValueGraph floorGraph = new MacroValueGraph(atlas, policy, profile, minCellX, maxCellX, minCellZ, maxCellZ, true);
     DStarLiteValueField expected = new DStarLiteValueField(expectedGraph, start);
     DStarLiteValueField floor = new DStarLiteValueField(floorGraph, start);
     expected.setTerminal(target, expectedTerminal);
@@ -66,6 +68,51 @@ public final class MacroValueField {
 
   public double floorAtBlock(int x, int y, int z) {
     return adjusted(value(floor, x, z), x, z, true);
+  }
+
+  public boolean exactExitAtBlock(int x, int y, int z) {
+    int cellX = Math.floorDiv(x, atlas.cellBlocks());
+    int cellZ = Math.floorDiv(z, atlas.cellBlocks());
+    if (!atlas.factual(cellX, cellZ)) {
+      return false;
+    }
+    long key = MacroNodeKey.cell(Level.OVERWORLD, MacroStratum.SURFACE, atlas.scale(), cellX, cellZ);
+    var successor = expected.bestSuccessor(key);
+    if (successor.isEmpty()) {
+      return false;
+    }
+    long next = successor.getAsLong();
+    return !atlas.factual(MacroNodeKey.cellX(next), MacroNodeKey.cellZ(next));
+  }
+
+  public Optional<BetterBlockPos> preferredExactExit() {
+    List<BetterBlockPos> path = preferredExactPath();
+    return path.isEmpty() ? Optional.empty() : Optional.of(path.getLast());
+  }
+
+  public List<BetterBlockPos> preferredExactPath() {
+    ArrayList<BetterBlockPos> path = new ArrayList<>();
+    long cursor = start;
+    for (int i = 0; i < MAX_RENDER_VERTICES && cursor != target; i++) {
+      var successor = expected.bestSuccessor(cursor);
+      if (successor.isEmpty()) {
+        break;
+      }
+      long next = successor.getAsLong();
+      int cellX = MacroNodeKey.cellX(next);
+      int cellZ = MacroNodeKey.cellZ(next);
+      if (!atlas.factual(cellX, cellZ)) {
+        break;
+      }
+      BetterBlockPos pos = atlas.center(cellX, cellZ);
+      if (!path.isEmpty() && path.getLast().equals(pos)) {
+        cursor = next;
+        continue;
+      }
+      path.add(pos);
+      cursor = next;
+    }
+    return path;
   }
 
   public MacroPlan plan(BetterBlockPos physicalStart, BetterBlockPos physicalDest, Goal localGoal, MacroPolicy policy) {

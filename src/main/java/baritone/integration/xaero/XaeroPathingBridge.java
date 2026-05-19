@@ -86,7 +86,7 @@ public final class XaeroPathingBridge {
     RouteRenderPlan plan = executor.renderPlan(current);
     for (RouteRenderPlan.Segment segment : plan.segments()) {
       int argb = argb(routeColor(segment, current), 224);
-      int radius = segment.mode() == TransportMode.PEDESTRIAN ? ROUTE_VERTEX_RADIUS : WATER_VERTEX_RADIUS;
+      int radius = segment.mode() == TransportMode.PEDESTRIAN || segment.mode() == TransportMode.HORSE ? ROUTE_VERTEX_RADIUS : WATER_VERTEX_RADIUS;
       appendPositions(points, dimension, segment.positions(), Math.max(segment.startIndex(), 0), argb, radius);
       if (points.size() >= MAX_RENDER_POINTS) {
         return;
@@ -139,6 +139,9 @@ public final class XaeroPathingBridge {
     }
     if (segment.mode() == TransportMode.BOAT) {
       return segment.terminal() ? settings.colorMacroBoatTerminal.value : settings.colorMacroBoatTransit.value;
+    }
+    if (segment.mode() == TransportMode.HORSE) {
+      return settings.colorBestPathSoFar.value;
     }
     return current ? settings.colorCurrentPath.value : settings.colorNextPath.value;
   }

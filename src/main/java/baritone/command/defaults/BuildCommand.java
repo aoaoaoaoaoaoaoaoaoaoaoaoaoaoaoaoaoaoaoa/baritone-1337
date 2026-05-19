@@ -13,7 +13,6 @@ import baritone.utils.schematic.SchematicSystem;
 import org.apache.commons.io.FilenameUtils;
 
 import java.io.File;
-import java.util.Arrays;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.stream.Stream;
@@ -36,15 +35,14 @@ public class BuildCommand extends Command {
     }
     if (!file.exists()) {
       if (file0.exists()) {
-        throw new CommandInvalidStateException(
-          String.format("Cannot load %s because I do not know which schematic format" + " that is. Please rename the file to include the correct" + " file extension.", file));
+        throw new CommandInvalidStateException("Cannot load %s because the schematic format is unknown. Rename the file with the correct extension.".formatted(file));
       }
       throw new CommandInvalidStateException("Cannot find " + file);
     }
-    if (!SchematicSystem.INSTANCE.getByFile(file).isPresent()) {
+    if (SchematicSystem.INSTANCE.getByFile(file).isEmpty()) {
       StringJoiner formats = new StringJoiner(", ");
       SchematicSystem.INSTANCE.getFileExtensions().forEach(formats::add);
-      throw new CommandInvalidStateException(String.format("Unsupported schematic format. Reckognized file extensions are: %s", formats));
+      throw new CommandInvalidStateException("Unsupported schematic format. Recognized file extensions are: %s".formatted(formats));
     }
     BetterBlockPos origin = ctx.playerFeet();
     BetterBlockPos buildOrigin;
@@ -59,7 +57,7 @@ public class BuildCommand extends Command {
     if (!success) {
       throw new CommandInvalidStateException("Couldn't load the schematic. Either your schematic is corrupt or this is a bug.");
     }
-    logDirect(String.format("Successfully loaded schematic for building\nOrigin: %s", buildOrigin));
+    logDirect("Successfully loaded schematic for building\nOrigin: %s".formatted(buildOrigin));
   }
 
   @Override
@@ -78,6 +76,6 @@ public class BuildCommand extends Command {
 
   @Override
   public List<String> getLongDesc() {
-    return Arrays.asList("Build a schematic from a file.", "", "Usage:", "> build <filename> - Loads and builds '<filename>.schematic'", "> build <filename> <x> <y> <z> - Custom position");
+    return List.of("Build a schematic from a file.", "", "Usage:", "> build <filename> - Loads and builds '<filename>.schematic'", "> build <filename> <x> <y> <z> - Custom position");
   }
 }

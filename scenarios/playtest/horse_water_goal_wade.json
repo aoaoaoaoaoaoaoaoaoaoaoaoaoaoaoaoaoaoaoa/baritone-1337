@@ -1,0 +1,58 @@
+{
+  "id": "horse_water_goal_wade",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "dimension": "minecraft:overworld",
+  "viewDistance": 10,
+  "simulationDistance": 10,
+  "start": {
+    "x": 1280.5,
+    "y": 80.0,
+    "z": -1260.5,
+    "yaw": -90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "nearxz",
+    "x": 1290,
+    "y": 80,
+    "z": -1260,
+    "radius": 3
+  },
+  "setupCommands": [
+    "execute in minecraft:overworld run forceload add 1264 -1272 1304 -1248",
+    "execute in minecraft:overworld run fill 1264 70 -1272 1304 96 -1248 minecraft:air",
+    "execute in minecraft:overworld run fill 1264 78 -1272 1304 78 -1248 minecraft:stone",
+    "execute in minecraft:overworld run fill 1264 79 -1272 1304 79 -1248 minecraft:water",
+    "execute in minecraft:overworld run fill 1264 80 -1273 1304 84 -1273 minecraft:bedrock",
+    "execute in minecraft:overworld run fill 1264 80 -1247 1304 84 -1247 minecraft:bedrock",
+    "execute in minecraft:overworld run summon minecraft:horse 1280.5 80 -1260.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}",
+    "execute in minecraft:overworld run forceload remove 1264 -1272 1304 -1248"
+  ],
+  "postSetupCommands": [
+    "execute as {player} at @s run ride @s mount @e[type=minecraft:horse,tag=baritone_playtest,limit=1,sort=nearest]"
+  ],
+  "timeoutTicks": 260,
+  "successRadius": 3.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireHorseEncountered": true,
+    "requirePlannedHorse": true,
+    "requirePathingSeen": true,
+    "requireWaterEncountered": true,
+    "requireNoDamage": true,
+    "maxJumpTicks": 0,
+    "maxRouteDestDistance": 3.0,
+    "maxTicksToPlanning": 100,
+    "maxTicksToActuation": 140
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowBreak": false,
+    "allowPlace": false,
+    "macroPlanning": false,
+    "primaryTimeoutMS": 12000,
+    "failureTimeoutMS": 12000
+  },
+  "trace": true
+}

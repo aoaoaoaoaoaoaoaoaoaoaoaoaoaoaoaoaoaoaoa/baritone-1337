@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+DIMENSION = "minecraft:the_nether"
+PROFILE_BIOME = "minecraft:nether"
+
+
+@dataclass(frozen=True)
+class Harvest:
+  repo: Path
+  root: Path
+  world_key: str
+  seed: str
+  radius: int
+  tile_chunks: int
+  target_successful_ticks: int
+  max_scenarios: int
+
+  @property
+  def playtest_root(self) -> Path:
+    return self.root / "playtest"
+
+  @property
+  def scenario_dir(self) -> Path:
+    return self.root / "scenarios"
+
+  @property
+  def aggregate_path(self) -> Path:
+    return self.root / "nether_traversal_prior.json"
+
+  @property
+  def pregen_marker(self) -> Path:
+    return self.root / f"pregen_{self.radius}_{self.tile_chunks}.ok"
+
+  @property
+  def manifest(self) -> Path:
+    return self.scenario_dir / "manifest.txt"
+
+  @property
+  def env(self) -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("GRADLE_USER_HOME", "/home/main/.cache/gradle")
+    env["PLAYTEST_ROOT"] = str(self.playtest_root)
+    env["PLAYTEST_SEED"] = self.seed
+    env["PLAYTEST_LEVEL_TYPE"] = "minecraft:normal"
+    env["PLAYTEST_VIEW_DISTANCE"] = os.environ.get("PLAYTEST_VIEW_DISTANCE", "6")
+    env["PLAYTEST_SIMULATION_DISTANCE"] = os.environ.get("PLAYTEST_SIMULATION_DISTANCE", "4")
+    env["PLAYTEST_RESULT_TIMEOUT"] = os.environ.get("PLAYTEST_RESULT_TIMEOUT", "2400")
+    env["PLAYTEST_PREGEN_BATCH_TILES"] = os.environ.get("PLAYTEST_PREGEN_BATCH_TILES", "1")
+    env["PLAYTEST_MUTE_CLIENT"] = os.environ.get("PLAYTEST_MUTE_CLIENT", "true")
+    env["PLAYTEST_MAX_TICK_TIME"] = os.environ.get("PLAYTEST_MAX_TICK_TIME", "600000")
+    return env
+
+
+def read_json(path: Path) -> dict[str, Any]:
+  return json.loads(path.read_text(encoding="utf-8"))
+
+
+def run(harvest: Harvest, *args: str) -> None:
+  print("$", " ".join(args), flush=True)
+  subprocess.run(args, cwd=harvest.repo, env=harvest.env, check=True)
+
+
+def playtest(harvest: Harvest, *args: str) -> None:
+  run(harvest, str(harvest.repo / "scripts" / "playtest"), *args)
+
+
+def pregen(harvest: Harvest) -> None:
+  if harvest.pregen_marker.exists():
+    print(f"nether harvest: pregeneration already marked complete: {harvest.pregen_marker}", flush=True)
+    return
+  harvest.root.mkdir(parents=True, exist_ok=True)
+  playtest(harvest, "biome-pregen", harvest.world_key, str(harvest.radius), str(harvest.tile_chunks), DIMENSION)
+  harvest.pregen_marker.write_text(datetime.now(timezone.utc).isoformat() + "\n", encoding="utf-8")
+
+
+def scan(harvest: Harvest) -> None:
+  if harvest.manifest.exists() and any(line.strip() for line in harvest.manifest.read_text(encoding="utf-8").splitlines()):
+    print(f"nether harvest: using existing scenarios: {harvest.manifest}", flush=True)
+    return
+  harvest.scenario_dir.mkdir(parents=True, exist_ok=True)
+  playtest(
+    harvest,
+    "biome-scan",
+    harvest.world_key,
+    str(harvest.scenario_dir),
+    "--dimension",
+    DIMENSION,
+    "--world-preset",
+    "minecraft:normal",
+    "--controller-profile",
+    "native-nether-pedestrian-1000",
+    "--profile-biome",
+    PROFILE_BIOME,
+    "--surface-profile",
+    "standing",
+    "--no-exclude-cave-biomes",
+    "--min-distance",
+    "950",
+    "--max-distance",
+    "1050",
+    "--scan-stride",
+    "8",
+    "--line-stride",
+    "16",
+    "--min-surface-y",
+    "24",
+    "--max-surface-y",
+    "118",
+    "--endpoint-exclusion-radius",
+    "128",
+    "--spawn-spiral-radius",
+    "24",
+    "--min-biome-samples",
+    "64",
+    "--max-starts-per-biome",
+    "12000",
+    "--max-rejections-per-biome",
+    "100000",
+    "--max-scenarios-per-biome",
+    str(harvest.max_scenarios),
+    "--attempts-per-heading",
+    "16",
+    "--min-timeout-ticks",
+    "6000",
+    "--success-radius",
+    "8",
+    "--timeout-ticks-per-block",
+    "22",
+    "--timeout-ticks-constant",
+    "1800",
+    "--primary-timeout-ms",
+    "60000",
+    "--failure-timeout-ms",
+    "60000",
+    "--random-seed",
+    "7331",
+  )
+
+
+def scenario_id(path: Path) -> str:
+  return str(read_json(path)["id"])
+
+
+def completed_ids(results: Path) -> set[str]:
+  ids: set[str] = set()
+  for scenario_path in results.glob("*/scenario.json"):
+    try:
+      ids.add(str(read_json(scenario_path).get("id", "")))
+    except (OSError, json.JSONDecodeError):
+      pass
+  return {sid for sid in ids if sid}
+
+
+def successful_ticks(results: Path) -> int:
+  ticks = 0
+  for summary_path in results.glob("*/summary.json"):
+    try:
+      summary = read_json(summary_path)
+      if summary.get("success"):
+        ticks += int(summary.get("elapsedTicks", 0) or 0)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+      pass
+  return ticks
+
+
+def aggregate(harvest: Harvest) -> None:
+  playtest(
+    harvest,
+    "biome-aggregate",
+    str(harvest.playtest_root / "results"),
+    str(harvest.aggregate_path),
+    "--controller-profile",
+    "native-nether-pedestrian-1000",
+    "--target-successful-ticks",
+    str(harvest.target_successful_ticks),
+    "--minimum-successful-samples",
+    "1",
+    "--minimum-independent-samples",
+    "1",
+  )
+
+
+def run_rollouts(harvest: Harvest) -> None:
+  scenarios = [Path(line.strip()) for line in harvest.manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
+  if not scenarios:
+    raise SystemExit(f"no scenarios in {harvest.manifest}")
+  results = harvest.playtest_root / "results"
+  while successful_ticks(results) < harvest.target_successful_ticks:
+    done = completed_ids(results)
+    remaining = [scenario for scenario in scenarios if scenario_id(scenario) not in done]
+    if not remaining:
+      print(f"nether harvest: exhausted {len(scenarios)} scenarios before target; successfulTicks={successful_ticks(results)} target={harvest.target_successful_ticks}", flush=True)
+      break
+    scenario = remaining[0]
+    print(f"nether harvest: successfulTicks={successful_ticks(results)} target={harvest.target_successful_ticks} next={scenario}", flush=True)
+    try:
+      playtest(harvest, "run", str(scenario))
+    except subprocess.CalledProcessError as e:
+      print(f"nether harvest: scenario failed with status {e.returncode}: {scenario}", flush=True)
+    aggregate(harvest)
+  aggregate(harvest)
+  playtest(harvest, "stop")
+
+
+def parser() -> argparse.ArgumentParser:
+  root = argparse.ArgumentParser()
+  repo = Path(__file__).resolve().parents[1]
+  stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+  root.add_argument("--root", type=Path, default=Path(os.environ.get("NETHER_HARVEST_ROOT", repo / "run" / f"nether-harvest-{stamp}")))
+  root.add_argument("--world-key", default=os.environ.get("NETHER_HARVEST_WORLD", "nether_traversal_0"))
+  root.add_argument("--seed", default=os.environ.get("NETHER_HARVEST_SEED", "baritone-nether-traversal-0"))
+  root.add_argument("--radius", type=int, default=int(os.environ.get("NETHER_HARVEST_RADIUS", "1536")))
+  root.add_argument("--tile-chunks", type=int, default=int(os.environ.get("NETHER_HARVEST_TILE_CHUNKS", "8")))
+  root.add_argument("--target-successful-ticks", type=int, default=int(os.environ.get("NETHER_HARVEST_TARGET_SUCCESSFUL_TICKS", "100000")))
+  root.add_argument("--max-scenarios", type=int, default=int(os.environ.get("NETHER_HARVEST_MAX_SCENARIOS", "80")))
+  return root
+
+
+def main() -> None:
+  args = parser().parse_args()
+  harvest = Harvest(Path(__file__).resolve().parents[1], args.root.resolve(), args.world_key, args.seed, args.radius, args.tile_chunks, args.target_successful_ticks, args.max_scenarios)
+  print(json.dumps({"root": str(harvest.root), "playtestRoot": str(harvest.playtest_root), "worldKey": harvest.world_key, "seed": harvest.seed, "dimension": DIMENSION, "targetSuccessfulTicks": harvest.target_successful_ticks}, indent=2), flush=True)
+  pregen(harvest)
+  scan(harvest)
+  run_rollouts(harvest)
+
+
+if __name__ == "__main__":
+  try:
+    main()
+  except KeyboardInterrupt:
+    sys.exit(130)

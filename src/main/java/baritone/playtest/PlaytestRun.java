@@ -4,7 +4,11 @@ import baritone.Baritone;
 import baritone.api.event.events.PathEvent;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.input.Input;
+import baritone.pathing.macro.core.MacroActionInstance;
+import baritone.pathing.macro.core.MacroActionKind;
+import baritone.pathing.macro.core.MacroNodeKey;
 import baritone.pathing.macro.core.MacroPlan;
+import baritone.pathing.mounted.MountTuning;
 import baritone.pathing.path.RouteExecutor;
 import baritone.pathing.route.RouteLeg;
 import baritone.pathing.route.SurfaceRouteLeg;
@@ -12,6 +16,7 @@ import baritone.pathing.transport.TransportMode;
 import baritone.pathing.transport.TransportSnapshot;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import java.io.IOException;
@@ -24,7 +29,11 @@ import java.util.EnumMap;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
 import net.minecraft.world.item.BoatItem;
 import net.minecraft.world.item.ItemStack;
@@ -33,6 +42,7 @@ import net.minecraft.world.phys.Vec3;
 final class PlaytestRun {
   private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
   private static final int TOOL_DAMAGE_UNSET = -2;
+  private static final double YAW_REVERSAL_DEGREES = 7.5D;
 
   private final PlaytestScenario scenario;
   private final Path resultDir;
@@ -48,6 +58,7 @@ final class PlaytestRun {
   private int initialFood = Integer.MIN_VALUE;
   private int minFood = Integer.MAX_VALUE;
   private int pathEvents;
+  private final EnumMap<PathEvent, Integer> pathEventCounts = new EnumMap<>(PathEvent.class);
   private int nextCalcFailures;
   private PathEvent lastPathEvent;
   private boolean calcFailed;
@@ -57,11 +68,15 @@ final class PlaytestRun {
   private int firstRouteTick = -1;
   private int firstMacroPlanTick = -1;
   private boolean sawBoat;
+  private boolean sawHorse;
+  private boolean lostHorseAfterEncounter;
   private boolean sawWater;
   private boolean sawPathing;
+  private boolean sawBuilder;
   private boolean sawMacroRoute;
   private boolean sawMacroBiomeRoute;
   private boolean sawPlannedBoat;
+  private boolean sawPlannedHorse;
   private int maxMacroBoatLegs;
   private double maxMacroBoatDistance;
   private double bestRouteDestDistance = Double.POSITIVE_INFINITY;
@@ -75,6 +90,10 @@ final class PlaytestRun {
   private boolean sawMacroPlanSurfaceTransition;
   private int maxMacroPlanSurfaceActions;
   private double maxMacroPlanSurfaceDistance;
+  private boolean sawMacroPlanPortal;
+  private int maxMacroPlanPortalActions;
+  private int maxMacroPlanPortalBuildExitActions;
+  private double maxMacroPlanNetherDistanceBeforePortalExit;
   private int maxMacroBiomeFactualCells;
   private int maxMacroBiomeUnknownCells;
   private int maxMacroBiomeLiveCells;
@@ -86,6 +105,10 @@ final class PlaytestRun {
   private int sprintTicks;
   private int sprintInputTicks;
   private int sneakTicks;
+  private final YawMetrics playerYaw = new YawMetrics();
+  private final YawMetrics vehicleYaw = new YawMetrics();
+  private final YawMetrics targetYaw = new YawMetrics();
+  private final YawMetrics pathYaw = new YawMetrics();
   private int initialPickaxeDamage = TOOL_DAMAGE_UNSET;
   private int maxPickaxeDamage = TOOL_DAMAGE_UNSET;
   private int initialAxeDamage = TOOL_DAMAGE_UNSET;
@@ -94,6 +117,12 @@ final class PlaytestRun {
   private int maxShovelDamage = TOOL_DAMAGE_UNSET;
   private int initialCobblestone = Integer.MIN_VALUE;
   private int minCobblestone = Integer.MAX_VALUE;
+  private String initialDimension;
+  private String finalDimension;
+  private boolean sawDimensionChange;
+  private double closestHorseDistanceToGoal = Double.POSITIVE_INFINITY;
+  private Vec3 closestHorsePos;
+  private int closestHorseTick = -1;
 
   PlaytestRun(PlaytestScenario scenario, Path resultRoot, Path scenarioFile, int startTick) {
     this.scenario = scenario;
@@ -124,6 +153,7 @@ final class PlaytestRun {
 
   void pathEvent(PathEvent event) {
     pathEvents++;
+    pathEventCounts.merge(event, 1, Integer::sum);
     lastPathEvent = event;
     calcFailed |= event == PathEvent.CALC_FAILED;
     nextCalcFailures += event == PathEvent.NEXT_CALC_FAILED ? 1 : 0;
@@ -139,6 +169,7 @@ final class PlaytestRun {
       sawPathing = true;
       firstPathingTick = firstSeen(firstPathingTick);
     }
+    sawBuilder |= baritone.getBuilderProcess().isActive();
     if (baritone.getPathingBehavior().getPlanningStart().isPresent()) {
       firstPlanningTick = firstSeen(firstPlanningTick);
     }
@@ -148,19 +179,28 @@ final class PlaytestRun {
     if (Float.isNaN(initialHealth)) {
       initialHealth = player.getHealth();
     }
+    sampleDimension(player);
     if (initialFood == Integer.MIN_VALUE) {
       initialFood = player.getFoodData().getFoodLevel();
     }
     minHealth = Math.min(minHealth, player.getHealth());
     minFood = Math.min(minFood, player.getFoodData().getFoodLevel());
     minAir = Math.min(minAir, player.getAirSupply());
-    sawWater |= player.isInWater() || player.isUnderWater() || player.isSwimming();
+    boolean mountedHorse = player.getVehicle() instanceof AbstractHorse;
+    if (mountedHorse) {
+      sampleHorseClosestApproach((AbstractHorse) player.getVehicle());
+    }
+    sawWater |= player.isInWater() || player.isUnderWater() || player.isSwimming() || mountedHorseWater(player);
     sawBoat |= player.getVehicle() instanceof AbstractBoat;
-    moveForwardTicks += forced(baritone, Input.MOVE_FORWARD) ? 1 : 0;
+    lostHorseAfterEncounter |= sawHorse && !mountedHorse;
+    sawHorse |= mountedHorse;
+    boolean moveForward = forced(baritone, Input.MOVE_FORWARD);
+    moveForwardTicks += moveForward ? 1 : 0;
     jumpTicks += forced(baritone, Input.JUMP) ? 1 : 0;
     sprintTicks += player.isSprinting() ? 1 : 0;
     sprintInputTicks += forced(baritone, Input.SPRINT) ? 1 : 0;
     sneakTicks += forced(baritone, Input.SNEAK) ? 1 : 0;
+    sampleYaw(player, moveForward);
     sampleInventoryUse(player);
     sampleRoute(baritone.getPathingBehavior().getCurrent(), baritone);
     sampleRoute(baritone.getPathingBehavior().getNext(), baritone);
@@ -171,9 +211,46 @@ final class PlaytestRun {
     if (plan != null && plan.mode() != null) {
       increment(plannedTicks, plan.mode());
       sawPlannedBoat |= plan.mode().boat();
+      sawPlannedHorse |= plan.mode() == TransportMode.HORSE;
     }
+    if (snapshot.control() != null && snapshot.control().targetYaw() != null) {
+      targetYaw.sample(snapshot.control().targetYaw(), moveForward);
+    }
+    samplePathYaw(snapshot, moveForward);
     sampleSequence(snapshot.current().sequence());
     sampleSequence(snapshot.next().sequence());
+  }
+
+  private void sampleYaw(LocalPlayer player, boolean moveForward) {
+    playerYaw.sample(player.getYRot(), moveForward || player.getDeltaMovement().horizontalDistanceSqr() > 0.0004D);
+    if (player.getVehicle() != null) {
+      vehicleYaw.sample(player.getVehicle().getYRot(), moveForward || player.getVehicle().getDeltaMovement().horizontalDistanceSqr() > 0.0004D);
+    }
+  }
+
+  private void samplePathYaw(TransportSnapshot snapshot, boolean moveForward) {
+    TransportSnapshot.Plan plan = snapshot.current().current();
+    if (plan == null || plan.src() == null || plan.dest() == null) {
+      return;
+    }
+    int dx = plan.dest().x - plan.src().x;
+    int dz = plan.dest().z - plan.src().z;
+    if (dx == 0 && dz == 0) {
+      return;
+    }
+    pathYaw.sample(Math.atan2(dx, dz) * Mth.RAD_TO_DEG, moveForward);
+  }
+
+  boolean sawDimensionChange() {
+    return sawDimensionChange;
+  }
+
+  private void sampleDimension(LocalPlayer player) {
+    finalDimension = player.level().dimension().toString();
+    if (initialDimension == null) {
+      initialDimension = finalDimension;
+    }
+    sawDimensionChange |= !finalDimension.equals(initialDimension);
   }
 
   boolean calcFailed() {
@@ -184,12 +261,48 @@ final class PlaytestRun {
     return sawWater;
   }
 
+  private static boolean mountedHorseWater(LocalPlayer player) {
+    if (!(player.getVehicle() instanceof AbstractHorse horse)) {
+      return false;
+    }
+    int x = Mth.floor(horse.getX());
+    int y = Mth.floor(horse.getBoundingBox().minY + 0.01D);
+    int z = Mth.floor(horse.getZ());
+    return horse.isInWater() || horse.isUnderWater() || player.level().getFluidState(new BlockPos(x, y, z)).is(FluidTags.WATER)
+      || player.level().getFluidState(new BlockPos(x, y - 1, z)).is(FluidTags.WATER);
+  }
+
+  private void sampleHorseClosestApproach(AbstractHorse horse) {
+    double distance = distanceToGoal(horse.position());
+    if (distance < closestHorseDistanceToGoal) {
+      closestHorseDistanceToGoal = distance;
+      closestHorsePos = horse.position();
+      closestHorseTick = ticks;
+    }
+  }
+
   boolean sawPathing() {
     return sawPathing;
   }
 
+  boolean sawBuilder() {
+    return sawBuilder;
+  }
+
   boolean sawBoat() {
     return sawBoat;
+  }
+
+  boolean sawHorse() {
+    return sawHorse;
+  }
+
+  boolean lostHorseAfterEncounter() {
+    return lostHorseAfterEncounter;
+  }
+
+  int jumpTicks() {
+    return jumpTicks;
   }
 
   int firstPathingTick() {
@@ -224,6 +337,10 @@ final class PlaytestRun {
     return sawPlannedBoat;
   }
 
+  boolean sawPlannedHorse() {
+    return sawPlannedHorse;
+  }
+
   boolean sawMacroPlanBoat() {
     return sawMacroPlanBoat;
   }
@@ -254,6 +371,22 @@ final class PlaytestRun {
 
   double maxMacroPlanSurfaceDistance() {
     return maxMacroPlanSurfaceDistance;
+  }
+
+  boolean sawMacroPlanPortal() {
+    return sawMacroPlanPortal;
+  }
+
+  int maxMacroPlanPortalActions() {
+    return maxMacroPlanPortalActions;
+  }
+
+  int maxMacroPlanPortalBuildExitActions() {
+    return maxMacroPlanPortalBuildExitActions;
+  }
+
+  double maxMacroPlanNetherDistanceBeforePortalExit() {
+    return maxMacroPlanNetherDistanceBeforePortalExit;
   }
 
   double routeDestDistance(PlaytestScenario.GoalSpec goal) {
@@ -382,12 +515,18 @@ final class PlaytestRun {
     double boatDistance = plan.boatDistance();
     int surfaceActions = plan.surfaceTransitionActions();
     double surfaceDistance = plan.surfaceTransitionDistance();
+    int portalActions = plan.portalActions();
+    PortalPlanSample portalSample = portalPlanSample(plan);
     sawMacroPlanBoat |= boatActions > 0;
     sawMacroPlanSurfaceTransition |= surfaceActions > 0;
+    sawMacroPlanPortal |= portalActions > 0;
     maxMacroPlanBoatActions = Math.max(maxMacroPlanBoatActions, boatActions);
     maxMacroPlanBoatDistance = Math.max(maxMacroPlanBoatDistance, boatDistance);
     maxMacroPlanSurfaceActions = Math.max(maxMacroPlanSurfaceActions, surfaceActions);
     maxMacroPlanSurfaceDistance = Math.max(maxMacroPlanSurfaceDistance, surfaceDistance);
+    maxMacroPlanPortalActions = Math.max(maxMacroPlanPortalActions, portalActions);
+    maxMacroPlanPortalBuildExitActions = Math.max(maxMacroPlanPortalBuildExitActions, portalSample.buildExitActions());
+    maxMacroPlanNetherDistanceBeforePortalExit = Math.max(maxMacroPlanNetherDistanceBeforePortalExit, portalSample.netherDistanceBeforeBuildExit());
     maxMacroBiomeFactualCells = Math.max(maxMacroBiomeFactualCells, plan.factualCells());
     maxMacroBiomeUnknownCells = Math.max(maxMacroBiomeUnknownCells, plan.unknownCells());
     maxMacroBiomeLiveCells = Math.max(maxMacroBiomeLiveCells, plan.liveCells());
@@ -402,6 +541,35 @@ final class PlaytestRun {
     }
     lastRouteSequence = sequence;
     sawPlannedBoat |= sequence.indexOf('b') >= 0 || sequence.indexOf('B') >= 0;
+    sawPlannedHorse |= sequence.indexOf('H') >= 0;
+  }
+
+  private static PortalPlanSample portalPlanSample(MacroPlan plan) {
+    int buildExit = 0;
+    double netherSincePortalEnter = 0D;
+    double bestNetherBeforeExit = 0D;
+    boolean postEnter = false;
+    for (MacroActionInstance action : plan.actions()) {
+      if (entersNether(action)) {
+        postEnter = true;
+        netherSincePortalEnter = 0D;
+        continue;
+      }
+      if (postEnter && action.kind() == MacroActionKind.SURFACE_TRAVERSE && MacroNodeKey.dimensionId(action.fromNode()) == MacroNodeKey.DIMENSION_NETHER
+        && MacroNodeKey.dimensionId(action.toNode()) == MacroNodeKey.DIMENSION_NETHER && action.renderPositions().size() >= 2) {
+        netherSincePortalEnter += flatDistance(action.renderPositions().get(0), action.renderPositions().get(action.renderPositions().size() - 1));
+      }
+      if (action.kind() == MacroActionKind.PORTAL_BUILD_EXIT) {
+        buildExit++;
+        bestNetherBeforeExit = Math.max(bestNetherBeforeExit, netherSincePortalEnter);
+        postEnter = false;
+      }
+    }
+    return new PortalPlanSample(buildExit, bestNetherBeforeExit);
+  }
+
+  private static boolean entersNether(MacroActionInstance action) {
+    return (action.kind() == MacroActionKind.PORTAL_ENTER || action.kind() == MacroActionKind.PORTAL_BUILD_ENTER) && MacroNodeKey.dimensionId(action.toNode()) == MacroNodeKey.DIMENSION_NETHER;
   }
 
   private int firstSeen(int current) {
@@ -416,6 +584,15 @@ final class PlaytestRun {
     }
     double dy = dest.y - goal.y();
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  private static double flatDistance(BetterBlockPos a, BetterBlockPos b) {
+    double dx = a.x - b.x;
+    double dz = a.z - b.z;
+    return Math.sqrt(dx * dx + dz * dz);
+  }
+
+  private record PortalPlanSample(int buildExitActions, double netherDistanceBeforeBuildExit) {
   }
 
   void write(TerminalReason reason, boolean success, Baritone baritone, Minecraft minecraft, Path telemetryPath, boolean staleInputsBeforeClear, boolean staleInputsAfterClear) {
@@ -433,6 +610,23 @@ final class PlaytestRun {
       json.addProperty("worldKey", scenario.worldKey());
       json.addProperty("seed", scenario.seed());
       json.addProperty("dimension", scenario.dimension());
+      String codeStamp = PlaytestHarnessBehavior.codeStamp();
+      String expectedCodeStamp = scenario.harness().expectedCodeStamp();
+      json.addProperty("playtestCodeStamp", codeStamp);
+      json.addProperty("expectedCodeStamp", expectedCodeStamp == null ? "" : expectedCodeStamp);
+      json.addProperty("codeStampMatched", scenario.harness().acceptsCodeStamp(codeStamp));
+      MountTuning.Metadata mountTuning = MountTuning.metadata();
+      JsonObject mountTuningJson = new JsonObject();
+      mountTuningJson.addProperty("profile", mountTuning.profile());
+      mountTuningJson.addProperty("digest", mountTuning.digest());
+      mountTuningJson.addProperty("builtin", mountTuning.builtin());
+      json.add("mountTuning", mountTuningJson);
+      json.addProperty("mountTuningProfile", mountTuning.profile());
+      json.addProperty("mountTuningDigest", mountTuning.digest());
+      json.addProperty("mountTuningBuiltin", mountTuning.builtin());
+      json.addProperty("initialActualDimension", initialDimension);
+      json.addProperty("finalActualDimension", finalDimension);
+      json.addProperty("sawDimensionChange", sawDimensionChange);
       json.add("start", position(scenario.start().x(), scenario.start().y(), scenario.start().z()));
       json.add("goal", block(scenario.goal().x(), scenario.goal().y(), scenario.goal().z()));
       LocalPlayer player = minecraft.player;
@@ -445,7 +639,15 @@ final class PlaytestRun {
         json.addProperty("onGround", player.onGround());
         json.addProperty("boatItems", boatItems(player));
         json.addProperty("vehicle", player.getVehicle() == null ? null : player.getVehicle().getType().toString());
+        if (player.getVehicle() != null) {
+          json.add("vehiclePos", position(player.getVehicle().position()));
+          json.addProperty("vehicleOnGround", player.getVehicle().onGround());
+          json.addProperty("vehicleDistanceToGoal", distanceToGoal(player.getVehicle().position()));
+        }
       }
+      json.addProperty("closestHorseDistanceToGoal", closestHorseDistanceToGoal == Double.POSITIVE_INFINITY ? null : closestHorseDistanceToGoal);
+      json.add("closestHorsePos", closestHorsePos == null ? JsonNull.INSTANCE : position(closestHorsePos));
+      json.addProperty("closestHorseTick", closestHorseTick < 0 ? null : closestHorseTick);
       json.addProperty("initialHealth", Float.isNaN(initialHealth) ? null : initialHealth);
       json.addProperty("minHealth", minHealth == Float.POSITIVE_INFINITY ? null : minHealth);
       json.addProperty("tookDamage", tookDamage());
@@ -456,6 +658,11 @@ final class PlaytestRun {
       json.addProperty("sprintTicks", sprintTicks);
       json.addProperty("sprintInputTicks", sprintInputTicks);
       json.addProperty("sneakTicks", sneakTicks);
+      json.add("playerYaw", playerYaw.json());
+      json.add("vehicleYaw", vehicleYaw.json());
+      json.add("targetYaw", targetYaw.json());
+      json.add("pathYaw", pathYaw.json());
+      json.add("yawExcessRatio", yawExcessRatio());
       json.addProperty("pickaxeDamageDelta", damageDelta(initialPickaxeDamage, maxPickaxeDamage));
       json.addProperty("axeDamageDelta", damageDelta(initialAxeDamage, maxAxeDamage));
       json.addProperty("shovelDamageDelta", damageDelta(initialShovelDamage, maxShovelDamage));
@@ -464,8 +671,17 @@ final class PlaytestRun {
       json.add("actualModeTicks", modeTicks(actualTicks));
       json.add("plannedModeTicks", modeTicks(plannedTicks));
       json.addProperty("pathEvents", pathEvents);
+      json.add("pathEventCounts", pathEventCounts());
       json.addProperty("nextCalcFailures", nextCalcFailures);
       json.addProperty("lastPathEvent", lastPathEvent == null ? null : lastPathEvent.name());
+      json.addProperty("lastPathingFailure", baritone.getPathingBehavior().lastPathingFailure());
+      json.addProperty("lastNextPathingFailure", baritone.getPathingBehavior().lastNextPathingFailure());
+      JsonArray recentNextPathingFailures = new JsonArray();
+      for (String failure : baritone.getPathingBehavior().recentNextPathingFailures()) {
+        recentNextPathingFailures.add(failure);
+      }
+      json.add("recentNextPathingFailures", recentNextPathingFailures);
+      json.addProperty("lastRouteFailure", baritone.getPathingBehavior().lastRouteFailure());
       json.addProperty("calcFailed", calcFailed);
       json.addProperty("firstPlanningTick", firstPlanningTick < 0 ? null : firstPlanningTick);
       json.addProperty("firstActuationTick", firstActuationTick < 0 ? null : firstActuationTick);
@@ -473,11 +689,15 @@ final class PlaytestRun {
       json.addProperty("firstRouteTick", firstRouteTick < 0 ? null : firstRouteTick);
       json.addProperty("firstMacroPlanTick", firstMacroPlanTick < 0 ? null : firstMacroPlanTick);
       json.addProperty("sawPathing", sawPathing);
+      json.addProperty("sawBuilder", sawBuilder);
       json.addProperty("sawWater", sawWater);
       json.addProperty("sawBoat", sawBoat);
+      json.addProperty("sawHorse", sawHorse);
+      json.addProperty("lostHorseAfterEncounter", lostHorseAfterEncounter);
       json.addProperty("sawMacroRoute", sawMacroRoute);
       json.addProperty("sawMacroBiomeRoute", sawMacroBiomeRoute);
       json.addProperty("sawPlannedBoat", sawPlannedBoat);
+      json.addProperty("sawPlannedHorse", sawPlannedHorse);
       json.addProperty("maxMacroBoatLegs", maxMacroBoatLegs);
       json.addProperty("maxMacroBoatDistance", maxMacroBoatDistance);
       json.addProperty("bestRouteDestDistance", bestRouteDestDistance == Double.POSITIVE_INFINITY ? null : bestRouteDestDistance);
@@ -491,6 +711,10 @@ final class PlaytestRun {
       json.addProperty("sawMacroPlanSurfaceTransition", sawMacroPlanSurfaceTransition);
       json.addProperty("maxMacroPlanSurfaceActions", maxMacroPlanSurfaceActions);
       json.addProperty("maxMacroPlanSurfaceDistance", maxMacroPlanSurfaceDistance);
+      json.addProperty("sawMacroPlanPortal", sawMacroPlanPortal);
+      json.addProperty("maxMacroPlanPortalActions", maxMacroPlanPortalActions);
+      json.addProperty("maxMacroPlanPortalBuildExitActions", maxMacroPlanPortalBuildExitActions);
+      json.addProperty("maxMacroPlanNetherDistanceBeforePortalExit", maxMacroPlanNetherDistanceBeforePortalExit);
       json.addProperty("maxMacroBiomeFactualCells", maxMacroBiomeFactualCells);
       json.addProperty("maxMacroBiomeUnknownCells", maxMacroBiomeUnknownCells);
       json.addProperty("maxMacroBiomeLiveCells", maxMacroBiomeLiveCells);
@@ -528,6 +752,29 @@ final class PlaytestRun {
     return player.getInventory().getNonEquipmentItems().stream().filter(stack -> stack.getItem() instanceof BoatItem).mapToInt(ItemStack::getCount).sum();
   }
 
+  private JsonObject yawExcessRatio() {
+    JsonObject json = new JsonObject();
+    nullable(json, "player", ratio(playerYaw.totalVariation(), pathYaw.totalVariation()));
+    nullable(json, "playerMoving", ratio(playerYaw.movingTotalVariation(), pathYaw.movingTotalVariation()));
+    nullable(json, "vehicle", ratio(vehicleYaw.totalVariation(), pathYaw.totalVariation()));
+    nullable(json, "vehicleMoving", ratio(vehicleYaw.movingTotalVariation(), pathYaw.movingTotalVariation()));
+    nullable(json, "target", ratio(targetYaw.totalVariation(), pathYaw.totalVariation()));
+    nullable(json, "targetMoving", ratio(targetYaw.movingTotalVariation(), pathYaw.movingTotalVariation()));
+    return json;
+  }
+
+  private static Double ratio(double numerator, double denominator) {
+    return denominator <= 1.0E-6D ? null : numerator / denominator;
+  }
+
+  private static void nullable(JsonObject json, String name, Double value) {
+    if (value == null) {
+      json.add(name, JsonNull.INSTANCE);
+    } else {
+      json.addProperty(name, value);
+    }
+  }
+
   static boolean staleInputs(Baritone baritone) {
     for (Input input : Input.values()) {
       if (baritone.getInputOverrideHandler().isInputForcedDown(input)) {
@@ -545,6 +792,14 @@ final class PlaytestRun {
     JsonObject json = new JsonObject();
     for (TransportMode mode : TransportMode.values()) {
       json.addProperty(mode.name(), map.getOrDefault(mode, 0));
+    }
+    return json;
+  }
+
+  private JsonObject pathEventCounts() {
+    JsonObject json = new JsonObject();
+    for (PathEvent event : PathEvent.values()) {
+      json.addProperty(event.name(), pathEventCounts.getOrDefault(event, 0));
     }
     return json;
   }
@@ -569,7 +824,86 @@ final class PlaytestRun {
     return json;
   }
 
+  private static final class YawMetrics {
+    private boolean seen;
+    private double lastYaw;
+    private double lastDelta;
+    private double lastMovingDelta;
+    private int samples;
+    private int movingSamples;
+    private double totalVariation;
+    private double movingTotalVariation;
+    private double maxTickDelta;
+    private double movingMaxTickDelta;
+    private int reversals;
+    private int movingReversals;
+
+    void sample(double yaw, boolean moving) {
+      samples++;
+      if (moving) {
+        movingSamples++;
+      }
+      if (!seen) {
+        seen = true;
+        lastYaw = yaw;
+        return;
+      }
+      double delta = normalizeYawDelta(yaw - lastYaw);
+      double magnitude = Math.abs(delta);
+      totalVariation += magnitude;
+      maxTickDelta = Math.max(maxTickDelta, magnitude);
+      reversals += reversal(lastDelta, delta);
+      if (magnitude >= YAW_REVERSAL_DEGREES) {
+        lastDelta = delta;
+      }
+      if (moving) {
+        movingTotalVariation += magnitude;
+        movingMaxTickDelta = Math.max(movingMaxTickDelta, magnitude);
+        movingReversals += reversal(lastMovingDelta, delta);
+        if (magnitude >= YAW_REVERSAL_DEGREES) {
+          lastMovingDelta = delta;
+        }
+      }
+      lastYaw = yaw;
+    }
+
+    double totalVariation() {
+      return totalVariation;
+    }
+
+    double movingTotalVariation() {
+      return movingTotalVariation;
+    }
+
+    JsonObject json() {
+      JsonObject json = new JsonObject();
+      json.addProperty("samples", samples);
+      json.addProperty("movingSamples", movingSamples);
+      json.addProperty("totalVariation", totalVariation);
+      json.addProperty("movingTotalVariation", movingTotalVariation);
+      json.addProperty("maxTickDelta", maxTickDelta);
+      json.addProperty("movingMaxTickDelta", movingMaxTickDelta);
+      json.addProperty("reversals", reversals);
+      json.addProperty("movingReversals", movingReversals);
+      return json;
+    }
+
+    private static int reversal(double previous, double current) {
+      return Math.abs(previous) >= YAW_REVERSAL_DEGREES && Math.abs(current) >= YAW_REVERSAL_DEGREES && Math.signum(previous) != Math.signum(current) ? 1 : 0;
+    }
+
+    private static double normalizeYawDelta(double delta) {
+      double normalized = delta % 360D;
+      if (normalized >= 180D) {
+        normalized -= 360D;
+      } else if (normalized < -180D) {
+        normalized += 360D;
+      }
+      return normalized;
+    }
+  }
+
   enum TerminalReason {
-    SUCCESS, TIMEOUT, SETUP_TIMEOUT, DEATH, DISCONNECT, CALC_FAILED, PATH_STOPPED, EXCEPTION
+    SUCCESS, TIMEOUT, SETUP_TIMEOUT, DEATH, DISCONNECT, CALC_FAILED, PATH_STOPPED, COMMAND_FAILED, EXCEPTION, STALE_CLIENT, ACCEPTANCE_DAMAGE, ACCEPTANCE_DISMOUNT, ACCEPTANCE_JUMP_BUDGET
   }
 }

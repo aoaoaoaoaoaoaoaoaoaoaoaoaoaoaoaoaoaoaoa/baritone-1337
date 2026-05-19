@@ -1,7 +1,10 @@
 package baritone.pathing.macro.core;
 
 import baritone.api.pathing.goals.Goal;
+import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.calc.BestExitGoal;
+import java.util.List;
+import java.util.Optional;
 import net.minecraft.core.BlockPos;
 
 public final class MacroProjectedGoal implements BestExitGoal {
@@ -36,6 +39,21 @@ public final class MacroProjectedGoal implements BestExitGoal {
   @Override
   public double exitValue(int x, int y, int z) {
     return field.expectedAtBlock(x, y, z);
+  }
+
+  @Override
+  public boolean isExactExit(int x, int y, int z) {
+    return field.exactExitAtBlock(x, y, z);
+  }
+
+  @Override
+  public Optional<BetterBlockPos> preferredExactExit() {
+    return field.preferredExactExit();
+  }
+
+  @Override
+  public List<BetterBlockPos> preferredExactPath() {
+    return field.preferredExactPath();
   }
 
   public double expectedObjective(BlockPos pos) {

@@ -547,7 +547,7 @@ public final class Settings {
   public final Setting<Boolean> macroPlanning = new Setting<>(true);
 
   /**
-   * Enable empirical-biome hierarchical route guidance. This is inert until {@link #macroBiomePriorsFile} points at a measured prior table.
+   * Enable biome/value-field route guidance. Pedestrian macro values use measured priors when available; mounted profiles may fall back to hardcoded traversal economics.
    */
   public final Setting<Boolean> macroBiome = new Setting<>(true);
 
@@ -635,6 +635,33 @@ public final class Settings {
    * Require boat macro cells to have water below the surface cell, avoiding shallow bank fringes.
    */
   public final Setting<Boolean> macroBoatRequiresWaterBelow = new Setting<>(false);
+
+  /**
+   * Enable Nether portal overlay options in macro routing.
+   */
+  public final Setting<Boolean> macroNether = new Setting<>(true);
+
+  /**
+   * Empirical v0 Nether pedestrian traversal prior. Source:
+   * run/nether-harvest-20260507T211514Z/nether_traversal_prior.json, native-nether-pedestrian-1000,
+   * 10 successful samples / 90,483 successful ticks / 10,090 blocks, median ticks per block.
+   */
+  public final Setting<Double> macroNetherTicksPerBlock = new Setting<>(7.921195281711898D);
+
+  /**
+   * Fixed tick cost for waiting through a portal transition.
+   */
+  public final Setting<Double> macroNetherPortalUseCost = new Setting<>(120D);
+
+  /**
+   * Fixed tick/resource penalty for constructing and lighting one Nether portal.
+   */
+  public final Setting<Double> macroNetherPortalBuildCost = new Setting<>(2400D);
+
+  /**
+   * Live/cached portal and obsidian-frame scan radius for macro portal sites.
+   */
+  public final Setting<Integer> macroNetherPortalScanBlocks = new Setting<>(96);
 
   /**
    * How far are you allowed to fall onto solid ground (without a water bucket)?
@@ -793,7 +820,7 @@ public final class Settings {
    * <p>
    * Off by default because these are diagnostic search probes, not committed executable routes.
    */
-  public final Setting<Boolean> renderPathCalculation = new Setting<>(false);
+  public final Setting<Boolean> renderPathCalculation = new Setting<>(true);
 
   /**
    * Render macro route anchors such as water launch and terminal points.
@@ -1490,12 +1517,12 @@ public final class Settings {
   /**
    * The color of all selections
    */
-  public final Setting<Color> colorSelection = new Setting<>(Color.CYAN);
+  public final Setting<Color> colorSelection = new Setting<>(Color.MAGENTA);
 
   /**
    * The color of the selection pos 1
    */
-  public final Setting<Color> colorSelectionPos1 = new Setting<>(Color.BLACK);
+  public final Setting<Color> colorSelectionPos1 = new Setting<>(Color.GREEN);
 
   /**
    * The color of the selection pos 2
@@ -1505,12 +1532,12 @@ public final class Settings {
   /**
    * The opacity of the selection. 0 is completely transparent, 1 is completely opaque
    */
-  public final Setting<Float> selectionOpacity = new Setting<>(.5f);
+  public final Setting<Float> selectionOpacity = new Setting<>(.85f);
 
   /**
    * Line width of the goal when rendered, in pixels
    */
-  public final Setting<Float> selectionLineWidth = new Setting<>(2F);
+  public final Setting<Float> selectionLineWidth = new Setting<>(3F);
 
   /**
    * Render selections

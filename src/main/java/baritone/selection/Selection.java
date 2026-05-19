@@ -65,7 +65,7 @@ public class Selection implements ISelection {
 
   @Override
   public String toString() {
-    return String.format("Selection{pos1=%s,pos2=%s}", pos1, pos2);
+    return "Selection{pos1=%s,pos2=%s}".formatted(pos1, pos2);
   }
 
   /**

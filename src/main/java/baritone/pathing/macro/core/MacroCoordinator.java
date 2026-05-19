@@ -13,16 +13,29 @@ public final class MacroCoordinator {
   }
 
   public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal) {
+    return plan(navigator, context, start, goal, MacroTraversalProfile.physical(context));
+  }
+
+  public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal, MacroTraversalProfile profile) {
     if (!MacroGoals.destinationChunkLive(context, goal)) {
-      Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal);
-      if (multimodal.filter(plan -> plan.surfaceTransitionActions() > 0 && usefulSurfacePlan(context, plan)).isPresent()) {
+      Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal, profile);
+      if (profile.permitsPortalTransitions() && multimodal.filter(plan -> plan.portalActions() > 0).isPresent()) {
+        MacroPlan plan = multimodal.get();
+        Optional<RoutePlan> route = materialize(context, plan, null);
+        if (route.isPresent()) {
+          return Optional.of(MacroDirective.certified(plan, route.get()));
+        }
+        Helper.HELPER.logDebug("Using portal macro plan as local directive: " + plan.sequence());
+        return Optional.of(MacroDirective.localGoal(plan));
+      }
+      if (profile.permitsSurfaceWaterTransitions() && multimodal.filter(plan -> plan.surfaceTransitionActions() > 0 && usefulSurfacePlan(context, plan)).isPresent()) {
         MacroPlan plan = multimodal.get();
         Optional<RoutePlan> route = materialize(context, plan, null);
         if (route.isPresent()) {
           return Optional.of(MacroDirective.certified(plan, route.get()));
         }
         Helper.HELPER.logDebug("Macro surface plan not executable yet: " + MacroPlanMaterializer.diagnostic(context, plan));
-        Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal);
+        Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal, profile);
         if (factualPrefix.isPresent()) {
           return factualPrefix;
         }
@@ -30,15 +43,22 @@ public final class MacroCoordinator {
         return Optional.of(MacroDirective.deferred(plan));
       }
     }
-    Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal);
+    Optional<MacroDirective> factualPrefix = factualSurfacePrefix(context, start, goal, profile);
     if (factualPrefix.isPresent()) {
       return factualPrefix;
     }
-    return navigator.plan(context, start, goal);
+    return navigator.plan(context, start, goal, profile);
   }
 
   private static Optional<MacroDirective> factualSurfacePrefix(CalculationContext context, BetterBlockPos start, Goal goal) {
-    Optional<MacroPlan> factual = MacroPlanner.factualSurfacePrefix(context, start, goal);
+    return factualSurfacePrefix(context, start, goal, MacroTraversalProfile.physical(context));
+  }
+
+  private static Optional<MacroDirective> factualSurfacePrefix(CalculationContext context, BetterBlockPos start, Goal goal, MacroTraversalProfile profile) {
+    if (!profile.permitsSurfaceWaterTransitions()) {
+      return Optional.empty();
+    }
+    Optional<MacroPlan> factual = MacroPlanner.factualSurfacePrefix(context, start, goal, profile);
     if (factual.isEmpty()) {
       return Optional.empty();
     }
