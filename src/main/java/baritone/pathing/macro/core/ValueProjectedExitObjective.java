@@ -2,16 +2,16 @@ package baritone.pathing.macro.core;
 
 import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
-import baritone.pathing.calc.BestExitGoal;
+import baritone.pathing.calc.LocalExitObjective;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.core.BlockPos;
 
-public final class MacroProjectedGoal implements BestExitGoal {
+public final class ValueProjectedExitObjective implements LocalExitObjective {
   private final Goal finalGoal;
   private final MacroValueField field;
 
-  public MacroProjectedGoal(Goal finalGoal, MacroValueField field) {
+  public ValueProjectedExitObjective(Goal finalGoal, MacroValueField field) {
     this.finalGoal = finalGoal;
     this.field = field;
   }
@@ -26,7 +26,7 @@ public final class MacroProjectedGoal implements BestExitGoal {
     if (finalGoal.isInGoal(x, y, z)) {
       return finalGoal.heuristic(x, y, z);
     }
-    double floor = field.floorAtBlock(x, y, z);
+    double floor = field.admissibleFloorAtBlock(x, y, z);
     double ordinary = finalGoal.heuristic(x, y, z);
     return Double.isFinite(floor) ? Math.min(floor, ordinary) : ordinary;
   }
@@ -37,27 +37,27 @@ public final class MacroProjectedGoal implements BestExitGoal {
   }
 
   @Override
-  public double exitValue(int x, int y, int z) {
-    return field.expectedAtBlock(x, y, z);
+  public double localExitValue(int x, int y, int z) {
+    return field.expectedContinuationAtBlock(x, y, z);
   }
 
   @Override
-  public boolean isExactExit(int x, int y, int z) {
-    return field.exactExitAtBlock(x, y, z);
+  public boolean isExactLocalExit(int x, int y, int z) {
+    return field.exactLocalExitAtBlock(x, y, z);
   }
 
   @Override
-  public Optional<BetterBlockPos> preferredExactExit() {
-    return field.preferredExactExit();
+  public Optional<BetterBlockPos> preferredLocalExit() {
+    return field.preferredLocalExit();
   }
 
   @Override
-  public List<BetterBlockPos> preferredExactPath() {
-    return field.preferredExactPath();
+  public List<BetterBlockPos> preferredLocalExitPath() {
+    return field.preferredLocalExitPath();
   }
 
   public double expectedObjective(BlockPos pos) {
-    return finalGoal.isInGoal(pos) ? finalGoal.heuristic(pos) : exitValue(pos.getX(), pos.getY(), pos.getZ());
+    return finalGoal.isInGoal(pos) ? finalGoal.heuristic(pos) : localExitValue(pos.getX(), pos.getY(), pos.getZ());
   }
 
   public Goal finalGoal() {
@@ -66,6 +66,6 @@ public final class MacroProjectedGoal implements BestExitGoal {
 
   @Override
   public String toString() {
-    return "MacroProjectedGoal{" + finalGoal + "}";
+    return "ValueProjectedExitObjective{" + finalGoal + "}";
   }
 }

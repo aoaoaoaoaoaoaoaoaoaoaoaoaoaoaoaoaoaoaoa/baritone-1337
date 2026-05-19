@@ -19,6 +19,8 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -57,14 +59,16 @@ public final class MacroAtlas {
   }
 
   public static MacroAtlas build(CalculationContext context, BetterBlockPos start, boolean includeWater) {
-    Optional<BiomeFactAtlas> facts = BiomeFactAtlas.configured();
+    boolean empiricalSurfaceCosts = Baritone.settings().macroBiome.value;
+    Optional<BiomeFactAtlas> facts = empiricalSurfaceCosts ? BiomeFactAtlas.configured() : Optional.empty();
     int cellBlocks = facts.map(BiomeFactAtlas::cellBlocks).orElse(Baritone.settings().macroBiomeCellBlocks.value);
     int scale = Math.max(0, Integer.numberOfTrailingZeros(Math.max(16, cellBlocks)) - 4);
-    Optional<BiomeTraversalPriorTable> configuredPriors = BiomeTraversalPriorTable.configured();
+    Optional<BiomeTraversalPriorTable> configuredPriors = empiricalSurfaceCosts ? BiomeTraversalPriorTable.configured() : Optional.empty();
     BiomeTraversalPriorTable priors = configuredPriors.orElseGet(() -> new BiomeTraversalPriorTable(java.util.Map.of()));
     Optional<SurfaceWaterAtlas> water = includeWater ? Optional.of(SurfaceWaterAtlas.build(context, start, Baritone.settings().macroWaterHorizonBlocks.value)) : Optional.empty();
     SeedlessBiomePredictor predictor = SeedlessBiomePredictor.of(cellBlocks, configuredPriors.isPresent() || facts.isPresent() ? predictorObservations(context, facts, cellBlocks, start) : List.of());
-    return new MacroAtlas(context, cellBlocks, scale, facts, priors, configuredPriors.isPresent(), predictor, water, Baritone.settings().macroBiomeUnknownPenalty.value, start.y);
+    return new MacroAtlas(context, cellBlocks, scale, facts, priors, configuredPriors.isPresent(), predictor, water, empiricalSurfaceCosts ? Baritone.settings().macroBiomeUnknownPenalty.value : 0D,
+      start.y);
   }
 
   public int cellBlocks() {
@@ -77,6 +81,10 @@ public final class MacroAtlas {
 
   public int scale() {
     return scale;
+  }
+
+  public ResourceKey<Level> dimension() {
+    return context.world.dimension();
   }
 
   public Optional<SurfaceWaterAtlas> water() {

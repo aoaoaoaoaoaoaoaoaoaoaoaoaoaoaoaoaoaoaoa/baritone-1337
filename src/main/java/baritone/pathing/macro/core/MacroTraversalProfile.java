@@ -6,6 +6,7 @@ import baritone.pathing.mounted.HorseRoutePlanner;
 import baritone.pathing.movement.CalculationContext;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
+import net.minecraft.world.level.Level;
 
 public record MacroTraversalProfile(Kind kind, double horseTicksPerBlock) {
   private static final double PEDESTRIAN_BASE_TICKS_PER_BLOCK = 3.563D;
@@ -54,15 +55,14 @@ public record MacroTraversalProfile(Kind kind, double horseTicksPerBlock) {
     return !horse();
   }
 
-  public boolean permitsPredictiveFallback() {
-    return horse();
-  }
-
   public MacroCostVector surfaceCost(MacroAtlas atlas, int cellX, int cellZ, double distance) {
     return surfaceCostPerBlock(atlas, cellX, cellZ).times(distance);
   }
 
   public MacroCostVector surfaceCostPerBlock(MacroAtlas atlas, int cellX, int cellZ) {
+    if (!horse() && atlas.dimension() == Level.NETHER) {
+      return MacroCostVector.fixedTime(Baritone.settings().macroNetherTicksPerBlock.value);
+    }
     BiomeSurfaceCost prior = atlas.surfaceCost(cellX, cellZ);
     if (!horse()) {
       return MacroCostVector.surfacePerBlock(prior);

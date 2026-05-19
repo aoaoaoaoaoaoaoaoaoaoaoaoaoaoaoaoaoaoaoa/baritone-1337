@@ -3,7 +3,6 @@ package baritone.pathing.macro.core;
 import baritone.Baritone;
 import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.macro.value.DynamicValueGraph;
-import net.minecraft.world.level.Level;
 
 final class MacroValueGraph implements DynamicValueGraph {
   private static final int[] D = {-1, 0, 1};
@@ -81,7 +80,7 @@ final class MacroValueGraph implements DynamicValueGraph {
         }
         int costCellX = predecessor ? x : nx;
         int costCellZ = predecessor ? z : nz;
-        long next = MacroNodeKey.cell(Level.OVERWORLD, MacroStratum.SURFACE, atlas.scale(), nx, nz);
+        long next = MacroNodeKey.cell(atlas.dimension(), MacroStratum.SURFACE, atlas.scale(), nx, nz);
         out.accept(next, edgeCost(x, z, nx, nz, costCellX, costCellZ));
       }
     }

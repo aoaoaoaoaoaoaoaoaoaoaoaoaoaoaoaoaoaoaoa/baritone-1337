@@ -6,7 +6,6 @@ import baritone.pathing.macro.value.DStarLiteValueField;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import net.minecraft.world.level.Level;
 
 public final class MacroValueField {
   private static final int MAX_RENDER_VERTICES = 512;
@@ -62,21 +61,21 @@ public final class MacroValueField {
     floorRepair = floor.repairAll();
   }
 
-  public double expectedAtBlock(int x, int y, int z) {
+  public double expectedContinuationAtBlock(int x, int y, int z) {
     return adjusted(value(expected, x, z), x, z, false);
   }
 
-  public double floorAtBlock(int x, int y, int z) {
+  public double admissibleFloorAtBlock(int x, int y, int z) {
     return adjusted(value(floor, x, z), x, z, true);
   }
 
-  public boolean exactExitAtBlock(int x, int y, int z) {
+  public boolean exactLocalExitAtBlock(int x, int y, int z) {
     int cellX = Math.floorDiv(x, atlas.cellBlocks());
     int cellZ = Math.floorDiv(z, atlas.cellBlocks());
     if (!atlas.factual(cellX, cellZ)) {
       return false;
     }
-    long key = MacroNodeKey.cell(Level.OVERWORLD, MacroStratum.SURFACE, atlas.scale(), cellX, cellZ);
+    long key = MacroNodeKey.cell(atlas.dimension(), MacroStratum.SURFACE, atlas.scale(), cellX, cellZ);
     var successor = expected.bestSuccessor(key);
     if (successor.isEmpty()) {
       return false;
@@ -85,12 +84,12 @@ public final class MacroValueField {
     return !atlas.factual(MacroNodeKey.cellX(next), MacroNodeKey.cellZ(next));
   }
 
-  public Optional<BetterBlockPos> preferredExactExit() {
-    List<BetterBlockPos> path = preferredExactPath();
+  public Optional<BetterBlockPos> preferredLocalExit() {
+    List<BetterBlockPos> path = preferredLocalExitPath();
     return path.isEmpty() ? Optional.empty() : Optional.of(path.getLast());
   }
 
-  public List<BetterBlockPos> preferredExactPath() {
+  public List<BetterBlockPos> preferredLocalExitPath() {
     ArrayList<BetterBlockPos> path = new ArrayList<>();
     long cursor = start;
     for (int i = 0; i < MAX_RENDER_VERTICES && cursor != target; i++) {
@@ -146,7 +145,7 @@ public final class MacroValueField {
   private double value(DStarLiteValueField field, int blockX, int blockZ) {
     int cellX = Math.floorDiv(blockX, atlas.cellBlocks());
     int cellZ = Math.floorDiv(blockZ, atlas.cellBlocks());
-    long key = MacroNodeKey.cell(Level.OVERWORLD, MacroStratum.SURFACE, atlas.scale(), cellX, cellZ);
+    long key = MacroNodeKey.cell(atlas.dimension(), MacroStratum.SURFACE, atlas.scale(), cellX, cellZ);
     return field.value(key);
   }
 
@@ -190,7 +189,7 @@ public final class MacroValueField {
   private void invalidateEnvelope(DStarLiteValueField field) {
     for (int x = expectedGraph.minCellX(); x <= expectedGraph.maxCellX(); x++) {
       for (int z = expectedGraph.minCellZ(); z <= expectedGraph.maxCellZ(); z++) {
-        field.invalidate(MacroNodeKey.cell(Level.OVERWORLD, MacroStratum.SURFACE, atlas.scale(), x, z));
+        field.invalidate(MacroNodeKey.cell(atlas.dimension(), MacroStratum.SURFACE, atlas.scale(), x, z));
       }
     }
   }

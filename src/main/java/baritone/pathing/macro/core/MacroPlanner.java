@@ -114,38 +114,31 @@ public final class MacroPlanner {
         startState = waterStart.get().mode() == TransportMode.BOAT ? MacroAgentState.boat() : MacroAgentState.swim();
       }
     }
-    boolean hasWaterDomain = domains.stream().anyMatch(domain -> domain instanceof WaterTransportDomain);
+    boolean hasWaterDomain = waterDomain != null;
     boolean hasPortalDomain = portalDomain != null;
-    if (!hasWaterDomain && !hasPortalDomain && atlas.empiricalPriors() && Baritone.settings().macroBiome.value) {
+    if (!hasWaterDomain && !hasPortalDomain) {
       return Optional.empty();
     }
-    boolean requiresSurfaceTransition = planningMode.requiresSurfaceTransition(atlas);
-    if (requiresSurfaceTransition && !hasWaterDomain && !hasPortalDomain) {
-      return Optional.empty();
-    }
-    Optional<MacroPlan> plan = search(expansion, domains, src, dst, startState, goal, goalPos.get(), waypointBlocks, requiresSurfaceTransition);
+    Optional<MacroPlan> plan = search(expansion, domains, src, dst, startState, goal, goalPos.get(), waypointBlocks);
     Helper.HELPER.logDebug("Macro multimodal result: " + plan
       .map(
         p -> p.sequence() + " surface=" + p.surfaceTransitionActions() + " portals=" + p.portalActions() + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", p.surfaceTransitionDistance()))
       .orElse("empty"));
-    if (!atlas.empiricalPriors() && plan.map(p -> p.surfaceTransitionActions() + p.portalActions()).orElse(0) == 0) {
-      return Optional.empty();
-    }
-    if (!Baritone.settings().macroBiome.value && plan.map(p -> p.surfaceTransitionActions() + p.portalActions()).orElse(0) == 0) {
+    if (plan.map(p -> p.surfaceTransitionActions() + p.portalActions()).orElse(0) == 0) {
       return Optional.empty();
     }
     return plan;
   }
 
   private static Optional<MacroPlan> search(MacroExpansionContext context, List<MacroDomain> domains, long src, long dst, MacroAgentState startState, Goal finalGoal, BlockPos goalPos,
-    int waypointBlocks, boolean requiresSurfaceTransition) {
+    int waypointBlocks) {
     ArrayList<SearchLabel> labels = new ArrayList<>();
     HashMap<LabelKey, Integer> bestByKey = new HashMap<>();
     PriorityQueue<QueueEntry> open = new PriorityQueue<>(Comparator.comparingDouble(QueueEntry::f));
     labels.add(new SearchLabel(src, startState, 0D, MacroCostVector.ZERO, -1, null, 0D, 0D, false));
     bestByKey.put(new LabelKey(src, startState.bits(), false), 0);
     open.add(new QueueEntry(0, searchHeuristic(context, src)));
-    int bestFrontier = requiresSurfaceTransition ? -1 : 0;
+    int bestFrontier = -1;
     int expansions = 0;
     while (!open.isEmpty() && expansions++ < MAX_EXPANSIONS) {
       QueueEntry entry = open.poll();
@@ -154,10 +147,10 @@ public final class MacroPlanner {
       if (best == null || best != entry.label()) {
         continue;
       }
-      if (label.node == dst && (!requiresSurfaceTransition || label.usefulTransportTransit)) {
+      if (label.node == dst && label.usefulTransportTransit) {
         return Optional.of(materialize(context, labels, entry.label(), finalGoal, goalPos, waypointBlocks));
       }
-      if ((!requiresSurfaceTransition || label.usefulTransportTransit) && (bestFrontier < 0 || frontierScore(context, label) < frontierScore(context, labels.get(bestFrontier)))) {
+      if (label.usefulTransportTransit && (bestFrontier < 0 || frontierScore(context, label) < frontierScore(context, labels.get(bestFrontier)))) {
         bestFrontier = entry.label();
       }
       MacroLabel publicLabel = new MacroLabel(label.node, label.state, label.g, label.vector, entry.label());

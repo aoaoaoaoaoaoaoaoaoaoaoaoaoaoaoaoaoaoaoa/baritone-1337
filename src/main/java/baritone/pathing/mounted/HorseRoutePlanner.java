@@ -5,7 +5,7 @@ import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.PathCalculationResult;
-import baritone.pathing.calc.BestExitGoal;
+import baritone.pathing.calc.LocalExitObjective;
 import baritone.pathing.calc.BlockKey;
 import baritone.pathing.calc.PathingIncumbentPolicy;
 import baritone.pathing.calc.PathingProfiler;
@@ -162,8 +162,8 @@ public final class HorseRoutePlanner {
   }
 
   private static double continuation(Goal goal, BetterBlockPos dest) {
-    if (goal instanceof BestExitGoal exit) {
-      return goal.isInGoal(dest) ? exit.exactGoalExitValue(dest.x, dest.y, dest.z) : exit.exitValue(dest.x, dest.y, dest.z);
+    if (goal instanceof LocalExitObjective exit) {
+      return goal.isInGoal(dest) ? exit.terminalExitValue(dest.x, dest.y, dest.z) : exit.localExitValue(dest.x, dest.y, dest.z);
     }
     return Double.NaN;
   }
@@ -336,7 +336,7 @@ public final class HorseRoutePlanner {
       root.f = heuristic(root);
       open.add(new QueueEntry(root, root.g, root.f));
       while (!open.isEmpty()) {
-        if (goal instanceof BestExitGoal && bestExit != null && open.peek().f() + 0.01D >= bestExitScore) {
+        if (goal instanceof LocalExitObjective && bestExit != null && open.peek().f() + 0.01D >= bestExitScore) {
           return success(reconstructCertified(bestExit));
         }
         QueueEntry entry = open.poll();
@@ -345,14 +345,14 @@ public final class HorseRoutePlanner {
           continue;
         }
         if (goalReached(current)) {
-          if (goal instanceof BestExitGoal exit) {
-            considerBestExit(current, current.g + exit.exactGoalExitValue(current.x, current.y, current.z));
+          if (goal instanceof LocalExitObjective exit) {
+            considerBestExit(current, current.g + exit.terminalExitValue(current.x, current.y, current.z));
             continue;
           }
           return success(current.parent == null ? stationaryPath(current) : reconstructCertified(current));
         }
-        if (goal instanceof BestExitGoal exit && current.parent != null && exit.isExactExit(current.x, current.y, current.z)) {
-          considerBestExit(current, current.g + exit.exitValue(current.x, current.y, current.z));
+        if (goal instanceof LocalExitObjective exit && current.parent != null && exit.isExactLocalExit(current.x, current.y, current.z)) {
+          considerBestExit(current, current.g + exit.localExitValue(current.x, current.y, current.z));
           current.closed = true;
           continue;
         }
@@ -384,7 +384,7 @@ public final class HorseRoutePlanner {
     }
 
     private SearchResult progressFallback() {
-      if (!(goal instanceof BestExitGoal exit)) {
+      if (!(goal instanceof LocalExitObjective exit)) {
         return localProgressFallback();
       }
       Node fallback = handoffNode(closest);
@@ -395,9 +395,9 @@ public final class HorseRoutePlanner {
       if (path.flatDistance() < incumbentPolicy.minLength()) {
         return null;
       }
-      double startValue = exit.exitValue(start.x, start.y, start.z);
+      double startValue = exit.localExitValue(start.x, start.y, start.z);
       BetterBlockPos dest = path.dest();
-      double destValue = exit.exitValue(dest.x, dest.y, dest.z);
+      double destValue = exit.localExitValue(dest.x, dest.y, dest.z);
       if (!Double.isFinite(startValue) || !Double.isFinite(destValue) || destValue + incumbentPolicy.heuristicMargin() >= startValue) {
         return null;
       }
@@ -609,8 +609,8 @@ public final class HorseRoutePlanner {
         edgesBlockedBeforeEval++;
         boundaryTouches++;
         current.touchedBoundary = true;
-        if (goal instanceof BestExitGoal exit) {
-          considerBestExit(current, current.g + exit.exitValue(current.x, current.y, current.z));
+        if (goal instanceof LocalExitObjective exit) {
+          considerBestExit(current, current.g + exit.localExitValue(current.x, current.y, current.z));
         }
         return reject(EdgeReject.NO_PATHING_DATA);
       }
@@ -1212,7 +1212,7 @@ public final class HorseRoutePlanner {
     }
 
     private double heuristic(int x, int y, int z) {
-      if (goal instanceof BestExitGoal) {
+      if (goal instanceof LocalExitObjective) {
         return Math.max(0D, goal.heuristic(x, y, z));
       }
       if (goal instanceof GoalXZ xz) {

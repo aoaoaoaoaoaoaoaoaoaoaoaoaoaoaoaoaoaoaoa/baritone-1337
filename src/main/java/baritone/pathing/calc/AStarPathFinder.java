@@ -79,12 +79,12 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
-    BestExitGoal bestExitGoal = goal instanceof BestExitGoal exit ? exit : null;
+    LocalExitObjective localExit = goal instanceof LocalExitObjective exit ? exit : null;
     PathNode bestExit = null;
     double bestExitScore = Double.POSITIVE_INFINITY;
     while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
-      if (bestExitGoal != null && bestExit != null && openSet.lowestCombinedCost() + minimumImprovement >= bestExitScore) {
-        logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; proved best local macro exit");
+      if (localExit != null && bestExit != null && openSet.lowestCombinedCost() + minimumImprovement >= bestExitScore) {
+        logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; proved best local exit");
         if (activeProfile != null) {
           activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "best_exit", System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
         }
@@ -96,7 +96,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           break;
         }
         if (now - nextIncumbentPublishTime >= 0) {
-          if (bestExitGoal != null && bestExit != null) {
+          if (localExit != null && bestExit != null) {
             publishPathToNode(bestExit, numNodes);
           } else {
             publishBestSoFar(numNodes);
@@ -112,8 +112,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       mostRecentConsidered = currentNode;
       numNodes++;
       if (goal.isInGoal(currentNode.x, currentNode.y, currentNode.z)) {
-        if (bestExitGoal != null) {
-          double score = currentNode.cost + bestExitGoal.exactGoalExitValue(currentNode.x, currentNode.y, currentNode.z);
+        if (localExit != null) {
+          double score = currentNode.cost + localExit.terminalExitValue(currentNode.x, currentNode.y, currentNode.z);
           if (bestExitScore - score > minimumImprovement) {
             bestExit = currentNode;
             bestExitScore = score;
@@ -126,8 +126,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         }
         return Optional.of(new Path(realStart, startNode, currentNode, numNodes, goal, calcContext));
       }
-      if (bestExitGoal != null && currentNode.previous != null && bestExitGoal.isExactExit(currentNode.x, currentNode.y, currentNode.z)) {
-        double score = currentNode.cost + bestExitGoal.exitValue(currentNode.x, currentNode.y, currentNode.z);
+      if (localExit != null && currentNode.previous != null && localExit.isExactLocalExit(currentNode.x, currentNode.y, currentNode.z)) {
+        double score = currentNode.cost + localExit.localExitValue(currentNode.x, currentNode.y, currentNode.z);
         if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
           bestExit = currentNode;
           bestExitScore = score;
@@ -145,8 +145,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         int newZ = currentNode.z + probe.dz();
         if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
           // only need to check if the destination is a live chunk if it's in a different chunk than the start of the movement
-          touchesExactBoundary = bestExitGoal != null;
-          if (bestExitGoal == null && !spec.dynamicXZ()) { // only increment the legacy segment cutoff if this is not a scored-boundary search
+          touchesExactBoundary = localExit != null;
+          if (localExit == null && !spec.dynamicXZ()) { // only increment the legacy segment cutoff if this is not a scored-boundary search
             numEmptyChunk++;
           }
           continue;
@@ -280,7 +280,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         }
       }
       if (touchesExactBoundary) {
-        double score = currentNode.cost + bestExitGoal.exitValue(currentNode.x, currentNode.y, currentNode.z);
+        double score = currentNode.cost + localExit.localExitValue(currentNode.x, currentNode.y, currentNode.z);
         if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
           bestExit = currentNode;
           bestExitScore = score;
@@ -295,8 +295,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     if (cancelRequested) {
       return Optional.empty();
     }
-    if (bestExitGoal != null && bestExit != null) {
-      logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; using best local macro exit without proof");
+    if (localExit != null && bestExit != null) {
+      logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; using best local exit without proof");
       return Optional.of(new Path(realStart, startNode, bestExit, numNodes, goal, calcContext));
     }
     logDebug(numMovementsConsidered + " movements considered");

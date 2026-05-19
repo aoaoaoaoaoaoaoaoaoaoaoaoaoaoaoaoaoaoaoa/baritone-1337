@@ -14,7 +14,7 @@ import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.api.event.events.type.EventState;
 import baritone.pathing.calc.AStarPathFinder;
 import baritone.pathing.calc.AbstractNodeCostSearch;
-import baritone.pathing.calc.BestExitGoal;
+import baritone.pathing.calc.LocalExitObjective;
 import baritone.pathing.calc.PathingIncumbentPolicy;
 import baritone.pathing.calc.PlanningProbe;
 import baritone.pathing.control.ControlArbiter;
@@ -23,7 +23,7 @@ import baritone.pathing.macro.core.MacroCoordinator;
 import baritone.pathing.macro.core.MacroDirective;
 import baritone.pathing.macro.core.MacroNavigator;
 import baritone.pathing.macro.core.MacroPlan;
-import baritone.pathing.macro.core.MacroProjectedGoal;
+import baritone.pathing.macro.core.ValueProjectedExitObjective;
 import baritone.pathing.macro.core.MacroTraversalProfile;
 import baritone.pathing.mounted.HorsePath;
 import baritone.pathing.mounted.HorseRoutePlanner;
@@ -1362,7 +1362,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (incumbent.boundaryExit()) {
       return path.flatDistance() >= policy.minLength();
     }
-    if (!(horse.localGoal() instanceof BestExitGoal exit)) {
+    if (!(horse.localGoal() instanceof LocalExitObjective exit)) {
       BetterBlockPos dest = path.dest();
       MountTuning.Planner tuning = MountTuning.current().planner();
       boolean meaningfulDistance = path.flatDistance() >= tuning.minLocalProgressFallbackBlocks();
@@ -1377,8 +1377,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       return false;
     }
     BetterBlockPos dest = path.dest();
-    double startValue = exit.exitValue(horse.routeStart().pos().x, horse.routeStart().pos().y, horse.routeStart().pos().z);
-    double destValue = exit.exitValue(dest.x, dest.y, dest.z);
+    double startValue = exit.localExitValue(horse.routeStart().pos().x, horse.routeStart().pos().y, horse.routeStart().pos().z);
+    double destValue = exit.localExitValue(dest.x, dest.y, dest.z);
     return Double.isFinite(startValue) && Double.isFinite(destValue) && destValue + policy.heuristicMargin() < startValue;
   }
 
@@ -1686,10 +1686,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       return executor.estimatedContinuationTicks();
     }
     IPath path = executor.getPath();
-    if (path != null && path.getGoal() instanceof MacroProjectedGoal macro) {
+    if (path != null && path.getGoal() instanceof ValueProjectedExitObjective macro) {
       return macro.expectedObjective(executor.dest());
     }
-    return path != null && path.getGoal() instanceof BestExitGoal projected ? projected.exitValue(executor.dest().x, executor.dest().y, executor.dest().z)
+    return path != null && path.getGoal() instanceof LocalExitObjective projected ? projected.localExitValue(executor.dest().x, executor.dest().y, executor.dest().z)
       : terminalGoal.heuristic(executor.dest().x, executor.dest().y, executor.dest().z);
   }
 

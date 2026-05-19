@@ -562,12 +562,13 @@ public final class Settings {
   public final Setting<Boolean> transportDebugOverlay = new Setting<>(false);
 
   /**
-   * Enable route-level macro candidate producers.
+   * Enable certified route-level transports such as boats and portals. Rolling value-field local exits are core pathing, not a toggle.
    */
   public final Setting<Boolean> macroPlanning = new Setting<>(true);
 
   /**
-   * Enable biome/value-field route guidance. Pedestrian macro values use measured priors when available; mounted profiles may fall back to hardcoded traversal economics.
+   * Use empirical biome facts and priors in rolling local-exit value fields and transport plans. The local-exit field itself still exists when this is disabled; it falls back to uniform traversal
+   * economics.
    */
   public final Setting<Boolean> macroBiome = new Setting<>(true);
 

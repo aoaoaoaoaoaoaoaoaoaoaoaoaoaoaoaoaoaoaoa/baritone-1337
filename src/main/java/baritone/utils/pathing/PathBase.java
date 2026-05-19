@@ -4,7 +4,7 @@ import baritone.Baritone;
 import baritone.api.BaritoneAPI;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
-import baritone.pathing.calc.BestExitGoal;
+import baritone.pathing.calc.LocalExitObjective;
 import baritone.pathing.path.CutoffPath;
 import baritone.utils.BlockStateInterface;
 import net.minecraft.core.BlockPos;
@@ -28,7 +28,7 @@ public abstract class PathBase implements IPath {
 
   @Override
   public PathBase staticCutoff(Goal destination) {
-    if (destination instanceof BestExitGoal) {
+    if (destination instanceof LocalExitObjective) {
       return this;
     }
     int min = BaritoneAPI.getSettings().pathCutoffMinimumLength.value;

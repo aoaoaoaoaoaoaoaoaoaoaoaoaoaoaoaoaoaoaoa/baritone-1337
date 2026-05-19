@@ -18,11 +18,7 @@ public final class MacroNavigator {
   }
 
   public Optional<MacroDirective> plan(CalculationContext calculation, BetterBlockPos start, Goal goal, MacroTraversalProfile profile) {
-    if (!Baritone.settings().macroPlanning.value || !Baritone.settings().macroBiome.value || calculation.world.dimension() != Level.OVERWORLD) {
-      return Optional.empty();
-    }
-    int surfaceY = calculation.world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, start.x, start.z);
-    if (start.y + 4 < surfaceY) {
+    if (calculation.world.dimension() == Level.OVERWORLD && buriedBelowSurface(calculation, start)) {
       return Optional.empty();
     }
     Optional<BlockPos> goalPos = MacroGoals.pos(goal);
@@ -30,9 +26,6 @@ public final class MacroNavigator {
       return Optional.empty();
     }
     MacroAtlas atlas = MacroAtlas.build(calculation, start, false);
-    if (!atlas.empiricalPriors() && !profile.permitsPredictiveFallback()) {
-      return Optional.empty();
-    }
     int cellBlocks = atlas.cellBlocks();
     double fullDistance = Math.hypot(goalPos.get().getX() - start.x, goalPos.get().getZ() - start.z);
     if (fullDistance < Math.max(cellBlocks * 3D, Baritone.settings().macroBiomeWaypointBlocks.value)) {
@@ -59,8 +52,8 @@ public final class MacroNavigator {
     if (!Double.isFinite(field.telemetry().expectedStartValue())) {
       return Optional.empty();
     }
-    MacroProjectedGoal projected = new MacroProjectedGoal(goal, field);
-    MacroPlan plan = field.plan(start, new BetterBlockPos(goalPos.get().getX(), goalPos.get().getY(), goalPos.get().getZ()), projected, policy);
+    ValueProjectedExitObjective objective = new ValueProjectedExitObjective(goal, field);
+    MacroPlan plan = field.plan(start, new BetterBlockPos(goalPos.get().getX(), goalPos.get().getY(), goalPos.get().getZ()), objective, policy);
     return Optional.of(MacroDirective.localGoal(plan));
   }
 
@@ -101,6 +94,11 @@ public final class MacroNavigator {
 
   private static double terminalFloor(CalculationContext calculation, MacroTraversalProfile profile, BlockPos finalGoal, BetterBlockPos target) {
     return Math.hypot(finalGoal.getX() - target.x, finalGoal.getZ() - target.z) * profile.lowerBoundTicksPerBlock(calculation);
+  }
+
+  private static boolean buriedBelowSurface(CalculationContext calculation, BetterBlockPos start) {
+    int surfaceY = calculation.world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, start.x, start.z);
+    return start.y + 4 < surfaceY;
   }
 
   private record Target(int cellX, int cellZ, BetterBlockPos center) {
