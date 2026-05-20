@@ -11,12 +11,19 @@ public final class PedestrianLavaProximity {
     if (penalty <= 0D || Baritone.settings().assumeWalkOnLava.value) {
       return 0D;
     }
+    return arrivalDanger(context, srcX, srcY, srcZ, destX, destY, destZ) ? penalty : 0D;
+  }
+
+  public static boolean arrivalDanger(CalculationContext context, int srcX, int srcY, int srcZ, int destX, int destY, int destZ) {
+    if (Baritone.settings().assumeWalkOnLava.value) {
+      return false;
+    }
     int dx = Integer.compare(destX, srcX);
     int dz = Integer.compare(destZ, srcZ);
     if (dx == 0 && dz == 0) {
-      return 0D;
+      return false;
     }
-    return (dx != 0 && dz != 0 ? diagonalDanger(context, destX, destY, destZ, dx, dz) : orthogonalDanger(context, destX, destY, destZ, dx, dz)) ? penalty : 0D;
+    return dx != 0 && dz != 0 ? diagonalDanger(context, destX, destY, destZ, dx, dz) : orthogonalDanger(context, destX, destY, destZ, dx, dz);
   }
 
   private static boolean diagonalDanger(CalculationContext context, int x, int y, int z, int dx, int dz) {

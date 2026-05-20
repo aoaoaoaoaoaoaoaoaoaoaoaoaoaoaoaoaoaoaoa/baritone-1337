@@ -13,6 +13,7 @@ import baritone.pathing.movement.PedestrianLavaProximity;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -81,22 +82,27 @@ public final class MovementCruiseRay extends Movement {
     int maxZ = maxOffsetZ(dz);
     for (int ox = minX; ox <= maxX; ox++) {
       for (int oz = minZ; oz <= maxZ; oz++) {
-        if (segmentIntersectsExpandedCell(ox, oz, dx, dz) && !clearDryCruiseCell(context, x + ox, y, z + oz)) {
-          return COST_INF;
+        if (segmentIntersectsExpandedCell(ox, oz, dx, dz)) {
+          int wx = x + ox;
+          int wz = z + oz;
+          if (!clearDryCruiseCell(context, wx, y, wz) || !clearHazardHalo(context, wx, y, wz)) {
+            return COST_INF;
+          }
         }
       }
     }
     int gcd = gcd(Math.abs(dx), Math.abs(dz));
     int sx = dx / gcd;
     int sz = dz / gcd;
-    double lavaProximityPenalty = 0D;
     for (int i = 1; i <= gcd; i++) {
-      lavaProximityPenalty += PedestrianLavaProximity.arrivalPenalty(context, x + sx * (i - 1), y, z + sz * (i - 1), x + sx * i, y, z + sz * i);
+      if (PedestrianLavaProximity.arrivalDanger(context, x + sx * (i - 1), y, z + sz * (i - 1), x + sx * i, y, z + sz * i)) {
+        return COST_INF;
+      }
     }
     double stepCost = context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST;
     double length = Math.hypot(dx, dz);
     double dividend = Math.max(0D, Baritone.settings().pedestrianCruiseRayBoundaryDividend.value) * Math.max(0, gcd - 1);
-    return Math.max(stepCost, length * stepCost - dividend) + lavaProximityPenalty;
+    return Math.max(stepCost, length * stepCost - dividend);
   }
 
   @Override
@@ -160,6 +166,22 @@ public final class MovementCruiseRay extends Movement {
       return false;
     }
     return MovementHelper.canWalkOn(context, x, y - 1, z, support) && (MovementHelper.isBlockNormalCube(support) || MovementHelper.isGlassLike(support));
+  }
+
+  private static boolean clearHazardHalo(CalculationContext context, int x, int y, int z) {
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dz = -1; dz <= 1; dz++) {
+        if (hazard(context, x + dx, y, z + dz) || hazard(context, x + dx, y - 1, z + dz)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private static boolean hazard(CalculationContext context, int x, int y, int z) {
+    BlockState state = context.get(x, y, z);
+    return context.affordances.lava(x, y, z) || state.is(Blocks.MAGMA_BLOCK) || state.getBlock() instanceof BaseFireBlock;
   }
 
   static boolean validRay(int dx, int dz) {

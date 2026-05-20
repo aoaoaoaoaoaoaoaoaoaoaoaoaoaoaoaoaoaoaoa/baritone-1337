@@ -226,6 +226,12 @@ public final class Settings {
   public final Setting<Integer> pedestrianCruiseRayMaxBlocks = new Setting<>(12);
 
   /**
+   * Allow pedestrian cruise rays in the Nether. Disabled by default because long dry rays can bias the local planner into lava-adjacent basins unless the
+   * surrounding heat field is also strong enough.
+   */
+  public final Setting<Boolean> pedestrianCruiseRaysInNether = new Setting<>(false);
+
+  /**
    * Per-erased-boundary cost dividend for certified pedestrian cruise rays. This breaks exact ties in favor of one long hold-W primitive over many tiny
    * equivalent traverses.
    */
