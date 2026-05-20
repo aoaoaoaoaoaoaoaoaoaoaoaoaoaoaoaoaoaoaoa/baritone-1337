@@ -81,7 +81,8 @@ public class CalculationContext {
     boolean canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
     boolean sprintInWater = Baritone.settings().sprintInWater.value;
     double waterMoveCost = canSprint && sprintInWater ? ActionCosts.SPRINT_SWIM_ONE_BLOCK_COST : ActionCosts.WALK_ONE_IN_WATER_COST;
-    this.placement = new PlacementPolicy(Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(), Baritone.settings().blockPlacementPenalty.value,
+    ResourcePricing.Prices resourcePrices = ((Baritone) baritone).getInventoryBehavior().pathingResourcePrices(((Baritone) baritone).getPathingBehavior().resourceRepricingHeadroom());
+    this.placement = new PlacementPolicy(Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(), resourcePrices.placementPenalty(),
       Baritone.settings().allowPlaceInFluidsSource.value, Baritone.settings().allowPlaceInFluidsFlow.value);
     this.breaking = new BreakPolicy(Baritone.settings().allowBreak.value, Baritone.settings().allowBreakAnyway.value);
     this.movement = new MovementPolicy(canSprint, Baritone.settings().allowParkour.value, Baritone.settings().allowParkourPlace.value, Baritone.settings().allowJumpAtBuildLimit.value,
@@ -91,7 +92,7 @@ public class CalculationContext {
     this.fall =
       new FallPolicy(Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
         false, 3, Baritone.settings().maxFallHeightNoWater.value, Baritone.settings().maxFallHeightBucket.value);
-    this.costs = new CostPolicy(Baritone.settings().blockBreakAdditionalPenalty.value, Baritone.settings().backtrackCostFavoringCoefficient.value, Baritone.settings().jumpPenalty.value,
+    this.costs = new CostPolicy(resourcePrices.breakAdditionalPenalty(), Baritone.settings().backtrackCostFavoringCoefficient.value, Baritone.settings().jumpPenalty.value,
       Baritone.settings().walkOnWaterOnePenalty.value, Baritone.settings().pedestrianLavaProximityPenalty.value, ActionCosts.WALK_ONE_IN_WATER_COST, waterMoveCost);
     // why cache these things here, why not let the movements just get directly from settings?
     // because if some movements are calculated one way and others are calculated another way,

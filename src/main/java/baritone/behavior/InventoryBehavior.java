@@ -3,6 +3,8 @@ package baritone.behavior;
 import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.Helper;
+import baritone.pathing.movement.ResourcePricing;
+import baritone.pathing.movement.ResourcePricingState;
 import baritone.utils.ToolSet;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.Direction;
@@ -35,6 +37,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
   int ticksSinceLastInventoryMove;
   int[] lastTickRequestedMove; // not everything asks every tick, so remember the request while coming to a halt
+  private final ResourcePricingState resourcePricing = new ResourcePricingState();
 
   public InventoryBehavior(Baritone baritone) {
     super(baritone);
@@ -153,6 +156,65 @@ public final class InventoryBehavior extends Behavior implements Helper {
       }
     }
     return false;
+  }
+
+  public ResourcePricing.Prices pathingResourcePrices(boolean canAdoptEpoch) {
+    return resourcePricing.prices(resourceSnapshot(), resourceParameters(), Baritone.settings().blockPlacementPenalty.value, Baritone.settings().blockBreakAdditionalPenalty.value,
+      ctx.world().getGameTime(), canAdoptEpoch);
+  }
+
+  private ResourcePricing.Parameters resourceParameters() {
+    return new ResourcePricing.Parameters(Baritone.settings().dynamicResourcePricing.value, Baritone.settings().dynamicResourcePricingCountsInventory.value && Baritone.settings().allowInventory.value,
+      Baritone.settings().dynamicResourcePricingLowBlocks.value, Baritone.settings().dynamicResourcePricingHighBlocks.value, Baritone.settings().dynamicResourcePricingScarcePlacementMultiplier.value,
+      Baritone.settings().dynamicResourcePricingAbundantPlacementMultiplier.value, Baritone.settings().dynamicResourcePricingScarceBreakMultiplier.value,
+      Baritone.settings().dynamicResourcePricingFragilePickPlacementMultiplier.value, Baritone.settings().dynamicResourcePricingFragilePickBreakMultiplier.value,
+      Baritone.settings().dynamicResourcePricingFragilePickRemainingFraction.value, Baritone.settings().dynamicResourcePricingMinimumEpochTicks.value);
+  }
+
+  private ResourcePricing.Snapshot resourceSnapshot() {
+    NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+    int hotbarBlocks = 0;
+    int inventoryBlocks = 0;
+    for (int i = 0; i < inv.size(); i++) {
+      ItemStack stack = inv.get(i);
+      if (throwawayBlock(stack)) {
+        if (i < 9) {
+          hotbarBlocks += stack.getCount();
+        } else {
+          inventoryBlocks += stack.getCount();
+        }
+      }
+    }
+    ItemStack offhand = ctx.player().getItemBySlot(EquipmentSlot.OFFHAND);
+    if (throwawayBlock(offhand)) {
+      hotbarBlocks += offhand.getCount();
+    }
+    return new ResourcePricing.Snapshot(hotbarBlocks, inventoryBlocks, bestPickRemainingFraction(inv, Baritone.settings().allowInventory.value));
+  }
+
+  private static boolean throwawayBlock(ItemStack stack) {
+    return stack.getItem() instanceof BlockItem && Baritone.settings().acceptableThrowawayItems.value.contains(stack.getItem());
+  }
+
+  private static double bestPickRemainingFraction(NonNullList<ItemStack> inv, boolean countInventory) {
+    double bestSpeed = Double.NEGATIVE_INFINITY;
+    double remaining = Double.POSITIVE_INFINITY;
+    int limit = countInventory ? inv.size() : Math.min(9, inv.size());
+    for (int i = 0; i < limit; i++) {
+      ItemStack stack = inv.get(i);
+      if (stack.isEmpty() || !stack.is(ItemTags.PICKAXES) || stack.getMaxDamage() <= 1) {
+        continue;
+      }
+      if (Baritone.settings().itemSaver.value && (stack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) >= stack.getMaxDamage()) {
+        continue;
+      }
+      double speed = ToolSet.calculateSpeedVsBlock(stack, Blocks.STONE.defaultBlockState());
+      if (speed > bestSpeed) {
+        bestSpeed = speed;
+        remaining = (double) Math.max(0, stack.getMaxDamage() - stack.getDamageValue()) / stack.getMaxDamage();
+      }
+    }
+    return remaining;
   }
 
   public boolean hasBoat() {

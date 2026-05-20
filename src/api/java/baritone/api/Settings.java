@@ -122,6 +122,68 @@ public final class Settings {
   public final Setting<Double> blockBreakAdditionalPenalty = new Setting<>(2D);
 
   /**
+   * Dynamically recost pedestrian block placement and breaking from a coarse snapshot of throwaway block supply and pick durability.
+   * <p>
+   * This is deliberately not node state: the economics are frozen into each CalculationContext and adopted only on coarse epochs.
+   */
+  public final Setting<Boolean> dynamicResourcePricing = new Setting<>(true);
+
+  /**
+   * Count throwaway blocks outside the hotbar when deriving dynamic resource prices. Requires inventory access to be useful.
+   */
+  public final Setting<Boolean> dynamicResourcePricingCountsInventory = new Setting<>(false);
+
+  /**
+   * Below this many usable throwaway blocks, placement becomes expensive and the additional break penalty is discounted.
+   */
+  public final Setting<Integer> dynamicResourcePricingLowBlocks = new Setting<>(16);
+
+  /**
+   * At or above this many usable throwaway blocks, placement becomes cheaper.
+   */
+  public final Setting<Integer> dynamicResourcePricingHighBlocks = new Setting<>(96);
+
+  /**
+   * Placement multiplier while throwaway blocks are scarce.
+   */
+  public final Setting<Double> dynamicResourcePricingScarcePlacementMultiplier = new Setting<>(2D);
+
+  /**
+   * Placement multiplier while throwaway blocks are abundant.
+   */
+  public final Setting<Double> dynamicResourcePricingAbundantPlacementMultiplier = new Setting<>(0.35D);
+
+  /**
+   * Additional break penalty multiplier while throwaway blocks are scarce.
+   */
+  public final Setting<Double> dynamicResourcePricingScarceBreakMultiplier = new Setting<>(0.25D);
+
+  /**
+   * Remaining-durability fraction at which the best pick is treated as fragile.
+   */
+  public final Setting<Double> dynamicResourcePricingFragilePickRemainingFraction = new Setting<>(0.08D);
+
+  /**
+   * Placement multiplier while the best pick is fragile.
+   */
+  public final Setting<Double> dynamicResourcePricingFragilePickPlacementMultiplier = new Setting<>(0.5D);
+
+  /**
+   * Additional break penalty multiplier while the best pick is fragile.
+   */
+  public final Setting<Double> dynamicResourcePricingFragilePickBreakMultiplier = new Setting<>(4D);
+
+  /**
+   * Minimum game ticks between adopted dynamic resource price epochs.
+   */
+  public final Setting<Integer> dynamicResourcePricingMinimumEpochTicks = new Setting<>(100);
+
+  /**
+   * Current-route tick headroom required before adopting a pending dynamic resource price epoch.
+   */
+  public final Setting<Double> dynamicResourcePricingHeadroomTicks = new Setting<>(80D);
+
+  /**
    * Additional penalty for hitting the space bar (ascend, pillar, or parkour) because it uses hunger
    */
   public final Setting<Double> jumpPenalty = new Setting<>(2D);

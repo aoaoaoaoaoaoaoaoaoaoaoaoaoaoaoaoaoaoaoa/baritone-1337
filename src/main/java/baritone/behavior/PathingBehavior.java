@@ -684,6 +684,16 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     return Optional.of(current.estimatedTicksRemainingFromCurrent());
   }
 
+  public boolean resourceRepricingHeadroom() {
+    if (current == null || next != null) {
+      return true;
+    }
+    if (calculationActive()) {
+      return false;
+    }
+    return ticksRemainingInSegment(false).orElse(0D) >= Baritone.settings().dynamicResourcePricingHeadroomTicks.value;
+  }
+
   public Optional<Double> estimatedTicksToGoal() {
     BetterBlockPos currentPos = ctx.playerFeet();
     if (goal == null || currentPos == null || startPosition == null) {
