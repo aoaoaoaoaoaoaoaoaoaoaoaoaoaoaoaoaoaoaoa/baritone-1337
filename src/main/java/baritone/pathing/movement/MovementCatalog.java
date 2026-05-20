@@ -3,6 +3,7 @@ package baritone.pathing.movement;
 import java.util.ArrayList;
 import java.util.List;
 import baritone.Baritone;
+import baritone.pathing.movement.movements.MovementCruiseRay;
 import net.minecraft.world.level.Level;
 
 public final class MovementCatalog {
@@ -26,16 +27,7 @@ public final class MovementCatalog {
     }
     if (Baritone.settings().pedestrianCruiseRays.value && (context.world.dimension() != Level.NETHER || Baritone.settings().pedestrianCruiseRaysInNether.value)) {
       int max = Math.clamp(Baritone.settings().pedestrianCruiseRayMaxBlocks.value, 2, 32);
-      for (int distance = 2; distance <= max; distance++) {
-        primitives.add(new CruiseRayMovementPrimitive(distance, 0));
-        primitives.add(new CruiseRayMovementPrimitive(-distance, 0));
-        primitives.add(new CruiseRayMovementPrimitive(0, distance));
-        primitives.add(new CruiseRayMovementPrimitive(0, -distance));
-        primitives.add(new CruiseRayMovementPrimitive(distance, distance));
-        primitives.add(new CruiseRayMovementPrimitive(distance, -distance));
-        primitives.add(new CruiseRayMovementPrimitive(-distance, distance));
-        primitives.add(new CruiseRayMovementPrimitive(-distance, -distance));
-      }
+      addCruiseRays(primitives, max);
     }
     return new MovementCatalog(primitives.toArray(MovementPrimitive[]::new));
   }
@@ -58,5 +50,15 @@ public final class MovementCatalog {
       case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> context.movement.allowParkour();
       default -> true;
     };
+  }
+
+  private static void addCruiseRays(List<MovementPrimitive> primitives, int maxChebyshevBlocks) {
+    for (int dx = -maxChebyshevBlocks; dx <= maxChebyshevBlocks; dx++) {
+      for (int dz = -maxChebyshevBlocks; dz <= maxChebyshevBlocks; dz++) {
+        if (MovementCruiseRay.validRay(dx, dz)) {
+          primitives.add(new CruiseRayMovementPrimitive(dx, dz));
+        }
+      }
+    }
   }
 }

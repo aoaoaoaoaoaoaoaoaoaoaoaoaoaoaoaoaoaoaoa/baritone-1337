@@ -221,7 +221,7 @@ public final class Settings {
   public final Setting<Boolean> pedestrianCruiseRays = new Setting<>(true);
 
   /**
-   * Maximum length in blocks for certified pedestrian cruise rays. Larger values increase outdegree but collapse long flats.
+   * Maximum Chebyshev length in blocks for certified pedestrian cruise rays. Larger values increase outdegree quadratically but collapse long flats.
    */
   public final Setting<Integer> pedestrianCruiseRayMaxBlocks = new Setting<>(12);
 

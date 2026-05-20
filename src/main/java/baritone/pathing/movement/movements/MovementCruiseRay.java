@@ -101,7 +101,7 @@ public final class MovementCruiseRay extends Movement {
     }
     double stepCost = context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST;
     double length = Math.hypot(dx, dz);
-    double dividend = Math.max(0D, context.costs.pedestrianCruiseRayBoundaryDividend()) * Math.max(0, gcd - 1);
+    double dividend = Math.max(0D, context.costs.pedestrianCruiseRayBoundaryDividend()) * (Math.max(Math.abs(dx), Math.abs(dz)) - 1);
     return Math.max(stepCost, length * stepCost - dividend);
   }
 
@@ -184,16 +184,13 @@ public final class MovementCruiseRay extends Movement {
     return context.affordances.lava(x, y, z) || state.is(Blocks.MAGMA_BLOCK) || state.getBlock() instanceof BaseFireBlock;
   }
 
-  static boolean validRay(int dx, int dz) {
+  public static boolean validRay(int dx, int dz) {
     int ax = Math.abs(dx);
     int az = Math.abs(dz);
     if (ax == 0 && az == 0) {
       return false;
     }
-    if (ax == 0 || az == 0) {
-      return ax + az >= 2;
-    }
-    return ax == az && ax >= 2;
+    return Math.max(ax, az) >= 2;
   }
 
   private static boolean segmentIntersectsExpandedCell(int cellX, int cellZ, int dx, int dz) {
