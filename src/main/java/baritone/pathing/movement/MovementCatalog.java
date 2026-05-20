@@ -14,7 +14,10 @@ public final class MovementCatalog {
   }
 
   public static MovementCatalog legacyWalking(CalculationContext context) {
-    List<MovementPrimitive> primitives = new ArrayList<>(Moves.values().length + ObliqueMovementPrimitive.STRIDES.length);
+    int cruiseRayMax = Baritone.settings().pedestrianCruiseRays.value && (context.world.dimension() != Level.NETHER || Baritone.settings().pedestrianCruiseRaysInNether.value)
+      ? Math.clamp(Baritone.settings().pedestrianCruiseRayMaxBlocks.value, 2, 32) : 0;
+    List<MovementPrimitive> primitives =
+      new ArrayList<>(Moves.values().length + (context.movement.allowObliqueWalk() ? ObliqueMovementPrimitive.STRIDES.length : 0) + cruiseRayCount(cruiseRayMax, context.movement.allowObliqueWalk()));
     for (Moves move : Moves.values()) {
       if (enabled(context, move)) {
         primitives.add(new LegacyMovesPrimitive(move));
@@ -25,9 +28,8 @@ public final class MovementCatalog {
         primitives.add(new ObliqueMovementPrimitive(stride[0], stride[1]));
       }
     }
-    if (Baritone.settings().pedestrianCruiseRays.value && (context.world.dimension() != Level.NETHER || Baritone.settings().pedestrianCruiseRaysInNether.value)) {
-      int max = Math.clamp(Baritone.settings().pedestrianCruiseRayMaxBlocks.value, 2, 32);
-      addCruiseRays(primitives, max, context.movement.allowObliqueWalk());
+    if (cruiseRayMax > 0) {
+      addCruiseRays(primitives, cruiseRayMax, context.movement.allowObliqueWalk());
     }
     return new MovementCatalog(primitives.toArray(MovementPrimitive[]::new));
   }
@@ -66,5 +68,12 @@ public final class MovementCatalog {
     int ax = Math.abs(dx);
     int az = Math.abs(dz);
     return ax != 0 && az != 0 && ax != az;
+  }
+
+  private static int cruiseRayCount(int maxChebyshevBlocks, boolean allowOblique) {
+    if (maxChebyshevBlocks <= 0) {
+      return 0;
+    }
+    return allowOblique ? (2 * maxChebyshevBlocks + 1) * (2 * maxChebyshevBlocks + 1) - 9 : 8 * (maxChebyshevBlocks - 1);
   }
 }
