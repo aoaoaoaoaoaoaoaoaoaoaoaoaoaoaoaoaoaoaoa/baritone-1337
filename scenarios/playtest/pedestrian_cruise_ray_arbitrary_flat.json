@@ -1,0 +1,42 @@
+{
+  "id": "pedestrian_cruise_ray_arbitrary_flat",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "viewDistance": 10,
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 120.5,
+    "y": 114.0,
+    "z": 40.5,
+    "yaw": -67.3801,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 144,
+    "y": 114,
+    "z": 30
+  },
+  "setupCommands": [
+    "fill 118 112 28 146 118 42 minecraft:air",
+    "fill 118 113 28 146 113 42 minecraft:stone",
+    "setblock 120 113 40 minecraft:bedrock"
+  ],
+  "loadout": [],
+  "timeoutTicks": 1400,
+  "successRadius": 2.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNoVehicle": true,
+    "requirePathingSeen": true
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowSprint": true,
+    "allowObliqueWalk": true,
+    "pedestrianCruiseRays": true,
+    "pedestrianCruiseRayMaxBlocks": 12
+  },
+  "trace": true
+}

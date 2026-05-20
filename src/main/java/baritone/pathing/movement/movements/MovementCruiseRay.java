@@ -41,12 +41,19 @@ public final class MovementCruiseRay extends Movement {
   @Override
   protected Set<BetterBlockPos> calculateValidPositions() {
     LinkedHashSet<BetterBlockPos> result = new LinkedHashSet<>();
-    int gcd = gcd(Math.abs(dx), Math.abs(dz));
-    int sx = dx / gcd;
-    int sz = dz / gcd;
-    for (int i = 0; i <= gcd; i++) {
-      result.add(new BetterBlockPos(src.x + sx * i, src.y, src.z + sz * i));
+    int minX = minOffsetX(dx);
+    int maxX = maxOffsetX(dx);
+    int minZ = minOffsetZ(dz);
+    int maxZ = maxOffsetZ(dz);
+    for (int ox = minX; ox <= maxX; ox++) {
+      for (int oz = minZ; oz <= maxZ; oz++) {
+        if (segmentIntersectsExpandedCell(ox, oz, dx, dz)) {
+          result.add(new BetterBlockPos(src.x + ox, src.y, src.z + oz));
+        }
+      }
     }
+    result.add(src);
+    result.add(dest);
     return result;
   }
 
