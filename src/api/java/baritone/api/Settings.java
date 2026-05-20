@@ -676,6 +676,16 @@ public final class Settings {
   public final Setting<Integer> pedestrianHotLocalExtractionMaxMovements = new Setting<>(384);
 
   /**
+   * Minimum number of discovered terminal candidates a pedestrian hot-local query tries to seed before reverse repair chooses a Bellman action.
+   */
+  public final Setting<Integer> pedestrianHotLocalTerminalTarget = new Setting<>(1);
+
+  /**
+   * Maximum extra forward-discovery node expansions after the first pedestrian hot-local terminal is found. This keeps terminal broadening finite while avoiding first-exit myopia.
+   */
+  public final Setting<Integer> pedestrianHotLocalPostTerminalExpansions = new Setting<>(0);
+
+  /**
    * Emergency legacy A* fallback for unsupported or budget-exhausted hot-local queries.
    */
   public final Setting<Boolean> pedestrianHotLocalFallbackEnabled = new Setting<>(true);

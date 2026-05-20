@@ -38,6 +38,8 @@ public final class SettingsSurface {
           entry("Ped hot max nodes", s.pedestrianHotLocalMaxNodes, "Resident node cap for pedestrian hot local planning."),
           entry("Ped hot max edges", s.pedestrianHotLocalMaxEdges, "Resident evaluated edge cap for pedestrian hot local planning."),
           entry("Ped hot extract max", s.pedestrianHotLocalExtractionMaxMovements, "Maximum hot-local prefix length before value continuation."),
+          entry("Ped hot terminals", s.pedestrianHotLocalTerminalTarget, "Target terminal count for hot-local forward discovery."),
+          entry("Ped hot after terminal", s.pedestrianHotLocalPostTerminalExpansions, "Post-terminal hot-local discovery expansion cap."),
           entry("Ped hot fallback", s.pedestrianHotLocalFallbackEnabled, "Allow emergency legacy A* fallback for hot local planning."),
           entry("Horse incumbent early", s.horsePathingEarlyIncumbentExecution, "Mounted horse incumbent execution."),
           entry("Horse incumbent interval", s.horsePathingIncumbentIntervalMS, "Mounted horse incumbent cadence."),

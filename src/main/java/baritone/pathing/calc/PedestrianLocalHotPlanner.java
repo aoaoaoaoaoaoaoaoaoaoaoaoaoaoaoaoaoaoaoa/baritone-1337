@@ -241,6 +241,7 @@ public final class PedestrianLocalHotPlanner {
     private final DiscoveryHeap discoveryQueue = new DiscoveryHeap();
     private final EdgeEvalScratch scratch = new EdgeEvalScratch();
     private final NodeTerrainFacts terrainFacts = new NodeTerrainFacts();
+    private int terminalCount;
     private boolean poisoned;
 
     private PedestrianLocalValueField(StateKey key, long factEpoch, int primitiveCount, int maxNodes, int maxEdges) {
@@ -268,6 +269,7 @@ public final class PedestrianLocalHotPlanner {
       bestPrimitive = outgoingEdgeCount = new short[0];
       edgeCount = 0;
       nodeCount = 0;
+      terminalCount = 0;
       open.clear();
       discoveryQueue.clear();
       edges.release();
@@ -291,12 +293,22 @@ public final class PedestrianLocalHotPlanner {
 
     private DiscoveryStats discover(CalculationContext context, int start, Goal localGoal, Goal terminalGoal, long deadlineMillis, CancelFlag cancel) {
       int generation = ++queryGenerationCounter;
+      int terminalTarget = Math.max(1, Baritone.settings().pedestrianHotLocalTerminalTarget.value);
+      int postTerminalExpansionCap = Math.max(0, Baritone.settings().pedestrianHotLocalPostTerminalExpansions.value);
       DiscoveryHeap queue = discoveryQueue;
       queue.clear();
       setQueryCost(start, generation, 0D);
       queue.add(start, localGoal.heuristic(BlockKey.x(nodeKeys[start]), BlockKey.y(nodeKeys[start]), BlockKey.z(nodeKeys[start])), 0D);
       int expanded = 0;
+      int terminalHits = 0;
+      int firstTerminalExpansion = -1;
       while (!queue.isEmpty() && !cancel.cancelled() && System.currentTimeMillis() <= deadlineMillis && nodeCount < maxNodes) {
+        if (terminalHits >= terminalTarget) {
+          break;
+        }
+        if (firstTerminalExpansion >= 0 && expanded - firstTerminalExpansion >= postTerminalExpansionCap) {
+          break;
+        }
         int node = queue.poll();
         double cost = queue.polledCost;
         if (queryGeneration[node] != generation || Math.abs(queryCost[node] - cost) > EPS) {
@@ -306,10 +318,7 @@ public final class PedestrianLocalHotPlanner {
         int x = BlockKey.x(nodeKeys[node]);
         int y = BlockKey.y(nodeKeys[node]);
         int z = BlockKey.z(nodeKeys[node]);
-        activateDiscoveredTerminals(node, x, y, z, cost, localGoal, terminalGoal);
-        if (terminal[node] < Double.POSITIVE_INFINITY) {
-          break;
-        }
+        activateDiscoveredTerminals(node, x, y, z, localGoal, terminalGoal);
         for (short primitive = 0; primitive < primitiveCount; primitive++) {
           int edgeId = evaluateOrGet(context, node, primitive);
           byte status = edges.status(edgeId);
@@ -333,14 +342,17 @@ public final class PedestrianLocalHotPlanner {
             queue.add(dest, nextCost + localGoal.heuristic(dx, dy, dz), nextCost);
           }
         }
-        if (terminal[node] < Double.POSITIVE_INFINITY) {
-          break;
+        if (Double.isFinite(terminal[node])) {
+          if (firstTerminalExpansion < 0) {
+            firstTerminalExpansion = expanded;
+          }
+          terminalHits++;
         }
       }
       return new DiscoveryStats(expanded);
     }
 
-    private void activateDiscoveredTerminals(int node, int x, int y, int z, double cost, Goal localGoal, Goal terminalGoal) {
+    private void activateDiscoveredTerminals(int node, int x, int y, int z, Goal localGoal, Goal terminalGoal) {
       if (terminalGoal.isInGoal(x, y, z)) {
         activateTerminal(node, 0D);
       }
@@ -349,12 +361,17 @@ public final class PedestrianLocalHotPlanner {
       }
     }
 
-    private void activateTerminal(int node, double cost) {
+    private boolean activateTerminal(int node, double cost) {
       if (Double.isFinite(cost) && cost >= 0D && terminal[node] - cost > EPS) {
+        if (!Double.isFinite(terminal[node])) {
+          terminalCount++;
+        }
         terminal[node] = cost;
         updateVertex(node);
         updatePredecessors(node);
+        return true;
       }
+      return false;
     }
 
     private RepairStats repair(int start, long deadlineMillis, CancelFlag cancel) {
@@ -632,13 +649,7 @@ public final class PedestrianLocalHotPlanner {
     }
 
     private int terminalCount() {
-      int count = 0;
-      for (int i = 0; i < nodeCount; i++) {
-        if (Double.isFinite(terminal[i])) {
-          count++;
-        }
-      }
-      return count;
+      return terminalCount;
     }
 
     private static boolean same(double a, double b) {
