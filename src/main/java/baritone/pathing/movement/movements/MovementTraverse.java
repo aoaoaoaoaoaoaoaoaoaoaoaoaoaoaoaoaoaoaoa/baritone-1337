@@ -13,6 +13,7 @@ import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.NodeTerrainFacts;
+import baritone.pathing.movement.PedestrianLavaProximity;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import java.util.Optional;
@@ -79,6 +80,7 @@ public class MovementTraverse extends Movement {
     boolean frostWalker = standingOnABlock && !context.movement.assumeWalkOnWater() && MovementHelper.canUseFrostWalker(context, destOn);
     if (frostWalker || MovementHelper.canWalkOn(context, destX, y - 1, destZ, destOn)) { // this is a walk, not a bridge
       double WC = WALK_ONE_BLOCK_COST;
+      double lavaProximityPenalty = PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y, destZ);
       boolean water = false;
       boolean sneaking = false;
       if (MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1)) {
@@ -111,13 +113,13 @@ public class MovementTraverse extends Movement {
           // Don't check for soul sand, since we can sprint on that too
           WC *= SPRINT_MULTIPLIER;
         }
-        return WC;
+        return WC + lavaProximityPenalty;
       }
       if (srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE) {
         hardness1 *= 5;
         hardness2 *= 5;
       }
-      return WC + hardness1 + hardness2;
+      return WC + hardness1 + hardness2 + lavaProximityPenalty;
     } else { // this is a bridge, so we need to place a block
       if (srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE) {
         return COST_INF;
@@ -146,7 +148,7 @@ public class MovementTraverse extends Movement {
             continue;
           }
           if (MovementHelper.canPlaceAgainst(context, againstX, againstY, againstZ)) { // found a side place option
-            return WC + placeCost + hardness1 + hardness2;
+            return WC + placeCost + hardness1 + hardness2 + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y, destZ);
           }
         }
         // now that we've checked all possible directions to side place, we actually need to backplace
@@ -161,7 +163,7 @@ public class MovementTraverse extends Movement {
           return COST_INF; // we can stand on these but can't place against them
         }
         WC = WC * (SNEAK_ONE_BLOCK_COST / WALK_ONE_BLOCK_COST);
-        return WC + placeCost + hardness1 + hardness2;
+        return WC + placeCost + hardness1 + hardness2 + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y, destZ);
       }
       return COST_INF;
     }

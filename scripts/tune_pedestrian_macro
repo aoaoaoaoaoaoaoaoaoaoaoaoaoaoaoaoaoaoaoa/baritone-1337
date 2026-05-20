@@ -17,6 +17,7 @@ import optuna
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO / "scenarios/playtest/nether_thisway_500_locked.txt"
+WALK_ONE_BLOCK_COST = 20.0 / 4.317
 
 
 FIXED_SETTINGS: dict[str, Any] = {
@@ -96,6 +97,7 @@ def default_params() -> dict[str, Any]:
     "macroBiomeWaypointBlocks": 192,
     "macroBiomeUnknownPenalty": 1.0,
     "macroBiomeUncertaintyWeight": 20.0,
+    "pedestrianLavaProximityPenalty": 2.0 * WALK_ONE_BLOCK_COST,
   }
 
 
@@ -109,6 +111,7 @@ def trial_params(trial: optuna.Trial) -> dict[str, Any]:
     "macroBiomeWaypointBlocks": trial.suggest_categorical("macroBiomeWaypointBlocks", [64, 96, 128, 160, 192, 256, 384, 512]),
     "macroBiomeUnknownPenalty": trial.suggest_float("macroBiomeUnknownPenalty", 0.0, 8.0),
     "macroBiomeUncertaintyWeight": trial.suggest_float("macroBiomeUncertaintyWeight", 0.0, 80.0),
+    "pedestrianLavaProximityPenalty": trial.suggest_float("pedestrianLavaProximityPenalty", 0.0, 16.0),
   }
 
 

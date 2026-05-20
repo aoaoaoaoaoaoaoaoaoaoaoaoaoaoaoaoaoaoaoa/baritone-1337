@@ -10,6 +10,7 @@ import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.NodeTerrainFacts;
+import baritone.pathing.movement.PedestrianLavaProximity;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import java.util.Set;
@@ -142,7 +143,7 @@ public class MovementAscend extends Movement {
       return COST_INF;
     }
     totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 2, destZ, true);
-    return totalCost;
+    return totalCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y + 1, destZ);
   }
 
   @Override

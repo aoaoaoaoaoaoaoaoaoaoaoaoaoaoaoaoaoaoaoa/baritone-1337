@@ -11,6 +11,7 @@ import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.NodeTerrainFacts;
+import baritone.pathing.movement.PedestrianLavaProximity;
 import baritone.pathing.control.ControlFrame;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
@@ -201,7 +202,7 @@ public class MovementDiagonal extends Movement {
         || (!BTop && BMid && BLow)) { // head bonk B
         return;
       }
-      res.reachable(destX, y + 1, destZ, multiplier * SQRT_2 + JUMP_ONE_BLOCK_COST, 0);
+      res.reachable(destX, y + 1, destZ, multiplier * SQRT_2 + JUMP_ONE_BLOCK_COST + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y + 1, destZ), 0);
       return;
     }
     double optionA = MovementHelper.movementPassageCost(context, x, y, destZ, pb0, false);
@@ -252,7 +253,7 @@ public class MovementDiagonal extends Movement {
     } else {
       resultY = y;
     }
-    res.reachable(destX, resultY, destZ, cost, 0);
+    res.reachable(destX, resultY, destZ, cost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, resultY, destZ), 0);
   }
 
   @Override

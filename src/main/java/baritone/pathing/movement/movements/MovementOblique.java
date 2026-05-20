@@ -8,6 +8,7 @@ import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
+import baritone.pathing.movement.PedestrianLavaProximity;
 import baritone.pathing.control.ControlFrame;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -63,7 +64,8 @@ public final class MovementOblique extends Movement {
       }
     }
     boolean fastSwim = deepWater && MovementHelper.hasSurfaceSwimSpan(context, x, y, z, dx, dz);
-    return SQRT_5 * (fastSwim ? context.costs.waterMoveCost() : deepWater || shallowWater ? context.costs.waterWalkCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST);
+    return SQRT_5 * (fastSwim ? context.costs.waterMoveCost() : deepWater || shallowWater ? context.costs.waterWalkCost() : context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST)
+      + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, x + dx, y, z + dz);
   }
 
   @Override

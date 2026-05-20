@@ -1,5 +1,6 @@
 package baritone.api;
 
+import baritone.api.pathing.movement.ActionCosts;
 import baritone.api.utils.ElytraFireworkPolicy;
 import baritone.api.utils.GeofenceBox;
 import baritone.api.utils.Helper;
@@ -129,6 +130,12 @@ public final class Settings {
    * Walking on water uses up hunger really quick, so penalize it
    */
   public final Setting<Double> walkOnWaterOnePenalty = new Setting<>(3D);
+
+  /**
+   * Extra pedestrian movement cost for ending a grounded step with same-foot-level lava in the small forward/side clip neighborhood.
+   * This is not a lava-lake rim tax: lava below the feet is ignored.
+   */
+  public final Setting<Double> pedestrianLavaProximityPenalty = new Setting<>(ActionCosts.WALK_ONE_BLOCK_COST * 2D);
 
   /**
    * Don't allow breaking blocks next to liquids.

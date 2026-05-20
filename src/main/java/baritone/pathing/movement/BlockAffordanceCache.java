@@ -20,6 +20,7 @@ public final class BlockAffordanceCache {
   private static final int STATE_REPLACEABLE_VALUE = 1 << 8;
   private static final int STATE_CAN_PLACE_AGAINST_VALUE = 1 << 9;
   private static final int STATE_AVOID_WALKING_INTO_VALUE = 1 << 10;
+  private static final int STATE_LAVA_VALUE = 1 << 11;
   private static final int AIR_STATE_BITS = STATE_COMPLETED | STATE_FULLY_PASSABLE_VALUE | STATE_CAN_WALK_THROUGH_VALUE | STATE_REPLACEABLE_VALUE;
   private static final int STATE_LOOKUP_CACHE_SIZE = 1024;
   private static final int STATE_LOOKUP_CACHE_MASK = STATE_LOOKUP_CACHE_SIZE - 1;
@@ -125,6 +126,9 @@ public final class BlockAffordanceCache {
     if (MovementHelper.avoidWalkingInto(state)) {
       bits |= STATE_AVOID_WALKING_INTO_VALUE;
     }
+    if (MovementHelper.isLava(state)) {
+      bits |= STATE_LAVA_VALUE;
+    }
     stateAffordanceBits[id] = bits;
     return bits;
   }
@@ -158,6 +162,14 @@ public final class BlockAffordanceCache {
 
   public boolean avoidWalkingInto(int x, int y, int z, BlockState state) {
     return (stateData(state) & STATE_AVOID_WALKING_INTO_VALUE) != 0;
+  }
+
+  public boolean lava(int x, int y, int z) {
+    return lava(stateAt(x, y, z));
+  }
+
+  public boolean lava(BlockState state) {
+    return (stateData(state) & STATE_LAVA_VALUE) != 0;
   }
 
   public boolean flowingFluid(int x, int y, int z) {

@@ -29,6 +29,20 @@ GRADLE_USER_HOME=/home/main/.cache/gradle ./gradlew :fabric:build
 
 Fabric artifacts land in `dist/`; the standalone Fabric jar is the normal playtest artifact.
 
+## Local Instances
+
+`vims` is the local MultiMC instance used for ordinary manual Minecraft testing, not an SSH host. Its mod directory is:
+
+```sh
+/home/main/.local/share/multimc/instances/vims/.minecraft/mods
+```
+
+To push the latest build there, copy the standalone Fabric artifact:
+
+```sh
+install -Dm644 dist/baritone-1337-standalone-fabric-1.17.0+26.1.2.jar /home/main/.local/share/multimc/instances/vims/.minecraft/mods/baritone-1337-standalone-fabric-1.17.0+26.1.2.jar
+```
+
 ## Formatting
 
 Formatting policy is 2-space indentation, 200-column width, minimum gratuitous line wrapping, and no trailing whitespace. Token efficiency beats ornamental verticality.

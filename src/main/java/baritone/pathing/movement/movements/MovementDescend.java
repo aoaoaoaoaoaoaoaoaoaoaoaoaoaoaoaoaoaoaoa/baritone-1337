@@ -13,6 +13,7 @@ import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.NodeTerrainFacts;
+import baritone.pathing.movement.PedestrianLavaProximity;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import java.util.Set;
@@ -120,7 +121,7 @@ public class MovementDescend extends Movement {
       walk *= WALK_ONE_OVER_SOUL_SAND_COST / WALK_ONE_BLOCK_COST;
     }
     totalCost += walk + Math.max(FALL_N_BLOCKS_COST[1], CENTER_AFTER_FALL_COST);
-    res.reachable(destX, y - 1, destZ, totalCost, 0);
+    res.reachable(destX, y - 1, destZ, totalCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y - 1, destZ), 0);
   }
 
   public static boolean dynamicFallCost(CalculationContext context, int x, int y, int z, int destX, int destZ, double frontBreak, BlockState below, EdgeEvalScratch res) {
@@ -161,7 +162,7 @@ public class MovementDescend extends Movement {
           return false;
         }
         // found a fall into water
-        res.reachable(destX, newY, destZ, tentativeCost, 0); // TODO incorporate water swim up cost?
+        res.reachable(destX, newY, destZ, tentativeCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, newY, destZ), 0); // TODO incorporate water swim up cost?
         return false;
       }
       if (reachedMinimum && context.fall.allowIntoLava() && MovementHelper.isLava(ontoBlock)) {
@@ -188,7 +189,7 @@ public class MovementDescend extends Movement {
       }
       if (reachedMinimum && unprotectedFallHeight <= context.fall.maxNoWater() + 1) {
         // fallHeight = 4 means onto.up() is 3 blocks down, which is the max
-        res.reachable(destX, newY + 1, destZ, tentativeCost, 0);
+        res.reachable(destX, newY + 1, destZ, tentativeCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, newY + 1, destZ), 0);
         return false;
       }
       if (reachedMinimum && context.fall.hasWaterBucket() && unprotectedFallHeight <= context.fall.maxBucket() + 1) {
@@ -196,7 +197,7 @@ public class MovementDescend extends Movement {
         if (bucketCost >= COST_INF) {
           return false;
         }
-        res.reachable(destX, newY + 1, destZ, tentativeCost + bucketCost, 0); // this is the block we're falling onto, so dest is +1
+        res.reachable(destX, newY + 1, destZ, tentativeCost + bucketCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, newY + 1, destZ), 0); // this is the block we're falling onto, so dest is +1
         return true;
       } else {
         return false;
