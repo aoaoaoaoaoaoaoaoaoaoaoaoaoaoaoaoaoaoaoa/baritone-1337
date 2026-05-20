@@ -47,7 +47,9 @@ final class CruiseRayMovementPrimitive implements MovementPrimitive {
 
   @Override
   public double minimumCost(CalculationContext ctx) {
-    return length * Math.min(ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.costs.waterMoveCost());
+    double stepCost = ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST;
+    double dividend = Math.max(0D, ctx.costs.pedestrianCruiseRayBoundaryDividend()) * (Math.max(Math.abs(dx), Math.abs(dz)) - 1);
+    return Math.max(stepCost, length * stepCost - dividend);
   }
 
   private static String signed(int value) {
