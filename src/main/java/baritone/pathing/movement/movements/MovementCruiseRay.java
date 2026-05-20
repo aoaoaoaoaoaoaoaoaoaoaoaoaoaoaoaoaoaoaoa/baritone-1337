@@ -101,7 +101,7 @@ public final class MovementCruiseRay extends Movement {
     }
     double stepCost = context.movement.canSprint() ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST;
     double length = Math.hypot(dx, dz);
-    double dividend = Math.max(0D, Baritone.settings().pedestrianCruiseRayBoundaryDividend.value) * Math.max(0, gcd - 1);
+    double dividend = Math.max(0D, context.costs.pedestrianCruiseRayBoundaryDividend()) * Math.max(0, gcd - 1);
     return Math.max(stepCost, length * stepCost - dividend);
   }
 
