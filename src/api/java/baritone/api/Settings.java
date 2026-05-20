@@ -216,6 +216,22 @@ public final class Settings {
   public final Setting<Double> pedestrianTrailReversibilityIrreversiblePenalty = new Setting<>(200D);
 
   /**
+   * Add certified long dry same-height pedestrian cruise rays to the local movement graph.
+   */
+  public final Setting<Boolean> pedestrianCruiseRays = new Setting<>(true);
+
+  /**
+   * Maximum length in blocks for certified pedestrian cruise rays. Larger values increase outdegree but collapse long flats.
+   */
+  public final Setting<Integer> pedestrianCruiseRayMaxBlocks = new Setting<>(12);
+
+  /**
+   * Per-erased-boundary cost dividend for certified pedestrian cruise rays. This breaks exact ties in favor of one long hold-W primitive over many tiny
+   * equivalent traverses.
+   */
+  public final Setting<Double> pedestrianCruiseRayBoundaryDividend = new Setting<>(0.08D);
+
+  /**
    * Don't allow breaking blocks next to liquids.
    * <p>
    * Enable if you have mods adding custom fluid physics.

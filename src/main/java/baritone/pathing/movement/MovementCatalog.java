@@ -2,6 +2,7 @@ package baritone.pathing.movement;
 
 import java.util.ArrayList;
 import java.util.List;
+import baritone.Baritone;
 
 public final class MovementCatalog {
   private final MovementPrimitive[] primitives;
@@ -20,6 +21,19 @@ public final class MovementCatalog {
     if (context.movement.allowObliqueWalk()) {
       for (int[] stride : ObliqueMovementPrimitive.STRIDES) {
         primitives.add(new ObliqueMovementPrimitive(stride[0], stride[1]));
+      }
+    }
+    if (Baritone.settings().pedestrianCruiseRays.value) {
+      int max = Math.clamp(Baritone.settings().pedestrianCruiseRayMaxBlocks.value, 2, 32);
+      for (int distance = 2; distance <= max; distance++) {
+        primitives.add(new CruiseRayMovementPrimitive(distance, 0));
+        primitives.add(new CruiseRayMovementPrimitive(-distance, 0));
+        primitives.add(new CruiseRayMovementPrimitive(0, distance));
+        primitives.add(new CruiseRayMovementPrimitive(0, -distance));
+        primitives.add(new CruiseRayMovementPrimitive(distance, distance));
+        primitives.add(new CruiseRayMovementPrimitive(distance, -distance));
+        primitives.add(new CruiseRayMovementPrimitive(-distance, distance));
+        primitives.add(new CruiseRayMovementPrimitive(-distance, -distance));
       }
     }
     return new MovementCatalog(primitives.toArray(MovementPrimitive[]::new));
