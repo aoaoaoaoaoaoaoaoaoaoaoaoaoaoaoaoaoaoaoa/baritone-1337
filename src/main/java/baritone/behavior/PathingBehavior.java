@@ -1787,13 +1787,17 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (profile.horse()) {
       return new HorseCalculation(horseStart, transformed, terminalGoal, macroPlan, failureTimeoutMS);
     }
-    if (Baritone.settings().pedestrianHotLocalValueField.value) {
+    if (Baritone.settings().pedestrianHotLocalValueField.value && hotLocalValueFieldApplies(transformed, macroPlan)) {
       return new CreatedPathfinder(pedestrianHotPlanner.query(context, realStart, start.getX(), start.getY(), start.getZ(), transformed, terminalGoal, macroPlan, favoring, worldFactEpoch),
         terminalGoal, macroPlan, immediateRoute);
     }
     return new CreatedPathfinder(new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context, PathingIncumbentPolicy.pedestrian()), terminalGoal, macroPlan,
       immediateRoute);
 
+  }
+
+  private static boolean hotLocalValueFieldApplies(Goal localGoal, MacroPlan macroPlan) {
+    return macroPlan != null || localGoal instanceof LocalExitObjective;
   }
 
   private sealed interface CalculationLaunch permits CreatedPathfinder, DeferredCalculation, HorseCalculation, ImmediateRouteCalculation, FailedCalculation {
