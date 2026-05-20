@@ -1,0 +1,45 @@
+{
+  "id": "pedestrian_reversible_bridge_require",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "viewDistance": 10,
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 200.5,
+    "y": 114.0,
+    "z": 0.5,
+    "yaw": -90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 207,
+    "y": 114,
+    "z": 0
+  },
+  "setupCommands": [
+    "fill 198 112 -3 210 118 3 minecraft:air",
+    "fill 199 113 0 209 113 0 minecraft:bedrock",
+    "setblock 203 113 0 minecraft:air"
+  ],
+  "loadout": [
+    {"slot": 1, "item": "minecraft:netherrack", "count": 16}
+  ],
+  "selectedSlot": 0,
+  "timeoutTicks": 360,
+  "successRadius": 1.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNoVehicle": true,
+    "requirePathingSeen": true
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowSprint": true,
+    "allowBreak": false,
+    "allowPlace": true,
+    "pedestrianTrailReversibilityMode": "REQUIRE"
+  },
+  "trace": true
+}

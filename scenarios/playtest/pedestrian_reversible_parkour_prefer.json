@@ -1,0 +1,48 @@
+{
+  "id": "pedestrian_reversible_parkour_prefer",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "viewDistance": 10,
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 300.5,
+    "y": 114.0,
+    "z": 0.5,
+    "yaw": -90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 307,
+    "y": 114,
+    "z": 0
+  },
+  "setupCommands": [
+    "fill 298 112 -3 310 118 5 minecraft:air",
+    "fill 299 113 0 302 113 0 minecraft:bedrock",
+    "fill 305 113 0 309 113 0 minecraft:bedrock",
+    "fill 299 113 2 309 113 2 minecraft:bedrock",
+    "setblock 299 113 1 minecraft:bedrock",
+    "setblock 309 113 1 minecraft:bedrock"
+  ],
+  "loadout": [],
+  "timeoutTicks": 420,
+  "successRadius": 1.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNoVehicle": true,
+    "requirePathingSeen": true,
+    "maxJumpTicks": 0
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowSprint": true,
+    "allowBreak": false,
+    "allowPlace": false,
+    "allowParkour": true,
+    "pedestrianTrailReversibilityMode": "PREFER",
+    "pedestrianTrailReversibilitySuspectPenalty": 80
+  },
+  "trace": true
+}

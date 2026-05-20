@@ -41,6 +41,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
     out.blocked();
     if (!move.dynamicXZ && !move.dynamicY) {
       double cost = staticCost(ctx, x, y, z, out.nodeFacts);
+      cost = ctx.reversibility.recost(reversibilityFor(x, y, z, x + move.xOffset, y + move.yOffset, z + move.zOffset), cost);
       if (cost >= ActionCosts.COST_INF) {
         return;
       }
@@ -48,6 +49,14 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
       return;
     }
     dynamicApply(ctx, x, y, z, out.nodeFacts, out);
+    if (out.status == EdgeEvalStatus.REACHABLE) {
+      double cost = ctx.reversibility.recost(reversibilityFor(x, y, z, out.x, out.y, out.z), out.cost);
+      if (cost >= ActionCosts.COST_INF) {
+        out.blocked();
+      } else {
+        out.cost = cost;
+      }
+    }
   }
 
   @Override
@@ -125,6 +134,16 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   private BetterBlockPos offset(BetterBlockPos src) {
     return new BetterBlockPos(src.x + move.xOffset, src.y + move.yOffset, src.z + move.zOffset);
+  }
+
+  TrailReversibility reversibilityFor(int srcX, int srcY, int srcZ, int destX, int destY, int destZ) {
+    return switch (move) {
+      case DOWNWARD, PILLAR -> TrailReversibility.IRREVERSIBLE;
+      case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> TrailReversibility.SUSPECT;
+      case DESCEND_EAST, DESCEND_WEST, DESCEND_NORTH, DESCEND_SOUTH -> destY == srcY - 1 ? TrailReversibility.INTRINSIC : TrailReversibility.IRREVERSIBLE;
+      case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST, ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST, DIAGONAL_NORTHEAST, DIAGONAL_NORTHWEST, DIAGONAL_SOUTHEAST,
+        DIAGONAL_SOUTHWEST -> TrailReversibility.INTRINSIC;
+    };
   }
 
   @Override

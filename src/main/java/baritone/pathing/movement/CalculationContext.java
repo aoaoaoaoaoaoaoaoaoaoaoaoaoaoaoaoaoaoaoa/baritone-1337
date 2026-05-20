@@ -44,6 +44,7 @@ public class CalculationContext {
   public final PlacementPolicy placement;
   public final BreakPolicy breaking;
   public final MovementPolicy movement;
+  public final TrailReversibilityPolicy reversibility;
   public FallPolicy fall;
   public CostPolicy costs;
   public final BetterWorldBorder worldBorder;
@@ -89,6 +90,8 @@ public class CalculationContext {
       Baritone.settings().allowParkourAscend.value, Baritone.settings().assumeWalkOnWater.value, frostWalkerLevel, Baritone.settings().allowDiagonalDescend.value,
       Baritone.settings().allowDiagonalAscend.value, Baritone.settings().allowObliqueWalk.value, Baritone.settings().allowDownward.value, Baritone.settings().allowWalkOnMagmaBlocks.value,
       sprintInWater);
+    this.reversibility = new TrailReversibilityPolicy(Baritone.settings().pedestrianTrailReversibilityMode.value, Baritone.settings().pedestrianTrailReversibilitySuspectPenalty.value,
+      Baritone.settings().pedestrianTrailReversibilityIrreversiblePenalty.value);
     this.fall =
       new FallPolicy(Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
         false, 3, Baritone.settings().maxFallHeightNoWater.value, Baritone.settings().maxFallHeightBucket.value);

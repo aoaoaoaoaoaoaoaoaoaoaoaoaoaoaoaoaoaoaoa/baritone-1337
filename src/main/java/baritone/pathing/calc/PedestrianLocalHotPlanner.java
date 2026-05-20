@@ -39,7 +39,7 @@ public final class PedestrianLocalHotPlanner {
   }
 
   private record StateKey(String dimension, int minY, int maxYExclusive, String localGoal, String terminalGoal, String macro, String movement, Object placement, Object breaking, Object movementPolicy,
-    Object fall, Object costs, String geofence, String border) {
+    Object reversibility, Object fall, Object costs, String geofence, String border) {
     static StateKey of(CalculationContext context, Goal localGoal, Goal terminalGoal, MacroPlan macroPlan) {
       StringBuilder movement = new StringBuilder();
       for (MovementPrimitive primitive : context.movementCatalog.primitives()) {
@@ -50,7 +50,7 @@ public final class PedestrianLocalHotPlanner {
       }
       String macro = macroPlan == null ? "none" : macroPlan.sequence() + ':' + macroPlan.firstUncertifiedAction() + ':' + macroPlan.totalVector() + ':' + macroPlan.valueTelemetry();
       return new StateKey(context.world.dimension().identifier().toString(), context.world.dimensionType().minY(), context.world.dimensionType().minY() + context.world.dimensionType().height(),
-        identity(localGoal), identity(terminalGoal), macro, movement.toString(), context.placement, context.breaking, context.movement, context.fall, context.costs,
+        identity(localGoal), identity(terminalGoal), macro, movement.toString(), context.placement, context.breaking, context.movement, context.reversibility, context.fall, context.costs,
         Baritone.settings().modificationGeofences.value.toString(), context.world.getWorldBorder().toString());
     }
 

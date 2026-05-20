@@ -4,6 +4,7 @@ import baritone.api.pathing.movement.ActionCosts;
 import baritone.api.utils.ElytraFireworkPolicy;
 import baritone.api.utils.GeofenceBox;
 import baritone.api.utils.Helper;
+import baritone.api.utils.TrailReversibilityMode;
 import baritone.api.utils.NotificationHelper;
 import baritone.api.utils.SettingsUtil;
 import baritone.api.utils.TypeUtils;
@@ -198,6 +199,21 @@ public final class Settings {
    * This is not a lava-lake rim tax: lava below the feet is ignored.
    */
   public final Setting<Double> pedestrianLavaProximityPenalty = new Setting<>(ActionCosts.WALK_ONE_BLOCK_COST * 2D);
+
+  /**
+   * Bias pedestrian pathing toward routes that are cheap to traverse backward later.
+   */
+  public final Setting<TrailReversibilityMode> pedestrianTrailReversibilityMode = new Setting<>(TrailReversibilityMode.OFF);
+
+  /**
+   * Added cost for suspect one-way pedestrian edges when {@link #pedestrianTrailReversibilityMode} is PREFER.
+   */
+  public final Setting<Double> pedestrianTrailReversibilitySuspectPenalty = new Setting<>(40D);
+
+  /**
+   * Added cost for structurally one-way pedestrian edges when {@link #pedestrianTrailReversibilityMode} is PREFER.
+   */
+  public final Setting<Double> pedestrianTrailReversibilityIrreversiblePenalty = new Setting<>(200D);
 
   /**
    * Don't allow breaking blocks next to liquids.
