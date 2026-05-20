@@ -27,7 +27,7 @@ public final class MovementCatalog {
     }
     if (Baritone.settings().pedestrianCruiseRays.value && (context.world.dimension() != Level.NETHER || Baritone.settings().pedestrianCruiseRaysInNether.value)) {
       int max = Math.clamp(Baritone.settings().pedestrianCruiseRayMaxBlocks.value, 2, 32);
-      addCruiseRays(primitives, max);
+      addCruiseRays(primitives, max, context.movement.allowObliqueWalk());
     }
     return new MovementCatalog(primitives.toArray(MovementPrimitive[]::new));
   }
@@ -52,13 +52,19 @@ public final class MovementCatalog {
     };
   }
 
-  private static void addCruiseRays(List<MovementPrimitive> primitives, int maxChebyshevBlocks) {
+  private static void addCruiseRays(List<MovementPrimitive> primitives, int maxChebyshevBlocks, boolean allowOblique) {
     for (int dx = -maxChebyshevBlocks; dx <= maxChebyshevBlocks; dx++) {
       for (int dz = -maxChebyshevBlocks; dz <= maxChebyshevBlocks; dz++) {
-        if (MovementCruiseRay.validRay(dx, dz)) {
+        if (MovementCruiseRay.validRay(dx, dz) && (allowOblique || !oblique(dx, dz))) {
           primitives.add(new CruiseRayMovementPrimitive(dx, dz));
         }
       }
     }
+  }
+
+  private static boolean oblique(int dx, int dz) {
+    int ax = Math.abs(dx);
+    int az = Math.abs(dz);
+    return ax != 0 && az != 0 && ax != az;
   }
 }
