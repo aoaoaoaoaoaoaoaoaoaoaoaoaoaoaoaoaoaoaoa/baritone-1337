@@ -1478,6 +1478,10 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     CandidateDisposition disposition = acceptCandidate(candidate, terminalGoal);
     if (disposition == CandidateDisposition.REJECTED) {
       if (finalResult) {
+        if (activePlanningAnchor == PlanningAnchor.CERTIFIED_FUTURE) {
+          logDebug("Discarding stale speculative route segment from " + requestedStart + " to " + candidate.dest());
+          return;
+        }
         logDebug("Discarding orphan route segment from " + requestedStart + " to " + candidate.dest());
         acceptEmptyCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), requestedStart, true,
           "discarded orphan route segment from " + requestedStart + " to " + candidate.dest());
