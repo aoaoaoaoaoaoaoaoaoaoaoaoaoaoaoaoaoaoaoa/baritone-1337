@@ -43,7 +43,6 @@
   },
   "settings": {
     "chunkCaching": false,
-    "macroPlanning": true,
     "macroBiome": true,
     "macroNether": true,
     "macroBiomePriorsFile": "",

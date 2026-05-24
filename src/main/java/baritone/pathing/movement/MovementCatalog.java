@@ -1,8 +1,9 @@
 package baritone.pathing.movement;
 
+import baritone.api.BaritoneAPI;
+
 import java.util.ArrayList;
 import java.util.List;
-import baritone.Baritone;
 import baritone.pathing.movement.movements.MovementCruiseRay;
 import net.minecraft.world.level.Level;
 
@@ -14,8 +15,8 @@ public final class MovementCatalog {
   }
 
   public static MovementCatalog legacyWalking(CalculationContext context) {
-    int cruiseRayMax = Baritone.settings().pedestrianCruiseRays.value && (context.world.dimension() != Level.NETHER || Baritone.settings().pedestrianCruiseRaysInNether.value)
-      ? Math.clamp(Baritone.settings().pedestrianCruiseRayMaxBlocks.value, 2, 32) : 0;
+    int cruiseRayMax = BaritoneAPI.getSettings().pedestrianCruiseRays.value && (context.world.dimension() != Level.NETHER || BaritoneAPI.getSettings().pedestrianCruiseRaysInNether.value)
+      ? Math.clamp(BaritoneAPI.getSettings().pedestrianCruiseRayMaxBlocks.value, 2, 32) : 0;
     List<MovementPrimitive> primitives =
       new ArrayList<>(Moves.values().length + (context.movement.allowObliqueWalk() ? ObliqueMovementPrimitive.STRIDES.length : 0) + cruiseRayCount(cruiseRayMax, context.movement.allowObliqueWalk()));
     for (Moves move : Moves.values()) {

@@ -1,5 +1,9 @@
 package baritone.pathing.movement.movements;
 
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
@@ -155,7 +159,7 @@ public class MovementPillar extends Movement {
     }
 
     BlockState fromDown = BlockStateInterface.get(ctx, src);
-    if (MovementHelper.isWater(fromDown) && MovementHelper.isWater(ctx, dest)) {
+    if (MovementHelper.isWater(fromDown) && MovementClientHelper.isWater(ctx, dest)) {
       if (waterColumnAscentComplete()) {
         return state.setStatus(MovementStatus.SUCCESS);
       }
@@ -166,7 +170,7 @@ public class MovementPillar extends Movement {
       state.setTarget(new ControlFrame.MovementTarget(new Rotation(yaw.getYaw(), WATER_COLUMN_ASCENT_PITCH), true));
       state.setInput(Input.JUMP, false);
       state.setInput(Input.MOVE_FORWARD, true);
-      state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value);
+      state.setInput(Input.SPRINT, BaritoneAPI.getSettings().sprintInWater.value);
       return state;
     }
     boolean ladder = fromDown.getBlock() == Blocks.LADDER || fromDown.getBlock() == Blocks.VINE;
@@ -176,7 +180,7 @@ public class MovementPillar extends Movement {
       state.setTarget(new ControlFrame.MovementTarget(ctx.playerRotations().withPitch(rotation.getPitch()), true));
     }
 
-    boolean blockIsThere = MovementHelper.canWalkOn(ctx, src) || ladder;
+    boolean blockIsThere = MovementClientHelper.canWalkOn(ctx, src) || ladder;
     if (ladder) {
       BlockPos against = vine ? getAgainst(new CalculationContext(baritone), src) : src.relative(fromDown.getValue(LadderBlock.FACING).getOpposite());
       if (against == null) {
@@ -196,7 +200,7 @@ public class MovementPillar extends Movement {
       }
        */
 
-      MovementHelper.moveTowards(ctx, state, against);
+      MovementClientHelper.moveTowards(ctx, state, against);
       return state;
     } else {
       // Get ready to place a throwaway block
@@ -266,14 +270,14 @@ public class MovementPillar extends Movement {
         state.setInput(Input.SNEAK, true);
       }
     }
-    if (MovementHelper.isWater(ctx, dest.above())) {
+    if (MovementClientHelper.isWater(ctx, dest.above())) {
       return true;
     }
     return super.prepared(state);
   }
 
   private boolean submergedWaterColumnAscent() {
-    return dest.y > src.y && dest.x == src.x && dest.z == src.z && MovementHelper.isWater(BlockStateInterface.get(ctx, src)) && MovementHelper.isWater(ctx, dest)
+    return dest.y > src.y && dest.x == src.x && dest.z == src.z && MovementHelper.isWater(BlockStateInterface.get(ctx, src)) && MovementClientHelper.isWater(ctx, dest)
       && ctx.player().isEyeInFluid(FluidTags.WATER) && !waterColumnAscentComplete();
   }
 

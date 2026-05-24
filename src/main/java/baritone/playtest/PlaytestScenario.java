@@ -6,6 +6,7 @@ import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalNearXZ;
 import baritone.api.pathing.goals.GoalXZ;
+import baritone.api.utils.GoldenTuning;
 import baritone.api.utils.SettingsUtil;
 import baritone.pathing.mounted.MountTuning;
 import baritone.playtest.PlaytestRun.TerminalReason;
@@ -29,7 +30,7 @@ import net.minecraft.world.phys.Vec3;
 
 public record PlaytestScenario(String id, String runId, String worldKey, String seed, String dimension, Start start, GoalSpec goal, List<LoadoutItem> loadout, List<String> setupCommands,
   List<String> postSetupCommands, List<String> baritoneCommands, RunAction action, int selectedSlot, int timeoutTicks, double successRadius, boolean plannerOnly, boolean saturationBoost,
-  Acceptance acceptance, Map<String, String> settings, boolean trace, MountTuningSpec mountTuning, HarnessContract harness) {
+  Acceptance acceptance, Map<String, String> settings, boolean trace, GoldenTuningSpec goldenTuning, HarnessContract harness) {
   private static final int DEFAULT_TIMEOUT_TICKS = 20 * 120;
   private static final double DEFAULT_SUCCESS_RADIUS = 1.5D;
 
@@ -55,10 +56,10 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
       Acceptance acceptance = Acceptance.parse(object(json, "acceptance"));
       Map<String, String> settings = settings(json.getAsJsonObject("settings"));
       boolean trace = bool(json, "trace", true);
-      MountTuningSpec mountTuning = MountTuningSpec.parse(object(json, "mountTuning"));
+      GoldenTuningSpec goldenTuning = GoldenTuningSpec.parse(object(json, "goldenTuning"));
       HarnessContract harness = HarnessContract.parse(object(json, "harness"));
       return new PlaytestScenario(id, runId, worldKey, seed, dimension, start, goal, List.copyOf(loadout), List.copyOf(setupCommands), List.copyOf(postSetupCommands), List.copyOf(baritoneCommands),
-        action, selectedSlot, timeoutTicks, successRadius, plannerOnly, saturationBoost, acceptance, Map.copyOf(settings), trace, mountTuning, harness);
+        action, selectedSlot, timeoutTicks, successRadius, plannerOnly, saturationBoost, acceptance, Map.copyOf(settings), trace, goldenTuning, harness);
     }
   }
 
@@ -143,9 +144,9 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
     }
   }
 
-  public record MountTuningSpec(String profile, String digest) {
-    static MountTuningSpec parse(JsonObject json) {
-      return new MountTuningSpec(string(json, "profile", ""), string(json, "digest", ""));
+  public record GoldenTuningSpec(String profile, String digest) {
+    static GoldenTuningSpec parse(JsonObject json) {
+      return new GoldenTuningSpec(string(json, "profile", ""), string(json, "digest", ""));
     }
 
     boolean configured() {
@@ -154,10 +155,13 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
 
     void installIfConfigured() {
       if (configured()) {
+        GoldenTuning.install(Path.of(profile), digest == null ? "" : digest);
         MountTuning.install(Path.of(profile), digest == null ? "" : digest);
       } else {
+        GoldenTuning.reloadConfigured();
         MountTuning.reloadConfigured();
       }
+      GoldenTuning.applyCurrent(BaritoneAPI.getSettings());
     }
   }
 
@@ -177,9 +181,9 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
     boolean requireHorseEncountered, boolean requireBoatRecovered, boolean requirePathingSeen, boolean requireNoDamage, boolean requireMacroRoute, boolean requirePlannedBoat,
     boolean requirePlannedHorse, int minMacroBoatLegs, double minMacroBoatDistance, double maxRouteDestDistance, boolean requireMacroBiomeRoute, boolean requireMacroPlanBoat,
     int minMacroPlanBoatActions, double minMacroPlanBoatDistance, boolean requireMacroPlanSurfaceTransition, int minMacroPlanSurfaceActions, double minMacroPlanSurfaceDistance,
-    boolean requireMacroPlanPortal, int minMacroPlanPortalActions, int minMacroPlanPortalBuildExitActions, double minMacroPlanNetherDistanceBeforePortalExit, double maxMacroBiomeUnknownFraction,
-    int minJumpTicks, int maxJumpTicks, int maxTicksToPlanning, int maxTicksToActuation, int maxTicksToPathingSeen, int maxTicksToMacroPlan, boolean requireBuilderSeen,
-    boolean requireDimensionChange) {
+    boolean requireMacroPlanPortal, boolean forbidMacroPlanPortal, int minMacroPlanPortalActions, int minMacroPlanPortalBuildExitActions, double minMacroPlanNetherDistanceBeforePortalExit,
+    double maxMacroBiomeUnknownFraction, int minJumpTicks, int maxJumpTicks, int maxTicksToPlanning, int maxTicksToActuation, int maxTicksToPathingSeen, int maxTicksToMacroPlan,
+    boolean requireBuilderSeen, boolean requireDimensionChange, int maxStalledTicks, int maxPostActuationStalledTicks) {
     static Acceptance parse(JsonObject json) {
       return new Acceptance(bool(json, "requirePathComplete", false), bool(json, "requireOnGround", false), bool(json, "requireNotInWater", false), bool(json, "requireNoVehicle", false),
         bool(json, "requireWaterEncountered", false), bool(json, "requireBoatEncountered", false), bool(json, "requireHorseEncountered", false), bool(json, "requireBoatRecovered", false),
@@ -187,10 +191,10 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
         bool(json, "requirePlannedHorse", false), integer(json, "minMacroBoatLegs", 0), decimal(json, "minMacroBoatDistance", 0D), decimal(json, "maxRouteDestDistance", -1D),
         bool(json, "requireMacroBiomeRoute", false), bool(json, "requireMacroPlanBoat", false), integer(json, "minMacroPlanBoatActions", 0), decimal(json, "minMacroPlanBoatDistance", 0D),
         bool(json, "requireMacroPlanSurfaceTransition", false), integer(json, "minMacroPlanSurfaceActions", 0), decimal(json, "minMacroPlanSurfaceDistance", 0D),
-        bool(json, "requireMacroPlanPortal", false), integer(json, "minMacroPlanPortalActions", 0), integer(json, "minMacroPlanPortalBuildExitActions", 0),
+        bool(json, "requireMacroPlanPortal", false), bool(json, "forbidMacroPlanPortal", false), integer(json, "minMacroPlanPortalActions", 0), integer(json, "minMacroPlanPortalBuildExitActions", 0),
         decimal(json, "minMacroPlanNetherDistanceBeforePortalExit", 0D), decimal(json, "maxMacroBiomeUnknownFraction", 1D), integer(json, "minJumpTicks", 0), integer(json, "maxJumpTicks", -1),
         integer(json, "maxTicksToPlanning", -1), integer(json, "maxTicksToActuation", -1), integer(json, "maxTicksToPathingSeen", -1), integer(json, "maxTicksToMacroPlan", -1),
-        bool(json, "requireBuilderSeen", false), bool(json, "requireDimensionChange", false));
+        bool(json, "requireBuilderSeen", false), bool(json, "requireDimensionChange", false), integer(json, "maxStalledTicks", -1), integer(json, "maxPostActuationStalledTicks", -1));
     }
 
     boolean satisfied(LocalPlayer player, boolean processActive, PlaytestRun run, GoalSpec goal) {
@@ -202,7 +206,7 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
         && (maxRouteDestDistance < 0D || run.routeDestDistance(goal) <= maxRouteDestDistance) && (!requireMacroBiomeRoute || run.sawMacroBiomeRoute())
         && (!requireMacroPlanBoat || run.sawMacroPlanBoat()) && run.maxMacroPlanBoatActions() >= minMacroPlanBoatActions && run.maxMacroPlanBoatDistance() + 1.0E-4D >= minMacroPlanBoatDistance
         && (!requireMacroPlanSurfaceTransition || run.sawMacroPlanSurfaceTransition()) && run.maxMacroPlanSurfaceActions() >= minMacroPlanSurfaceActions
-        && run.maxMacroPlanSurfaceDistance() + 1.0E-4D >= minMacroPlanSurfaceDistance && (!requireMacroPlanPortal || run.sawMacroPlanPortal())
+        && run.maxMacroPlanSurfaceDistance() + 1.0E-4D >= minMacroPlanSurfaceDistance && (!requireMacroPlanPortal || run.sawMacroPlanPortal()) && (!forbidMacroPlanPortal || !run.sawMacroPlanPortal())
         && run.maxMacroPlanPortalActions() >= minMacroPlanPortalActions && run.maxMacroPlanPortalBuildExitActions() >= minMacroPlanPortalBuildExitActions
         && run.maxMacroPlanNetherDistanceBeforePortalExit() + 1.0E-4D >= minMacroPlanNetherDistanceBeforePortalExit && run.macroBiomeUnknownFraction() <= maxMacroBiomeUnknownFraction
         && run.jumpTicks() >= minJumpTicks && (maxJumpTicks < 0 || run.jumpTicks() <= maxJumpTicks)
@@ -210,7 +214,8 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
         && (maxTicksToActuation < 0 || run.firstActuationTick() >= 0 && run.firstActuationTick() <= maxTicksToActuation)
         && (maxTicksToPathingSeen < 0 || run.firstPathingTick() >= 0 && run.firstPathingTick() <= maxTicksToPathingSeen)
         && (maxTicksToMacroPlan < 0 || run.firstMacroPlanTick() >= 0 && run.firstMacroPlanTick() <= maxTicksToMacroPlan) && (!requireBuilderSeen || run.sawBuilder())
-        && (!requireDimensionChange || run.sawDimensionChange());
+        && (!requireDimensionChange || run.sawDimensionChange()) && (maxStalledTicks < 0 || run.totalStalledTicks() <= maxStalledTicks)
+        && (maxPostActuationStalledTicks < 0 || run.postActuationStalledTicks() <= maxPostActuationStalledTicks);
     }
 
     Optional<TerminalReason> earlyFailure(LocalPlayer player, PlaytestRun run) {
@@ -222,6 +227,9 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
       }
       if (maxJumpTicks >= 0 && run.jumpTicks() > maxJumpTicks) {
         return Optional.of(TerminalReason.ACCEPTANCE_JUMP_BUDGET);
+      }
+      if (maxStalledTicks >= 0 && run.totalStalledTicks() > maxStalledTicks || maxPostActuationStalledTicks >= 0 && run.postActuationStalledTicks() > maxPostActuationStalledTicks) {
+        return Optional.of(TerminalReason.ACCEPTANCE_STALL_BUDGET);
       }
       return Optional.empty();
     }

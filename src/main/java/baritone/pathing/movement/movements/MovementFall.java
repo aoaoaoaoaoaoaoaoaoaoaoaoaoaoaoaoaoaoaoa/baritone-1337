@@ -1,5 +1,7 @@
 package baritone.pathing.movement.movements;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -11,7 +13,6 @@ import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.EdgeEvalScratch;
 import baritone.pathing.movement.EdgeEvalStatus;
 import baritone.pathing.movement.Movement;
-import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.control.ControlFrame.MovementTarget;
 import net.minecraft.core.BlockPos;
@@ -78,7 +79,7 @@ public class MovementFall extends Movement {
     Rotation targetRotation = null;
     BlockState destState = ctx.world().getBlockState(dest);
 
-    if (ctx.world().getBlockState(dest.below()).is(Blocks.MAGMA_BLOCK) && MovementHelper.steppingOnBlocks(ctx).stream().allMatch(block -> MovementHelper.canWalkThrough(ctx, block))) {
+    if (ctx.world().getBlockState(dest.below()).is(Blocks.MAGMA_BLOCK) && MovementClientHelper.steppingOnBlocks(ctx).stream().allMatch(block -> MovementClientHelper.canWalkThrough(ctx, block))) {
       state.setInput(Input.SNEAK, true);
     }
 
@@ -185,7 +186,7 @@ public class MovementFall extends Movement {
     // only break if one of the first three needs to be broken
     // specifically ignore the last one which might be water
     for (int i = 0; i < 4 && i < positionsToBreak.length; i++) {
-      if (!MovementHelper.canMoveThrough(ctx, positionsToBreak[i])) {
+      if (!MovementClientHelper.canMoveThrough(ctx, positionsToBreak[i])) {
         return super.prepared(state);
       }
     }

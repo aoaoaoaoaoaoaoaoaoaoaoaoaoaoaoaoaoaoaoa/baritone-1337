@@ -1,5 +1,7 @@
 package baritone.pathing.movement.movements;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -76,7 +78,7 @@ public class MovementDownward extends Movement {
     if (numTicks++ < 10 && ab < 0.2) {
       return state;
     }
-    MovementHelper.moveTowards(ctx, state, positionsToBreak[0]);
+    MovementClientHelper.moveTowards(ctx, state, positionsToBreak[0]);
     return state;
   }
 }

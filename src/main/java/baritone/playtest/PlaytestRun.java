@@ -3,12 +3,13 @@ package baritone.playtest;
 import baritone.Baritone;
 import baritone.api.event.events.PathEvent;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.GoldenTuning;
 import baritone.api.utils.input.Input;
+import baritone.pathing.farfield.FarfieldObjective;
 import baritone.pathing.macro.core.MacroActionInstance;
 import baritone.pathing.macro.core.MacroActionKind;
 import baritone.pathing.macro.core.MacroNodeKey;
 import baritone.pathing.macro.core.MacroPlan;
-import baritone.pathing.mounted.MountTuning;
 import baritone.pathing.path.RouteExecutor;
 import baritone.pathing.route.RouteLeg;
 import baritone.pathing.route.SurfaceRouteLeg;
@@ -67,6 +68,12 @@ final class PlaytestRun {
   private int firstPathingTick = -1;
   private int firstRouteTick = -1;
   private int firstMacroPlanTick = -1;
+  private int totalStalledTicks;
+  private int preActuationStalledTicks;
+  private int postActuationStalledTicks;
+  private int stallEpisodes;
+  private int currentStallTicks;
+  private int maxStallTicks;
   private boolean sawBoat;
   private boolean sawHorse;
   private boolean lostHorseAfterEncounter;
@@ -100,6 +107,14 @@ final class PlaytestRun {
   private int maxMacroBiomeCachedCells;
   private int maxMacroBiomePredictedCells;
   private int maxMacroBiomePriorCells;
+  private boolean sawFarfieldRoute;
+  private double bestFarfieldEstimatedTicks = Double.POSITIVE_INFINITY;
+  private int maxFarfieldLiveStates;
+  private int maxFarfieldCachedStates;
+  private int maxFarfieldPriorStates;
+  private int maxFarfieldStates;
+  private int lastFarfieldStartStratum = -1;
+  private int lastFarfieldTargetStratum = -1;
   private int moveForwardTicks;
   private int jumpTicks;
   private int sprintTicks;
@@ -165,6 +180,7 @@ final class PlaytestRun {
     if (player == null) {
       return;
     }
+    boolean activeWork = activeWork(baritone);
     if (baritone.getPathingBehavior().isPathing()) {
       sawPathing = true;
       firstPathingTick = firstSeen(firstPathingTick);
@@ -173,7 +189,8 @@ final class PlaytestRun {
     if (baritone.getPathingBehavior().getPlanningStart().isPresent()) {
       firstPlanningTick = firstSeen(firstPlanningTick);
     }
-    if (pathingInputForced(baritone)) {
+    boolean actuating = pathingInputForced(baritone);
+    if (actuating) {
       firstActuationTick = firstSeen(firstActuationTick);
     }
     if (Float.isNaN(initialHealth)) {
@@ -195,6 +212,7 @@ final class PlaytestRun {
     lostHorseAfterEncounter |= sawHorse && !mountedHorse;
     sawHorse |= mountedHorse;
     boolean moveForward = forced(baritone, Input.MOVE_FORWARD);
+    sampleStall(player, activeWork, actuating);
     moveForwardTicks += moveForward ? 1 : 0;
     jumpTicks += forced(baritone, Input.JUMP) ? 1 : 0;
     sprintTicks += player.isSprinting() ? 1 : 0;
@@ -205,6 +223,7 @@ final class PlaytestRun {
     sampleRoute(baritone.getPathingBehavior().getCurrent(), baritone);
     sampleRoute(baritone.getPathingBehavior().getNext(), baritone);
     sampleMacroPlan(baritone.getPathingBehavior().getMacroPlan().orElse(null));
+    sampleFarfield(baritone.getPathingBehavior().getRenderableFarfield().orElse(null));
     TransportSnapshot snapshot = baritone.getPathingBehavior().transportSnapshot();
     increment(actualTicks, snapshot.actual());
     TransportSnapshot.Plan plan = snapshot.current().current();
@@ -323,6 +342,14 @@ final class PlaytestRun {
 
   int firstMacroPlanTick() {
     return firstMacroPlanTick;
+  }
+
+  int totalStalledTicks() {
+    return totalStalledTicks;
+  }
+
+  int postActuationStalledTicks() {
+    return postActuationStalledTicks;
   }
 
   boolean sawMacroRoute() {
@@ -474,6 +501,33 @@ final class PlaytestRun {
     return false;
   }
 
+  private static boolean activeWork(Baritone baritone) {
+    return baritone.getPathingBehavior().isPathing() || baritone.getPathingBehavior().getInProgress().isPresent() || baritone.getPathingBehavior().getPlanningStart().isPresent()
+      || baritone.getBuilderProcess().isActive() || baritone.getPortalTaskProcess().isActive();
+  }
+
+  private void sampleStall(LocalPlayer player, boolean activeWork, boolean actuating) {
+    if (!activeWork || actuating || physicallyMoving(player)) {
+      currentStallTicks = 0;
+      return;
+    }
+    totalStalledTicks++;
+    if (firstActuationTick < 0) {
+      preActuationStalledTicks++;
+    } else {
+      postActuationStalledTicks++;
+    }
+    if (currentStallTicks++ == 0) {
+      stallEpisodes++;
+    }
+    maxStallTicks = Math.max(maxStallTicks, currentStallTicks);
+  }
+
+  private static boolean physicallyMoving(LocalPlayer player) {
+    Vec3 delta = player.getVehicle() == null ? player.getDeltaMovement() : player.getVehicle().getDeltaMovement();
+    return delta.lengthSqr() > 1.0E-4D;
+  }
+
   private void sampleRoute(RouteExecutor executor, Baritone baritone) {
     if (executor == null || executor.getPath() != null) {
       return;
@@ -533,6 +587,20 @@ final class PlaytestRun {
     maxMacroBiomeCachedCells = Math.max(maxMacroBiomeCachedCells, plan.cachedCells());
     maxMacroBiomePredictedCells = Math.max(maxMacroBiomePredictedCells, plan.predictedCells());
     maxMacroBiomePriorCells = Math.max(maxMacroBiomePriorCells, plan.priorCells());
+  }
+
+  private void sampleFarfield(FarfieldObjective objective) {
+    if (objective == null) {
+      return;
+    }
+    sawFarfieldRoute = true;
+    bestFarfieldEstimatedTicks = Math.min(bestFarfieldEstimatedTicks, objective.expectedAtStart());
+    maxFarfieldLiveStates = Math.max(maxFarfieldLiveStates, objective.snapshot().liveStates());
+    maxFarfieldCachedStates = Math.max(maxFarfieldCachedStates, objective.snapshot().cachedStates());
+    maxFarfieldPriorStates = Math.max(maxFarfieldPriorStates, objective.snapshot().priorStates());
+    maxFarfieldStates = Math.max(maxFarfieldStates, objective.snapshot().stateCount());
+    lastFarfieldStartStratum = objective.startStratum();
+    lastFarfieldTargetStratum = objective.snapshot().targetStratum();
   }
 
   private void sampleSequence(String sequence) {
@@ -615,15 +683,15 @@ final class PlaytestRun {
       json.addProperty("playtestCodeStamp", codeStamp);
       json.addProperty("expectedCodeStamp", expectedCodeStamp == null ? "" : expectedCodeStamp);
       json.addProperty("codeStampMatched", scenario.harness().acceptsCodeStamp(codeStamp));
-      MountTuning.Metadata mountTuning = MountTuning.metadata();
-      JsonObject mountTuningJson = new JsonObject();
-      mountTuningJson.addProperty("profile", mountTuning.profile());
-      mountTuningJson.addProperty("digest", mountTuning.digest());
-      mountTuningJson.addProperty("builtin", mountTuning.builtin());
-      json.add("mountTuning", mountTuningJson);
-      json.addProperty("mountTuningProfile", mountTuning.profile());
-      json.addProperty("mountTuningDigest", mountTuning.digest());
-      json.addProperty("mountTuningBuiltin", mountTuning.builtin());
+      GoldenTuning.Metadata goldenTuning = GoldenTuning.metadata();
+      JsonObject goldenTuningJson = new JsonObject();
+      goldenTuningJson.addProperty("profile", goldenTuning.profile());
+      goldenTuningJson.addProperty("digest", goldenTuning.digest());
+      goldenTuningJson.addProperty("builtin", goldenTuning.builtin());
+      json.add("goldenTuning", goldenTuningJson);
+      json.addProperty("goldenTuningProfile", goldenTuning.profile());
+      json.addProperty("goldenTuningDigest", goldenTuning.digest());
+      json.addProperty("goldenTuningBuiltin", goldenTuning.builtin());
       json.addProperty("initialActualDimension", initialDimension);
       json.addProperty("finalActualDimension", finalDimension);
       json.addProperty("sawDimensionChange", sawDimensionChange);
@@ -688,6 +756,12 @@ final class PlaytestRun {
       json.addProperty("firstPathingTick", firstPathingTick < 0 ? null : firstPathingTick);
       json.addProperty("firstRouteTick", firstRouteTick < 0 ? null : firstRouteTick);
       json.addProperty("firstMacroPlanTick", firstMacroPlanTick < 0 ? null : firstMacroPlanTick);
+      json.addProperty("totalStalledTicks", totalStalledTicks);
+      json.addProperty("totalStalledSeconds", totalStalledTicks / 20D);
+      json.addProperty("preActuationStalledTicks", preActuationStalledTicks);
+      json.addProperty("postActuationStalledTicks", postActuationStalledTicks);
+      json.addProperty("stallEpisodes", stallEpisodes);
+      json.addProperty("maxStallTicks", maxStallTicks);
       json.addProperty("sawPathing", sawPathing);
       json.addProperty("sawBuilder", sawBuilder);
       json.addProperty("sawWater", sawWater);
@@ -722,6 +796,14 @@ final class PlaytestRun {
       json.addProperty("maxMacroBiomePredictedCells", maxMacroBiomePredictedCells);
       json.addProperty("maxMacroBiomePriorCells", maxMacroBiomePriorCells);
       json.addProperty("macroBiomeUnknownFraction", macroBiomeUnknownFraction());
+      json.addProperty("sawFarfieldRoute", sawFarfieldRoute);
+      json.addProperty("bestFarfieldEstimatedTicks", bestFarfieldEstimatedTicks == Double.POSITIVE_INFINITY ? null : bestFarfieldEstimatedTicks);
+      json.addProperty("maxFarfieldLiveStates", maxFarfieldLiveStates);
+      json.addProperty("maxFarfieldCachedStates", maxFarfieldCachedStates);
+      json.addProperty("maxFarfieldPriorStates", maxFarfieldPriorStates);
+      json.addProperty("maxFarfieldStates", maxFarfieldStates);
+      json.addProperty("lastFarfieldStartStratum", lastFarfieldStartStratum < 0 ? null : lastFarfieldStartStratum);
+      json.addProperty("lastFarfieldTargetStratum", lastFarfieldTargetStratum < 0 ? null : lastFarfieldTargetStratum);
       if (minAir == Integer.MAX_VALUE) {
         json.add("minAir", null);
       } else {
@@ -904,6 +986,6 @@ final class PlaytestRun {
   }
 
   enum TerminalReason {
-    SUCCESS, TIMEOUT, SETUP_TIMEOUT, DEATH, DISCONNECT, CALC_FAILED, PATH_STOPPED, COMMAND_FAILED, EXCEPTION, STALE_CLIENT, ACCEPTANCE_DAMAGE, ACCEPTANCE_DISMOUNT, ACCEPTANCE_JUMP_BUDGET
+    SUCCESS, TIMEOUT, SETUP_TIMEOUT, DEATH, DISCONNECT, CALC_FAILED, PATH_STOPPED, COMMAND_FAILED, EXCEPTION, STALE_CLIENT, ACCEPTANCE_DAMAGE, ACCEPTANCE_DISMOUNT, ACCEPTANCE_JUMP_BUDGET, ACCEPTANCE_STALL_BUDGET
   }
 }

@@ -12,11 +12,11 @@ public final class MacroCoordinator {
   private MacroCoordinator() {
   }
 
-  public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal) {
-    return plan(navigator, context, start, goal, MacroTraversalProfile.physical(context));
+  public static Optional<MacroDirective> plan(CalculationContext context, BetterBlockPos start, Goal goal) {
+    return plan(context, start, goal, MacroTraversalProfile.physical(context));
   }
 
-  public static Optional<MacroDirective> plan(MacroNavigator navigator, CalculationContext context, BetterBlockPos start, Goal goal, MacroTraversalProfile profile) {
+  public static Optional<MacroDirective> plan(CalculationContext context, BetterBlockPos start, Goal goal, MacroTraversalProfile profile) {
     if (!MacroGoals.destinationChunkLive(context, goal)) {
       Optional<MacroPlan> multimodal = MacroPlanner.plan(context, start, goal, profile);
       if (profile.permitsPortalTransitions() && multimodal.filter(plan -> plan.portalActions() > 0).isPresent()) {
@@ -47,7 +47,7 @@ public final class MacroCoordinator {
     if (factualPrefix.isPresent()) {
       return factualPrefix;
     }
-    return navigator.plan(context, start, goal, profile);
+    return Optional.empty();
   }
 
   private static Optional<MacroDirective> factualSurfacePrefix(CalculationContext context, BetterBlockPos start, Goal goal) {

@@ -1,6 +1,9 @@
 package baritone.pathing.movement.movements;
 
-import baritone.Baritone;
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -164,9 +167,9 @@ public class MovementAscend extends Movement {
     }
 
     BlockState jumpingOnto = BlockStateInterface.get(ctx, positionToPlace);
-    if (!MovementHelper.canWalkOn(ctx, positionToPlace, jumpingOnto)) {
+    if (!MovementClientHelper.canWalkOn(ctx, positionToPlace, jumpingOnto)) {
       ticksWithoutPlacement++;
-      if (MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true) == PlaceResult.READY_TO_PLACE) {
+      if (MovementClientHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true) == PlaceResult.READY_TO_PLACE) {
         state.setInput(Input.SNEAK, true);
         if (ctx.player().isCrouching()) {
           state.setInput(Input.CLICK_RIGHT, true);
@@ -179,19 +182,19 @@ public class MovementAscend extends Movement {
 
       return state;
     }
-    MovementHelper.moveTowards(ctx, state, dest);
+    MovementClientHelper.moveTowards(ctx, state, dest);
 
-    state.setInput(Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && jumpingOnto.is(Blocks.MAGMA_BLOCK));
+    state.setInput(Input.SNEAK, BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value && jumpingOnto.is(Blocks.MAGMA_BLOCK));
 
     if (MovementHelper.isBottomSlab(jumpingOnto) && !MovementHelper.isBottomSlab(BlockStateInterface.get(ctx, src.below()))) {
       return state; // don't jump while walking from a non double slab into a bottom slab
     }
 
     if (stairStepAscent(jumpingOnto)) {
-      return state.setInput(Input.SPRINT, Baritone.settings().allowSprint.value && !MovementHelper.isLiquid(ctx, ctx.playerFeet()));
+      return state.setInput(Input.SPRINT, BaritoneAPI.getSettings().allowSprint.value && !MovementClientHelper.isLiquid(ctx, ctx.playerFeet()));
     }
 
-    if (Baritone.settings().assumeStep.value || ctx.playerFeet().equals(src.above())) {
+    if (BaritoneAPI.getSettings().assumeStep.value || ctx.playerFeet().equals(src.above())) {
       // no need to hit space if we're already jumping
       return state;
     }
@@ -225,7 +228,7 @@ public class MovementAscend extends Movement {
   }
 
   private boolean stairStepAscent(BlockState support) {
-    return MovementHelper.canStrideUpStair(ctx, positionToPlace, support, horizontalDirection());
+    return MovementClientHelper.canStrideUpStair(ctx, positionToPlace, support, horizontalDirection());
   }
 
   private Direction horizontalDirection() {
@@ -236,7 +239,7 @@ public class MovementAscend extends Movement {
     BetterBlockPos startUp = src.above(2);
     for (int i = 0; i < 4; i++) {
       BetterBlockPos check = startUp.relative(Direction.from2DDataValue(i));
-      if (!MovementHelper.canWalkThrough(ctx, check)) {
+      if (!MovementClientHelper.canWalkThrough(ctx, check)) {
         // We might bonk our head
         return false;
       }
@@ -248,8 +251,8 @@ public class MovementAscend extends Movement {
     if (dest.y <= src.y || dest.x == src.x && dest.z == src.z) {
       return false;
     }
-    return MovementHelper.surfaceSwimEnvelopeCell(ctx, ctx.playerFeet()) && MovementHelper.surfaceSwimCell(ctx, src) && !MovementHelper.isWater(ctx, dest)
-      && MovementHelper.canWalkOn(ctx, dest.below());
+    return MovementClientHelper.surfaceSwimEnvelopeCell(ctx, ctx.playerFeet()) && MovementClientHelper.surfaceSwimCell(ctx, src) && !MovementClientHelper.isWater(ctx, dest)
+      && MovementClientHelper.canWalkOn(ctx, dest.below());
   }
 
   @Override

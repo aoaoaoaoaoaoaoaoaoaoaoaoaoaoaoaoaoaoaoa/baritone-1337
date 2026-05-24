@@ -4,7 +4,6 @@ import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.movement.IMovement;
 import baritone.api.utils.BetterBlockPos;
-import baritone.api.utils.Helper;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementCatalog;
@@ -118,12 +117,12 @@ class Path extends PathBase {
     MovementPrimitive primitive = movementCatalog.primitive(next.previousPrimitiveIndex);
     Movement move = primitive.instantiate(context, src, dest, next.previousEdgePayload);
     if (move == null) {
-      Helper.HELPER.logDebug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+      PathingLog.debug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
       return null;
     }
     if (!move.getDest().equals(dest)) {
       if (primitive.revalidatesDestinationDuringAssembly()) {
-        Helper.HELPER.logDebug("Dynamic movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+        PathingLog.debug("Dynamic movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
         return null;
       }
       throw new IllegalStateException("Static primitive " + primitive.debugName() + " produced " + move.getDest() + " instead of searched edge " + dest);
@@ -140,7 +139,7 @@ class Path extends PathBase {
         return move;
       }
     }
-    Helper.HELPER.logDebug("Synthetic start movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+    PathingLog.debug("Synthetic start movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
     return null;
   }
 
@@ -192,4 +191,8 @@ class Path extends PathBase {
 
   @Override
   public BetterBlockPos getDest() { return end; }
+
+  double totalCost() {
+    return nodes.isEmpty() ? 0D : nodes.get(nodes.size() - 1).cost;
+  }
 }

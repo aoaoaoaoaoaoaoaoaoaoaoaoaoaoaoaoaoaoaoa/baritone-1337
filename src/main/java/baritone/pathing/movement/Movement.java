@@ -1,6 +1,7 @@
 package baritone.pathing.movement;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.movement.IMovement;
@@ -155,7 +156,7 @@ public abstract class Movement implements IMovement, MovementHelper {
   }
 
   private boolean waterDriftCandidate(BlockPos pos) {
-    return MovementHelper.isWater(ctx, pos) || MovementHelper.isWater(ctx, pos.above()) || MovementHelper.isWater(ctx, src) || MovementHelper.isWater(ctx, dest);
+    return MovementClientHelper.isWater(ctx, pos) || MovementClientHelper.isWater(ctx, pos.above()) || MovementClientHelper.isWater(ctx, src) || MovementClientHelper.isWater(ctx, dest);
   }
 
   private static double square(double value) {
@@ -163,8 +164,8 @@ public abstract class Movement implements IMovement, MovementHelper {
   }
 
   private boolean surfaceEquivalent(BlockPos feet, BlockPos target) {
-    return feet.getX() == target.getX() && feet.getZ() == target.getZ() && feet.getY() + 1 == target.getY() && MovementHelper.surfaceSwimEnvelopeCell(ctx, feet)
-      && MovementHelper.surfaceSwimCell(ctx, target);
+    return feet.getX() == target.getX() && feet.getZ() == target.getZ() && feet.getY() + 1 == target.getY() && MovementClientHelper.surfaceSwimEnvelopeCell(ctx, feet)
+      && MovementClientHelper.surfaceSwimCell(ctx, target);
   }
 
   /**
@@ -186,7 +187,7 @@ public abstract class Movement implements IMovement, MovementHelper {
       currentState = liquidLocomotion.adjust(this, currentState, path, pathPosition);
     }
     if (ctx.player().isInWall()) {
-      ctx.getSelectedBlock().ifPresent(pos -> MovementHelper.switchToBestToolFor(currentState, ctx, BlockStateInterface.get(ctx, pos)));
+      ctx.getSelectedBlock().ifPresent(pos -> MovementClientHelper.switchToBestToolFor(currentState, ctx, BlockStateInterface.get(ctx, pos)));
       currentState.setInput(Input.CLICK_LEFT, true);
     }
 
@@ -210,12 +211,12 @@ public abstract class Movement implements IMovement, MovementHelper {
     }
     boolean somethingInTheWay = false;
     for (BetterBlockPos blockPos : positionsToBreak) {
-      if (!ctx.world().getEntitiesOfClass(FallingBlockEntity.class, new AABB(0, 0, 0, 1, 1.1, 1).move(blockPos)).isEmpty() && Baritone.settings().pauseMiningForFallingBlocks.value) {
+      if (!ctx.world().getEntitiesOfClass(FallingBlockEntity.class, new AABB(0, 0, 0, 1, 1.1, 1).move(blockPos)).isEmpty() && BaritoneAPI.getSettings().pauseMiningForFallingBlocks.value) {
         return false;
       }
-      if (!MovementHelper.canMoveThrough(ctx, blockPos)) { // can't break air, so don't try
+      if (!MovementClientHelper.canMoveThrough(ctx, blockPos)) { // can't break air, so don't try
         somethingInTheWay = true;
-        MovementHelper.switchToBestToolFor(state, ctx, BlockStateInterface.get(ctx, blockPos));
+        MovementClientHelper.switchToBestToolFor(state, ctx, BlockStateInterface.get(ctx, blockPos));
         Optional<Rotation> reachable = RotationUtils.reachable(ctx, blockPos, ctx.playerController().getBlockReachDistance());
         if (reachable.isPresent()) {
           Rotation rotTowardsBlock = reachable.get();

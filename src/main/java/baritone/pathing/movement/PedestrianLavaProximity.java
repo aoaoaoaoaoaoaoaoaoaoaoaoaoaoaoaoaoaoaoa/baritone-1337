@@ -1,21 +1,32 @@
 package baritone.pathing.movement;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
+import static baritone.api.pathing.movement.ActionCosts.SPRINT_ONE_BLOCK_COST;
+import static baritone.api.pathing.movement.ActionCosts.WALK_ONE_BLOCK_COST;
 
 public final class PedestrianLavaProximity {
   private PedestrianLavaProximity() {
   }
 
   public static double arrivalPenalty(CalculationContext context, int srcX, int srcY, int srcZ, int destX, int destY, int destZ) {
-    double penalty = context.costs.pedestrianLavaProximityPenalty();
-    if (penalty <= 0D || Baritone.settings().assumeWalkOnLava.value) {
+    if (BaritoneAPI.getSettings().assumeWalkOnLava.value) {
       return 0D;
     }
-    return arrivalDanger(context, srcX, srcY, srcZ, destX, destY, destZ) ? penalty : 0D;
+    return arrivalDanger(context, srcX, srcY, srcZ, destX, destY, destZ) ? analyticalPenalty(context) : 0D;
+  }
+
+  static double analyticalPenalty(CalculationContext context) {
+    return analyticalPenalty(context.movement.canSprint());
+  }
+
+  static double analyticalPenalty(boolean sprint) {
+    double flatStepCost = sprint ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST;
+    return Math.nextUp(2D * flatStepCost);
   }
 
   public static boolean arrivalDanger(CalculationContext context, int srcX, int srcY, int srcZ, int destX, int destY, int destZ) {
-    if (Baritone.settings().assumeWalkOnLava.value) {
+    if (BaritoneAPI.getSettings().assumeWalkOnLava.value) {
       return false;
     }
     int dx = Integer.compare(destX, srcX);

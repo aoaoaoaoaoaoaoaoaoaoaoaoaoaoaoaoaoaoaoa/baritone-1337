@@ -39,6 +39,7 @@ CODE_STAMP_FILES = (
   "gradle.properties",
   "fabric/build.gradle",
   "scripts/playtest",
+  "scripts/oracle_a_star",
   "scripts/playtestlib.py",
 )
 CODE_STAMP_SUFFIXES = (".java", ".json", ".gradle", ".groovy", ".properties", ".accesswidener", ".mixins.json")
@@ -71,6 +72,43 @@ def path_argument_contains(argument: str, needle: str) -> bool:
       return True
     start = argument.find(needle, start + 1)
   return False
+
+
+def proc_references_path(pid: int, path: Path) -> bool:
+  needle = str(path)
+  proc = Path("/proc") / str(pid)
+  try:
+    cwd = str((proc / "cwd").resolve())
+    if cwd == needle or cwd.startswith(needle + os.sep):
+      return True
+  except (FileNotFoundError, ProcessLookupError, PermissionError):
+    pass
+  for name in ("cmdline", "environ"):
+    try:
+      data = (proc / name).read_bytes().decode("utf-8", "replace")
+    except (FileNotFoundError, ProcessLookupError, PermissionError):
+      continue
+    if needle in data:
+      return True
+  return False
+
+
+def purge_stale_xvfb_tmpdirs(*, stale_seconds: float = 60.0) -> int:
+  tmp = Path(os.environ.get("TMPDIR", "/tmp"))
+  now_wall = time.time()
+  purged = 0
+  for path in tmp.glob("xvfb-run.*"):
+    try:
+      stat = path.stat()
+    except FileNotFoundError:
+      continue
+    if stat.st_uid != os.getuid() or not path.is_dir() or path.is_symlink() or now_wall - stat.st_mtime < stale_seconds:
+      continue
+    if any(proc.name.isdecimal() and proc_references_path(int(proc.name), path) for proc in Path("/proc").iterdir()):
+      continue
+    shutil.rmtree(path, ignore_errors=True)
+    purged += 1
+  return purged
 
 
 def read_json(path: Path) -> dict:
@@ -130,6 +168,7 @@ class PlaytestConfig:
   profiler_cpu_sample_ms: float
   profiler_start_timeout: int
   keep_client: bool
+  server_heap: str
 
   @staticmethod
   def from_env(repo: Path) -> "PlaytestConfig":
@@ -157,7 +196,7 @@ class PlaytestConfig:
       baseline_y=int(os.environ.get("PLAYTEST_BASELINE_Y", "114")),
       baseline_z=int(os.environ.get("PLAYTEST_BASELINE_Z", "0")),
       level_type=os.environ.get("PLAYTEST_LEVEL_TYPE", ""),
-      view_distance=int(os.environ.get("PLAYTEST_VIEW_DISTANCE", "4")),
+      view_distance=int(os.environ.get("PLAYTEST_VIEW_DISTANCE", "8")),
       simulation_distance=int(os.environ.get("PLAYTEST_SIMULATION_DISTANCE", "4")),
       max_tick_time=int(os.environ.get("PLAYTEST_MAX_TICK_TIME", "60000")),
       mute_client=truth(os.environ.get("PLAYTEST_MUTE_CLIENT"), True),
@@ -168,6 +207,7 @@ class PlaytestConfig:
       profiler_cpu_sample_ms=float(os.environ.get("PLAYTEST_PROFILE_CPU_SAMPLE_MS", "10")),
       profiler_start_timeout=int(os.environ.get("PLAYTEST_PROFILE_START_TIMEOUT", "180")),
       keep_client=truth(os.environ.get("PLAYTEST_KEEP_CLIENT"), False),
+      server_heap=os.environ.get("PLAYTEST_SERVER_HEAP", "").strip(),
     )
 
   @property
@@ -213,6 +253,14 @@ class PlaytestConfig:
   @property
   def physics_results(self) -> Path:
     return self.root / "physics-results"
+
+  @property
+  def oracle_inbox(self) -> Path:
+    return self.root / "oracle-inbox"
+
+  @property
+  def oracle_results(self) -> Path:
+    return self.root / "oracle-results"
 
   @property
   def serial_lock(self) -> Path:
@@ -305,16 +353,19 @@ class Playtest:
       digest.update(b"\0")
     return "sha256:" + digest.hexdigest()
 
-  def mount_tuning_stamp(self) -> dict[str, str]:
-    raw = os.environ.get("BARITONE_MOUNT_TUNING", "").strip()
-    if not raw:
-      return {"profile": "", "stamp": "mount-tuning:none"}
-    path = Path(raw).expanduser()
-    path = path.resolve() if path.is_absolute() else (self.c.repo / path).resolve()
+  def golden_tuning_stamp(self) -> dict[str, str]:
+    raw = os.environ.get("BARITONE_GOLDEN_TUNING", "").strip()
+    if raw:
+      path = Path(raw).expanduser()
+      path = path.resolve() if path.is_absolute() else (self.c.repo / path).resolve()
+    else:
+      path = (self.c.repo / "config/baritone/golden-tuning.toml").resolve()
+      if not path.is_file():
+        return {"profile": "", "stamp": "golden-tuning:none"}
     if not path.is_file():
-      raise FileNotFoundError(f"BARITONE_MOUNT_TUNING does not name a readable file: {path}")
+      raise FileNotFoundError(f"BARITONE_GOLDEN_TUNING does not name a readable file: {path}")
     digest = hashlib.sha256()
-    digest.update(b"baritone-mount-tuning-v1\0")
+    digest.update(b"baritone-golden-tuning-v1\0")
     digest.update(str(path).encode("utf-8"))
     digest.update(b"\0")
     data = path.read_bytes()
@@ -323,12 +374,29 @@ class Playtest:
     digest.update(data)
     return {"profile": str(path), "stamp": "sha256:" + digest.hexdigest()}
 
+  def client_render_distance(self) -> int:
+    return int(os.environ.get("PLAYTEST_CLIENT_RENDER_DISTANCE", str(self.c.view_distance)))
+
+  def client_simulation_distance(self) -> int:
+    return int(os.environ.get("PLAYTEST_CLIENT_SIMULATION_DISTANCE", str(self.c.simulation_distance)))
+
   def launch_stamp(self, code_stamp: str) -> str:
-    return code_stamp
+    return (
+      f"{code_stamp}\n{self.golden_tuning_stamp()['stamp']}\n"
+      f"view_distance={self.c.view_distance}\n"
+      f"simulation_distance={self.c.simulation_distance}\n"
+      f"client_render_distance={self.client_render_distance()}\n"
+      f"client_simulation_distance={self.client_simulation_distance()}"
+    )
 
   def server_launch_stamp(self, code_stamp: str, world: WorldSpec) -> str:
     physics = f"{self.c.physics_inbox.resolve()}:{self.c.physics_results.resolve()}"
-    return f"{code_stamp}\nworld={world.key}\nseed={world.seed}\nlevel_type={world.level_type}\nphysics={physics}"
+    oracle = f"{self.c.oracle_inbox.resolve()}:{self.c.oracle_results.resolve()}"
+    return (
+      f"{code_stamp}\nworld={world.key}\nseed={world.seed}\nlevel_type={world.level_type}\n"
+      f"view_distance={self.c.view_distance}\nsimulation_distance={self.c.simulation_distance}\n"
+      f"max_tick_time={self.c.max_tick_time}\nphysics={physics}\noracle={oracle}\nserver_heap={self.c.server_heap}"
+    )
 
   def code_stamp_paths(self) -> list[Path]:
     paths: set[Path] = set()
@@ -534,9 +602,14 @@ class Playtest:
     directory.mkdir(parents=True, exist_ok=True)
     options = directory / "options.txt"
     kept: list[str] = []
+    clobbered = re.compile(
+      r"^(soundCategory_|musicToast:|musicFrequency:|showSubtitles:|directionalAudio:|ao:|biomeBlendRadius:|chunkSectionFadeInTime:|cutoutLeaves:|enableVsync:|entityDistanceScaling:|entityShadows:|graphicsMode:|graphicsPreset:|prioritizeChunkUpdates:|fullscreen:|exclusiveFullscreen:|maxAnisotropyBit:|textureFiltering:|maxFps:|improvedTransparency:|mipmapLevels:|particles:|renderClouds:|cloudRange:|renderDistance:|simulationDistance:|screenEffectScale:|vignette:|weatherRadius:|bobView:|damageTiltStrength:|glDebugVerbosity:|menuBackgroundBlurriness:)"
+    )
     if options.exists():
-      kept = [line for line in options.read_text(encoding="utf-8").splitlines() if not re.match(r"^(soundCategory_|musicToast:|musicFrequency:|showSubtitles:|directionalAudio:)", line)]
-    muted = [
+      kept = [line for line in options.read_text(encoding="utf-8").splitlines() if not clobbered.match(line)]
+    render_distance = self.client_render_distance()
+    simulation_distance = self.client_simulation_distance()
+    potato = [
       "soundCategory_master:0.0",
       "soundCategory_music:0.0",
       "soundCategory_record:0.0",
@@ -551,8 +624,37 @@ class Playtest:
       'musicFrequency:"OFF"',
       "showSubtitles:false",
       "directionalAudio:false",
+      "ao:false",
+      "biomeBlendRadius:0",
+      "chunkSectionFadeInTime:0.0",
+      "cutoutLeaves:false",
+      "enableVsync:false",
+      "entityDistanceScaling:0.5",
+      "entityShadows:false",
+      'graphicsMode:"fast"',
+      'graphicsPreset:"fast"',
+      "prioritizeChunkUpdates:0",
+      "fullscreen:false",
+      "exclusiveFullscreen:false",
+      "maxAnisotropyBit:0",
+      "textureFiltering:0",
+      "maxFps:30",
+      "improvedTransparency:false",
+      "mipmapLevels:0",
+      "particles:2",
+      'renderClouds:"false"',
+      "cloudRange:32",
+      f"renderDistance:{max(2, render_distance)}",
+      f"simulationDistance:{max(2, simulation_distance)}",
+      "screenEffectScale:0.0",
+      "vignette:false",
+      "weatherRadius:0",
+      "bobView:false",
+      "damageTiltStrength:0.0",
+      "glDebugVerbosity:0",
+      "menuBackgroundBlurriness:0",
     ]
-    options.write_text("\n".join([*kept, *muted, ""]), encoding="utf-8")
+    options.write_text("\n".join([*kept, *potato, ""]), encoding="utf-8")
 
   def prepare_server(self, directory: Path, world: WorldSpec) -> None:
     directory.mkdir(parents=True, exist_ok=True)
@@ -597,6 +699,26 @@ class Playtest:
 
   def server_ready(self, log: Path) -> bool:
     return log.exists() and "Done (" in log.read_text(encoding="utf-8", errors="replace")
+
+  def server_crashed_during_boot(self, log: Path) -> bool:
+    if not log.exists():
+      return False
+    text = log.read_text(encoding="utf-8", errors="replace")
+    return "FAILED TO BIND TO PORT" in text or "Encountered an unexpected exception" in text or "Failed to initialize server" in text
+
+  def server_crashed_after_start(self, log: Path) -> bool:
+    if not log.exists():
+      return False
+    text = log.read_text(encoding="utf-8", errors="replace")
+    needles = (
+      "java.lang.OutOfMemoryError",
+      "OutOfMemoryError",
+      "Exception in server tick loop",
+      "Encountered an unexpected exception",
+      "BUILD FAILED",
+      "Process 'command",
+    )
+    return any(needle in text for needle in needles)
 
   def server_reachable(self) -> bool:
     try:
@@ -651,12 +773,14 @@ class Playtest:
         [
           "bash",
           "-lc",
-          'tail -f /dev/null | env GRADLE_USER_HOME="$1" ./gradlew :fabric:runPlaytestServer -PbaritonePlaytestServerDir="$2" -PbaritonePhysicsInbox="$3" -PbaritonePhysicsResults="$4"',
+          'tail -f /dev/null | env GRADLE_USER_HOME="$1" ./gradlew :fabric:runPlaytestServer -PbaritonePlaytestServerDir="$2" -PbaritonePhysicsInbox="$3" -PbaritonePhysicsResults="$4" -PbaritoneOracleInbox="$5" -PbaritoneOracleResults="$6"',
           "playtest-server",
           self.c.gradle_user_home,
           str(directory),
           str(self.c.physics_inbox),
           str(self.c.physics_results),
+          str(self.c.oracle_inbox),
+          str(self.c.oracle_results),
         ],
         cwd=self.c.repo,
         stdin=subprocess.DEVNULL,
@@ -669,6 +793,9 @@ class Playtest:
     for _ in range(180):
       if self.server_ready(log):
         return
+      if self.server_crashed_during_boot(log):
+        sys.stderr.write(tail(log))
+        raise SystemExit(1)
       if not self.pid_alive(self.c.server_pid):
         sys.stderr.write(tail(log))
         raise SystemExit(1)
@@ -705,8 +832,8 @@ class Playtest:
     )
     if self.c.profile_event:
       env["JDK_JAVA_OPTIONS"] = (env.get("JDK_JAVA_OPTIONS", "") + " -XX:+EnableDynamicAgentLoading").strip()
-    mount_tuning = self.mount_tuning_stamp()["profile"]
-    mount_tuning_args = [f"-PbaritoneMountTuning={mount_tuning}"] if mount_tuning else []
+    golden_tuning = self.golden_tuning_stamp()["profile"]
+    golden_tuning_args = [f"-PbaritoneGoldenTuning={golden_tuning}"] if golden_tuning else []
     with log.open("w", encoding="utf-8") as out:
       proc = subprocess.Popen(
         [
@@ -728,7 +855,7 @@ class Playtest:
           f"-PbaritonePlaytestUsername={self.c.username}",
           f"-PbaritonePlaytestUuid={self.c.uuid}",
           f"-PbaritonePlaytestCodeStamp={code_stamp}",
-          *mount_tuning_args,
+          *golden_tuning_args,
         ],
         cwd=self.c.repo,
         stdin=subprocess.DEVNULL,
@@ -739,7 +866,7 @@ class Playtest:
       )
     self.c.client_pid.write_text(f"{proc.pid}\n", encoding="utf-8")
     self.c.client_stamp.write_text(launch_stamp + "\n", encoding="utf-8")
-    write_json(self.c.client_launch, {"pid": proc.pid, "codeStamp": code_stamp, "mountTuning": self.mount_tuning_stamp(), "launchedAt": now()})
+    write_json(self.c.client_launch, {"pid": proc.pid, "codeStamp": code_stamp, "goldenTuning": self.golden_tuning_stamp(), "launchedAt": now()})
 
   def find_profile_target_pid(self) -> int | None:
     if self.c.profile_target != "client":
@@ -905,6 +1032,12 @@ class Playtest:
         "nextCalcFailures": 0,
         "lastPathEvent": None,
         "calcFailed": False,
+        "totalStalledTicks": 0,
+        "totalStalledSeconds": 0.0,
+        "preActuationStalledTicks": 0,
+        "postActuationStalledTicks": 0,
+        "stallEpisodes": 0,
+        "maxStallTicks": 0,
         "sawPathing": False,
         "sawWater": False,
         "sawBoat": False,
@@ -955,6 +1088,65 @@ class Playtest:
   def run_physics_edge(self, scenario_path: Path) -> int:
     with self.serial():
       return self.run_physics_edge_locked(scenario_path)
+
+  def run_oracle(self, scenario_path: Path, timeout_ms: int = 300_000, settings: dict[str, str] | None = None) -> int:
+    return self.run_oracle_locked(scenario_path, timeout_ms, settings or {})
+
+  def run_oracle_locked(self, scenario_path: Path, timeout_ms: int = 300_000, settings: dict[str, str] | None = None) -> int:
+    settings = settings or {}
+    if not scenario_path.is_file():
+      raise SystemExit(f"No oracle scenario: {scenario_path}")
+    scenario = read_json(scenario_path)
+    validate_scenario_commands(scenario_path, scenario)
+    runner = self.with_scenario_config(scenario)
+    if runner is not self:
+      return runner.run_oracle_locked(scenario_path, timeout_ms, settings)
+    if self.c.max_tick_time != 0:
+      return Playtest(replace(self.c, max_tick_time=0)).run_oracle_locked(scenario_path, timeout_ms, settings)
+    world = WorldSpec.from_arg(self.c, str(scenario_path))
+    self.stop()
+    shutil.rmtree(self.server_dir(world), ignore_errors=True)
+    self.c.state.unlink(missing_ok=True)
+    self.c.oracle_inbox.mkdir(parents=True, exist_ok=True)
+    self.c.oracle_results.mkdir(parents=True, exist_ok=True)
+    for child in self.c.oracle_inbox.glob("*.json"):
+      child.unlink()
+    try:
+      self.server_only(world)
+      base = safe_key(scenario_path.stem)
+      run_id = f"{base}-oracle-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{os.getpid()}"
+      target = self.c.oracle_inbox / f"{run_id}.json"
+      result = self.c.oracle_results / f"{run_id}.json"
+      request: dict[str, Any] = {"runId": run_id, "scenarioPath": str(scenario_path.resolve()), "timeoutMS": timeout_ms}
+      effective_settings: dict[str, str] = {}
+      env_settings = os.environ.get("PLAYTEST_ORACLE_SETTINGS_JSON", "").strip()
+      if env_settings:
+        effective_settings.update({str(k): str(v) for k, v in json.loads(env_settings).items()})
+      env_max_nodes = os.environ.get("PLAYTEST_ORACLE_PATHING_MAX_NODES", "").strip()
+      if env_max_nodes and "pathingMaxNodes" not in effective_settings:
+        effective_settings["pathingMaxNodes"] = env_max_nodes
+      effective_settings.update(settings)
+      if effective_settings:
+        request["settings"] = effective_settings
+      write_json(target, request)
+      deadline = time.monotonic() + max(120, math.ceil(timeout_ms / 1000) + 180)
+      log = self.c.logs / "server.log"
+      while time.monotonic() < deadline:
+        if result.exists():
+          print(result)
+          payload = read_json(result)
+          return 0 if str(payload.get("status", "")).startswith("SUCCESS") else 1
+        if not self.pid_alive(self.c.server_pid):
+          raise SystemExit("oracle server process died before writing result")
+        if self.server_crashed_after_start(log):
+          sys.stderr.write(tail(log))
+          raise SystemExit("oracle server failed before writing result")
+        time.sleep(0.1)
+      raise SystemExit(f"timed out waiting for oracle result {result}")
+    finally:
+      self.stop()
+      shutil.rmtree(self.server_dir(world), ignore_errors=True)
+      self.c.state.unlink(missing_ok=True)
 
   def run_physics_edge_locked(self, scenario_path: Path) -> int:
     if not scenario_path.is_file():
@@ -1517,6 +1709,9 @@ def tail(path: Path, lines: int = 120) -> str:
 def main(argv: list[str] | None = None) -> int:
   argv = list(sys.argv[1:] if argv is None else argv)
   repo = Path(__file__).resolve().parents[1]
+  purged = purge_stale_xvfb_tmpdirs()
+  if purged:
+    print(f"playtest: purged {purged} stale xvfb-run tmpdir(s)", file=sys.stderr)
   playtest = Playtest(PlaytestConfig.from_env(repo))
   if not argv:
     usage()
@@ -1543,6 +1738,21 @@ def main(argv: list[str] | None = None) -> int:
       if not args:
         raise SystemExit("physics scenario json required")
       return playtest.run_physics_edge(Path(args[0]))
+    case "oracle":
+      if not args:
+        raise SystemExit("scenario json required")
+      timeout = 300_000
+      setting_args = args[1:]
+      if setting_args and "=" not in setting_args[0]:
+        timeout = int(setting_args[0])
+        setting_args = setting_args[1:]
+      settings: dict[str, str] = {}
+      for raw in setting_args:
+        if "=" not in raw:
+          raise SystemExit(f"oracle setting override must be key=value, got {raw!r}")
+        key, value = raw.split("=", 1)
+        settings[key] = value
+      return playtest.run_oracle(Path(args[0]), timeout, settings)
     case "run":
       if not args:
         raise SystemExit("scenario json required")
@@ -1587,7 +1797,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def usage() -> None:
   print(
-    "usage: scripts/playtest server [worldKey|scenario.json] | stage <scenario.json> [player] | daemon [worldKey|scenario.json] | cmd <server command> | probe [worldKey|scenario.json] <x> <y> <z> [dimension] | physedge <scenario.json> | run <scenario.json> | once <scenario.json> | suite [manifest] | biome-pregen [worldKey] [radius] [tileChunks] [dimension] | biome-scan <worldKey> <outDir> [args...] | biome-aggregate [resultsDir] [outJson] | biome-facts <worldKey> [outJson] [args...] | stop | stop-all",
+    "usage: scripts/playtest server [worldKey|scenario.json] | stage <scenario.json> [player] | daemon [worldKey|scenario.json] | cmd <server command> | probe [worldKey|scenario.json] <x> <y> <z> [dimension] | physedge <scenario.json> | oracle <scenario.json> [timeoutMS] [setting=value...] | run <scenario.json> | once <scenario.json> | suite [manifest] | biome-pregen [worldKey] [radius] [tileChunks] [dimension] | biome-scan <worldKey> <outDir> [args...] | biome-aggregate [resultsDir] [outJson] | biome-facts <worldKey> [outJson] [args...] | stop | stop-all",
     file=sys.stderr,
   )
 

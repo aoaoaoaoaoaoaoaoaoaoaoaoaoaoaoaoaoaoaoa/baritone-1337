@@ -19,7 +19,7 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
-final class PortalSiteIndex {
+public final class PortalSiteIndex {
   private static final int MAX_SITES = 256;
   private final int dimensionId;
   private final Long2ObjectOpenHashMap<ArrayList<PortalSite>> bySourceCell;
@@ -31,7 +31,7 @@ final class PortalSiteIndex {
     this.litPortals = litPortals;
   }
 
-  static PortalSiteIndex build(MacroExpansionContext context) {
+  public static PortalSiteIndex build(MacroExpansionContext context) {
     Long2ObjectOpenHashMap<ArrayList<PortalSite>> byCell = new Long2ObjectOpenHashMap<>();
     LongOpenHashSet siteKeys = new LongOpenHashSet();
     ArrayList<BetterBlockPos> obsidian = new ArrayList<>();
@@ -44,16 +44,25 @@ final class PortalSiteIndex {
     return new PortalSiteIndex(MacroNodeKey.dimensionId(context.calculation().world.dimension()), byCell, litPortals);
   }
 
-  boolean empty() {
+  public boolean empty() {
     return bySourceCell.isEmpty();
   }
 
-  List<PortalSite> sites(long sourceCell) {
+  public List<PortalSite> sites(long sourceCell) {
     ArrayList<PortalSite> sites = bySourceCell.get(sourceCell);
     return sites == null ? List.of() : sites;
   }
 
-  boolean wouldRelinkToKnownPortal(BetterBlockPos sourcePortal, int sourceDimensionId) {
+  public List<PortalSite> allSites() {
+    ArrayList<PortalSite> sites = new ArrayList<>();
+    for (ArrayList<PortalSite> cellSites : bySourceCell.values()) {
+      sites.addAll(cellSites);
+    }
+    sites.sort(Comparator.comparingInt(PortalSite::missingObsidian).thenComparing(site -> site.interaction().asLong()));
+    return List.copyOf(sites);
+  }
+
+  public boolean wouldRelinkToKnownPortal(BetterBlockPos sourcePortal, int sourceDimensionId) {
     int destinationDimensionId = PortalGeometry.pairedDimension(sourceDimensionId);
     if (destinationDimensionId != dimensionId) {
       return false;
@@ -112,10 +121,7 @@ final class PortalSiteIndex {
     int maxCz = maxZ >> 4;
     for (int cx = minCx; cx <= maxCx && siteKeys.size() < MAX_SITES; cx++) {
       for (int cz = minCz; cz <= maxCz && siteKeys.size() < MAX_SITES; cz++) {
-        if (!calculation.world.getChunkSource().hasChunk(cx, cz)) {
-          continue;
-        }
-        scanLiveChunk(context, byCell, siteKeys, obsidian, litPortals, calculation.world.getChunkSource().getChunk(cx, cz, false), minX, maxX, minY, maxY, minZ, maxZ, start, radiusSq);
+        scanLiveChunk(context, byCell, siteKeys, obsidian, litPortals, calculation.bsi.liveChunkByChunk(cx, cz), minX, maxX, minY, maxY, minZ, maxZ, start, radiusSq);
       }
     }
   }

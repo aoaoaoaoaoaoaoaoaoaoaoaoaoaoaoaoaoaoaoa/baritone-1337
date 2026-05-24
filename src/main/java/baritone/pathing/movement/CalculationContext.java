@@ -1,5 +1,7 @@
 package baritone.pathing.movement;
 
+import baritone.api.BaritoneAPI;
+
 import static baritone.api.pathing.movement.ActionCosts.COST_INF;
 
 import baritone.Baritone;
@@ -14,6 +16,8 @@ import baritone.utils.ToolSet;
 import baritone.utils.pathing.BetterWorldBorder;
 import baritone.utils.pathing.ChunkFactState;
 import it.unimi.dsi.fastutil.HashCommon;
+import java.nio.file.Path;
+import java.util.List;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -43,6 +47,7 @@ public class CalculationContext {
   public final ToolSet toolSet;
   public final PlacementPolicy placement;
   public final BreakPolicy breaking;
+  public final EphemeralObstaclePolicy ephemeralObstacles;
   public final MovementPolicy movement;
   public final TrailReversibilityPolicy reversibility;
   public FallPolicy fall;
@@ -71,44 +76,112 @@ public class CalculationContext {
     this.toolSet = new ToolSet(player);
     // todo: technically there can now be datapack enchants that replace blocks with any other at any range
     int frostWalkerLevel = 0;
+    int featherFallingLevel = 0;
     for (EquipmentSlot slot : EquipmentSlot.values()) {
       ItemEnchantments itemEnchantments = baritone.getPlayerContext().player().getItemBySlot(slot).getEnchantments();
       for (Holder<Enchantment> enchant : itemEnchantments.keySet()) {
         if (enchant.is(Enchantments.FROST_WALKER)) {
           frostWalkerLevel = itemEnchantments.getLevel(enchant);
+        } else if (enchant.is(Enchantments.FEATHER_FALLING)) {
+          featherFallingLevel = Math.max(featherFallingLevel, itemEnchantments.getLevel(enchant));
         }
       }
     }
-    boolean canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
-    boolean sprintInWater = Baritone.settings().sprintInWater.value;
+    boolean canSprint = BaritoneAPI.getSettings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
+    boolean sprintInWater = BaritoneAPI.getSettings().sprintInWater.value;
     double waterMoveCost = canSprint && sprintInWater ? ActionCosts.SPRINT_SWIM_ONE_BLOCK_COST : ActionCosts.WALK_ONE_IN_WATER_COST;
     ResourcePricing.Prices resourcePrices = ((Baritone) baritone).getInventoryBehavior().pathingResourcePrices(((Baritone) baritone).getPathingBehavior().resourceRepricingHeadroom());
-    this.placement = new PlacementPolicy(Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(), resourcePrices.placementPenalty(),
-      Baritone.settings().allowPlaceInFluidsSource.value, Baritone.settings().allowPlaceInFluidsFlow.value);
-    this.breaking = new BreakPolicy(Baritone.settings().allowBreak.value, Baritone.settings().allowBreakAnyway.value);
-    this.movement = new MovementPolicy(canSprint, Baritone.settings().allowParkour.value, Baritone.settings().allowParkourPlace.value, Baritone.settings().allowJumpAtBuildLimit.value,
-      Baritone.settings().allowParkourAscend.value, Baritone.settings().assumeWalkOnWater.value, frostWalkerLevel, Baritone.settings().allowDiagonalDescend.value,
-      Baritone.settings().allowDiagonalAscend.value, Baritone.settings().allowObliqueWalk.value, Baritone.settings().allowDownward.value, Baritone.settings().allowWalkOnMagmaBlocks.value,
-      sprintInWater);
-    this.reversibility = new TrailReversibilityPolicy(Baritone.settings().pedestrianTrailReversibilityMode.value, Baritone.settings().pedestrianTrailReversibilitySuspectPenalty.value,
-      Baritone.settings().pedestrianTrailReversibilityIrreversiblePenalty.value);
-    this.fall =
-      new FallPolicy(Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER,
-        false, 3, Baritone.settings().maxFallHeightNoWater.value, Baritone.settings().maxFallHeightBucket.value);
-    this.costs = new CostPolicy(resourcePrices.breakAdditionalPenalty(), Baritone.settings().backtrackCostFavoringCoefficient.value, Baritone.settings().jumpPenalty.value,
-      Baritone.settings().walkOnWaterOnePenalty.value, Baritone.settings().pedestrianLavaProximityPenalty.value, Baritone.settings().pedestrianCruiseRayBoundaryDividend.value,
+    this.placement = new PlacementPolicy(BaritoneAPI.getSettings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway(), resourcePrices.placementPenalty(),
+      BaritoneAPI.getSettings().allowPlaceInFluidsSource.value, BaritoneAPI.getSettings().allowPlaceInFluidsFlow.value);
+    this.breaking = BreakPolicy.snapshot();
+    this.ephemeralObstacles = EphemeralObstaclePolicy.snapshot();
+    this.movement = new MovementPolicy(canSprint, BaritoneAPI.getSettings().allowParkour.value, BaritoneAPI.getSettings().allowParkourPlace.value,
+      BaritoneAPI.getSettings().allowJumpAtBuildLimit.value, BaritoneAPI.getSettings().allowParkourAscend.value, BaritoneAPI.getSettings().assumeWalkOnWater.value, frostWalkerLevel,
+      BaritoneAPI.getSettings().allowDiagonalDescend.value, BaritoneAPI.getSettings().allowDiagonalAscend.value, BaritoneAPI.getSettings().allowObliqueWalk.value,
+      BaritoneAPI.getSettings().allowDownward.value, BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value, sprintInWater);
+    this.reversibility = new TrailReversibilityPolicy(BaritoneAPI.getSettings().pedestrianTrailReversibilityMode.value, BaritoneAPI.getSettings().pedestrianTrailReversibilitySuspectPenalty.value,
+      BaritoneAPI.getSettings().pedestrianTrailReversibilityIrreversiblePenalty.value);
+    this.fall = new FallPolicy(
+      BaritoneAPI.getSettings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER, false, 3,
+      BaritoneAPI.getSettings().maxFallHeightNoWater.value, BaritoneAPI.getSettings().maxFallHeightBucket.value, featherFallingLevel);
+    this.costs = new CostPolicy(resourcePrices.breakAdditionalPenalty(), BaritoneAPI.getSettings().backtrackCostFavoringCoefficient.value, BaritoneAPI.getSettings().jumpPenalty.value,
+      BaritoneAPI.getSettings().walkOnWaterOnePenalty.value, BaritoneAPI.getSettings().pedestrianLavaProximityPenalty.value, BaritoneAPI.getSettings().pedestrianCruiseRayBoundaryDividend.value,
       ActionCosts.WALK_ONE_IN_WATER_COST, waterMoveCost);
     // why cache these things here, why not let the movements just get directly from settings?
     // because if some movements are calculated one way and others are calculated another way,
     // then you get a wildly inconsistent path that isn't optimal for either scenario.
     this.worldBorder = new BetterWorldBorder(world.getWorldBorder());
-    this.modificationGeofence = ModificationGeofence.snapshot(world.dimension().identifier().toString(), Baritone.settings().modificationGeofences.value);
+    this.modificationGeofence = ModificationGeofence.snapshot(world.dimension().identifier().toString(), BaritoneAPI.getSettings().modificationGeofences.value);
     this.affordances = new BlockAffordanceCache(this);
     this.pathingProfiler = ((Baritone) baritone).getPathingProfiler();
     this.waterTransport = WaterTransportPolicy.snapshot((Baritone) baritone);
     this.movementCatalog = MovementCatalog.legacyWalking(this);
     this.blockStateCacheKeys = forUseOnAnotherThread ? new long[BLOCK_STATE_CACHE_SIZE] : null;
     this.blockStateCacheValues = forUseOnAnotherThread ? new BlockState[BLOCK_STATE_CACHE_SIZE] : null;
+  }
+
+  public CalculationContext(Level world, BlockStateInterface bsi, List<ItemStack> hotbar, boolean hasThrowaway, ResourcePricing.Prices resourcePrices, boolean hasWaterBucket, int featherFallingLevel,
+    Path profilerDirectory) {
+    this.safeForThreadedUse = true;
+    this.baritone = null;
+    this.world = world;
+    this.worldData = null;
+    this.bsi = bsi;
+    this.toolSet = new ToolSet(hotbar);
+    boolean canSprint = BaritoneAPI.getSettings().allowSprint.value;
+    boolean sprintInWater = BaritoneAPI.getSettings().sprintInWater.value;
+    double waterMoveCost = canSprint && sprintInWater ? ActionCosts.SPRINT_SWIM_ONE_BLOCK_COST : ActionCosts.WALK_ONE_IN_WATER_COST;
+    this.placement = new PlacementPolicy(BaritoneAPI.getSettings().allowPlace.value && hasThrowaway, resourcePrices.placementPenalty(), BaritoneAPI.getSettings().allowPlaceInFluidsSource.value,
+      BaritoneAPI.getSettings().allowPlaceInFluidsFlow.value);
+    this.breaking = BreakPolicy.snapshot();
+    this.ephemeralObstacles = EphemeralObstaclePolicy.snapshot();
+    this.movement = new MovementPolicy(canSprint, BaritoneAPI.getSettings().allowParkour.value, BaritoneAPI.getSettings().allowParkourPlace.value,
+      BaritoneAPI.getSettings().allowJumpAtBuildLimit.value, BaritoneAPI.getSettings().allowParkourAscend.value, BaritoneAPI.getSettings().assumeWalkOnWater.value, 0,
+      BaritoneAPI.getSettings().allowDiagonalDescend.value, BaritoneAPI.getSettings().allowDiagonalAscend.value, BaritoneAPI.getSettings().allowObliqueWalk.value,
+      BaritoneAPI.getSettings().allowDownward.value, BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value, sprintInWater);
+    this.reversibility = new TrailReversibilityPolicy(BaritoneAPI.getSettings().pedestrianTrailReversibilityMode.value, BaritoneAPI.getSettings().pedestrianTrailReversibilitySuspectPenalty.value,
+      BaritoneAPI.getSettings().pedestrianTrailReversibilityIrreversiblePenalty.value);
+    this.fall = new FallPolicy(BaritoneAPI.getSettings().allowWaterBucketFall.value && hasWaterBucket && world.dimension() != Level.NETHER, false, 3,
+      BaritoneAPI.getSettings().maxFallHeightNoWater.value, BaritoneAPI.getSettings().maxFallHeightBucket.value, featherFallingLevel);
+    this.costs = new CostPolicy(resourcePrices.breakAdditionalPenalty(), BaritoneAPI.getSettings().backtrackCostFavoringCoefficient.value, BaritoneAPI.getSettings().jumpPenalty.value,
+      BaritoneAPI.getSettings().walkOnWaterOnePenalty.value, BaritoneAPI.getSettings().pedestrianLavaProximityPenalty.value, BaritoneAPI.getSettings().pedestrianCruiseRayBoundaryDividend.value,
+      ActionCosts.WALK_ONE_IN_WATER_COST, waterMoveCost);
+    this.worldBorder = new BetterWorldBorder(world.getWorldBorder());
+    this.modificationGeofence = ModificationGeofence.snapshot(world.dimension().identifier().toString(), BaritoneAPI.getSettings().modificationGeofences.value);
+    this.affordances = new BlockAffordanceCache(this);
+    this.pathingProfiler = new PathingProfiler(profilerDirectory);
+    this.waterTransport = new WaterTransportPolicy(false, false, 40, 35D, 85D, 2.55D, 0D, 0D);
+    this.movementCatalog = MovementCatalog.legacyWalking(this);
+    this.blockStateCacheKeys = new long[BLOCK_STATE_CACHE_SIZE];
+    this.blockStateCacheValues = new BlockState[BLOCK_STATE_CACHE_SIZE];
+  }
+
+  private CalculationContext(CalculationContext source, BlockStateInterface bsi) {
+    this.safeForThreadedUse = true;
+    this.baritone = source.baritone;
+    this.world = source.world;
+    this.worldData = source.worldData;
+    this.bsi = bsi;
+    this.toolSet = source.toolSet;
+    this.placement = source.placement;
+    this.breaking = source.breaking;
+    this.ephemeralObstacles = source.ephemeralObstacles;
+    this.movement = source.movement;
+    this.reversibility = source.reversibility;
+    this.fall = source.fall;
+    this.costs = source.costs;
+    this.worldBorder = source.worldBorder;
+    this.modificationGeofence = source.modificationGeofence;
+    this.affordances = new BlockAffordanceCache(this);
+    this.pathingProfiler = source.pathingProfiler;
+    this.waterTransport = source.waterTransport;
+    this.movementCatalog = source.movementCatalog;
+    this.blockStateCacheKeys = new long[BLOCK_STATE_CACHE_SIZE];
+    this.blockStateCacheValues = new BlockState[BLOCK_STATE_CACHE_SIZE];
+  }
+
+  public CalculationContext forkThreadSafe() {
+    return new CalculationContext(this, bsi.forkThreadLocalCursor());
   }
 
   public final IBaritone getBaritone() { return baritone; }

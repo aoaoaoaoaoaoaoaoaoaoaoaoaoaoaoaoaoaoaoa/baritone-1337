@@ -1,6 +1,7 @@
 package baritone.pathing.calc;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.movement.ActionCosts;
@@ -24,6 +25,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
 
 public final class PedestrianLocalHotPlanner {
   private PedestrianLocalValueField resident;
@@ -32,8 +34,8 @@ public final class PedestrianLocalHotPlanner {
     MacroPlan macroPlan, Favoring fallbackFavoring, long factEpoch) {
     StateKey key = StateKey.of(context, localGoal, terminalGoal, macroPlan);
     if (resident == null || resident.poisoned() || !resident.key.equals(key) || resident.factEpoch != factEpoch) {
-      resident =
-        new PedestrianLocalValueField(key, factEpoch, context.movementCatalog.size(), Baritone.settings().pedestrianHotLocalMaxNodes.value, Baritone.settings().pedestrianHotLocalMaxEdges.value);
+      resident = new PedestrianLocalValueField(key, factEpoch, context.movementCatalog.size(), BaritoneAPI.getSettings().pedestrianHotLocalMaxNodes.value,
+        BaritoneAPI.getSettings().pedestrianHotLocalMaxEdges.value);
     }
     return new HotLocalPathCalculation(resident, context, realStart, requestedX, requestedY, requestedZ, localGoal, terminalGoal, fallbackFavoring, factEpoch);
   }
@@ -51,7 +53,7 @@ public final class PedestrianLocalHotPlanner {
       String macro = macroPlan == null ? "none" : macroPlan.sequence() + ':' + macroPlan.firstUncertifiedAction() + ':' + macroPlan.totalVector() + ':' + macroPlan.valueTelemetry();
       return new StateKey(context.world.dimension().identifier().toString(), context.world.dimensionType().minY(), context.world.dimensionType().minY() + context.world.dimensionType().height(),
         identity(localGoal), identity(terminalGoal), macro, movement.toString(), context.placement, context.breaking, context.movement, context.reversibility, context.fall, context.costs,
-        Baritone.settings().modificationGeofences.value.toString(), context.world.getWorldBorder().toString());
+        BaritoneAPI.getSettings().modificationGeofences.value.toString(), context.world.getWorldBorder().toString());
     }
 
     private static String identity(Goal goal) {
@@ -123,9 +125,26 @@ public final class PedestrianLocalHotPlanner {
         throw new IllegalStateException("hot local calculation cannot be reused");
       }
       long startNanos = System.nanoTime();
-      long deadline = System.currentTimeMillis() + Math.max(primaryTimeout, failureTimeout);
+      long deadline = System.currentTimeMillis() + Math.max(0L, primaryTimeout);
       try {
-        HotLocalPath hot = field.query(context, realStart, startX, startY, startZ, localGoal, terminalGoal, deadline, () -> cancelRequested);
+        HotLocalPath hot;
+        PedestrianLocalValueField queryField = field;
+        boolean resident = queryField.tryLock();
+        if (!resident) {
+          queryField = field.isolatedScratch();
+          queryField.lock();
+        }
+        try {
+          hot = queryField.query(context, realStart, startX, startY, startZ, localGoal, terminalGoal, deadline, () -> cancelRequested);
+          if (!cancelRequested && hot.path().isEmpty()) {
+            queryField.poison();
+          }
+        } catch (RuntimeException | Error e) {
+          queryField.poison();
+          throw e;
+        } finally {
+          queryField.unlock();
+        }
         telemetry = hot.telemetry();
         if (!cancelRequested && hot.path().isPresent()) {
           bestPath = hot.path().get();
@@ -133,13 +152,11 @@ public final class PedestrianLocalHotPlanner {
           routePlan = RoutePlan.of(List.of(PathRouteLeg.connector(bestPath, pedestrian, pedestrian)), pedestrian, pedestrian, hot.continuation());
           PathCalculationResult result =
             new PathCalculationResult(terminalGoal.isInGoal(bestPath.getDest()) ? PathCalculationResult.Type.SUCCESS_TO_GOAL : PathCalculationResult.Type.SUCCESS_SEGMENT, bestPath);
-          publicationSink.publish(result);
           return result;
         }
         if (cancelRequested) {
           return new PathCalculationResult(PathCalculationResult.Type.CANCELLATION);
         }
-        field.poison();
         PathCalculationResult fallback = fallback(primaryTimeout, failureTimeout, startNanos, "no_hot_path");
         if (fallback != null) {
           return fallback;
@@ -164,10 +181,11 @@ public final class PedestrianLocalHotPlanner {
     }
 
     private PathCalculationResult fallback(long primaryTimeout, long failureTimeout, long startNanos, String reason) {
-      if (!Baritone.settings().pedestrianHotLocalFallbackEnabled.value || cancelRequested) {
+      if (!BaritoneAPI.getSettings().pedestrianHotLocalFallbackEnabled.value || cancelRequested) {
         return null;
       }
       AStarPathFinder fallback = new AStarPathFinder(realStart, startX, startY, startZ, localGoal, fallbackFavoring, context, PathingIncumbentPolicy.pedestrian());
+      fallback.setPublicationSink(publicationSink);
       PathCalculationResult result = fallback.calculate(primaryTimeout, failureTimeout);
       bestPath = result.getPath().orElse(null);
       telemetry = telemetry.withFallback(reason + ":" + result.getType().name(), System.nanoTime() - startNanos);
@@ -217,6 +235,7 @@ public final class PedestrianLocalHotPlanner {
     private final int primitiveCount;
     private final int maxNodes;
     private final int maxEdges;
+    private final ReentrantLock lock = new ReentrantLock();
     private final Long2IntOpenHashMap nodeIds = new Long2IntOpenHashMap();
     private long[] nodeKeys = new long[1024];
     private double[] g = new double[1024];
@@ -233,16 +252,18 @@ public final class PedestrianLocalHotPlanner {
     private int[] firstOutgoingEdge = new int[1024];
     private short[] outgoingEdgeCount = new short[1024];
     private int[] firstIncomingEdge = new int[1024];
+    private int[] extractionGeneration = new int[1024];
     private final EdgeStore edges;
     private int nodeCount;
     private int edgeCount;
     private int queryGenerationCounter;
+    private int extractionGenerationCounter;
     private final DStarHeap open = new DStarHeap(this);
     private final DiscoveryHeap discoveryQueue = new DiscoveryHeap();
     private final EdgeEvalScratch scratch = new EdgeEvalScratch();
     private final NodeTerrainFacts terrainFacts = new NodeTerrainFacts();
     private int terminalCount;
-    private boolean poisoned;
+    private volatile boolean poisoned;
 
     private PedestrianLocalValueField(StateKey key, long factEpoch, int primitiveCount, int maxNodes, int maxEdges) {
       this.key = key;
@@ -260,12 +281,31 @@ public final class PedestrianLocalHotPlanner {
       return poisoned;
     }
 
+    boolean tryLock() {
+      return lock.tryLock();
+    }
+
+    void lock() {
+      lock.lock();
+    }
+
+    void unlock() {
+      lock.unlock();
+    }
+
+    PedestrianLocalValueField isolatedScratch() {
+      return new PedestrianLocalValueField(key, factEpoch, primitiveCount, maxNodes, maxEdges);
+    }
+
     void poison() {
+      if (poisoned) {
+        return;
+      }
       poisoned = true;
       nodeIds.clear();
       nodeKeys = new long[0];
       g = rhs = terminal = bestEdgeCost = queryCost = new double[0];
-      bestSucc = bestEdge = bestPayload = heapIndex = queryGeneration = firstOutgoingEdge = firstIncomingEdge = new int[0];
+      bestSucc = bestEdge = bestPayload = heapIndex = queryGeneration = firstOutgoingEdge = firstIncomingEdge = extractionGeneration = new int[0];
       bestPrimitive = outgoingEdgeCount = new short[0];
       edgeCount = 0;
       nodeCount = 0;
@@ -276,14 +316,18 @@ public final class PedestrianLocalHotPlanner {
     }
 
     HotLocalPath query(CalculationContext context, BetterBlockPos realStart, int startX, int startY, int startZ, Goal localGoal, Goal terminalGoal, long deadlineMillis, CancelFlag cancel) {
+      if (poisoned) {
+        return new HotLocalPath(Optional.empty(), Double.POSITIVE_INFINITY, HotLocalTelemetry.EMPTY);
+      }
       int start = ensureNode(BlockKey.pack(startX, startY, startZ));
+      resetValueFunction();
       DiscoveryStats discovery = discover(context, start, localGoal, terminalGoal, deadlineMillis, cancel);
       RepairStats repair = repair(start, deadlineMillis, cancel);
       if (cancel.cancelled() || !same(g[start], rhs[start]) || !Double.isFinite(g[start])) {
         return new HotLocalPath(Optional.empty(), Double.POSITIVE_INFINITY,
           new HotLocalTelemetry(nodeCount, edgeCount, discovery.expanded, terminalCount(), repair.pops, same(g[start], rhs[start]), "none", "", 0));
       }
-      Extracted extracted = extract(start, Baritone.settings().pedestrianHotLocalExtractionMaxMovements.value);
+      Extracted extracted = extract(start, BaritoneAPI.getSettings().pedestrianHotLocalExtractionMaxMovements.value);
       if (extracted == null) {
         return new HotLocalPath(Optional.empty(), Double.POSITIVE_INFINITY, new HotLocalTelemetry(nodeCount, edgeCount, discovery.expanded, terminalCount(), repair.pops, true, "none", "", 0));
       }
@@ -293,8 +337,8 @@ public final class PedestrianLocalHotPlanner {
 
     private DiscoveryStats discover(CalculationContext context, int start, Goal localGoal, Goal terminalGoal, long deadlineMillis, CancelFlag cancel) {
       int generation = ++queryGenerationCounter;
-      int terminalTarget = Math.max(1, Baritone.settings().pedestrianHotLocalTerminalTarget.value);
-      int postTerminalExpansionCap = Math.max(0, Baritone.settings().pedestrianHotLocalPostTerminalExpansions.value);
+      int terminalTarget = Math.max(1, BaritoneAPI.getSettings().pedestrianHotLocalTerminalTarget.value);
+      int postTerminalExpansionCap = Math.max(0, BaritoneAPI.getSettings().pedestrianHotLocalPostTerminalExpansions.value);
       DiscoveryHeap queue = discoveryQueue;
       queue.clear();
       setQueryCost(start, generation, 0D);
@@ -323,8 +367,9 @@ public final class PedestrianLocalHotPlanner {
           int edgeId = evaluateOrGet(context, node, primitive);
           byte status = edges.status(edgeId);
           if (status == BOUNDARY) {
-            if (localGoal instanceof LocalExitObjective exit && exit.isExactLocalExit(x, y, z)) {
-              activateTerminal(node, exit.localExitValue(x, y, z));
+            double value = frontierBoundaryValue(context, localGoal, x, y, z, primitive);
+            if (Double.isFinite(value)) {
+              activateTerminal(node, value);
               break;
             }
             continue;
@@ -354,11 +399,26 @@ public final class PedestrianLocalHotPlanner {
 
     private void activateDiscoveredTerminals(int node, int x, int y, int z, Goal localGoal, Goal terminalGoal) {
       if (terminalGoal.isInGoal(x, y, z)) {
-        activateTerminal(node, 0D);
+        activateTerminal(node, localGoal instanceof FrontierValueObjective frontier ? frontier.terminalExitValue(x, y, z) : 0D);
       }
-      if (localGoal instanceof LocalExitObjective exit && exit.isExactLocalExit(x, y, z)) {
+      if (!(localGoal instanceof FrontierValueObjective) && localGoal instanceof LocalExitObjective exit && exit.isExactLocalExit(x, y, z)) {
         activateTerminal(node, exit.localExitValue(x, y, z));
       }
+    }
+
+    private double frontierBoundaryValue(CalculationContext context, Goal localGoal, int x, int y, int z, short primitiveIndex) {
+      MovementPrimitive primitive = context.movementCatalog.primitive(primitiveIndex);
+      BlockOffset probe = primitive.destinationSpec().precheckOffset();
+      int boundaryX = x + probe.dx();
+      int boundaryY = y + probe.dy();
+      int boundaryZ = z + probe.dz();
+      if (localGoal instanceof FrontierValueObjective frontier) {
+        return frontier.frontierExitValue(x, y, z, boundaryX, boundaryY, boundaryZ);
+      }
+      if (localGoal instanceof LocalExitObjective exit && exit.isExactLocalExit(x, y, z)) {
+        return exit.localExitValue(x, y, z);
+      }
+      return Double.POSITIVE_INFINITY;
     }
 
     private boolean activateTerminal(int node, double cost) {
@@ -372,6 +432,20 @@ public final class PedestrianLocalHotPlanner {
         return true;
       }
       return false;
+    }
+
+    private void resetValueFunction() {
+      java.util.Arrays.fill(g, 0, nodeCount, Double.POSITIVE_INFINITY);
+      java.util.Arrays.fill(rhs, 0, nodeCount, Double.POSITIVE_INFINITY);
+      java.util.Arrays.fill(terminal, 0, nodeCount, Double.POSITIVE_INFINITY);
+      java.util.Arrays.fill(bestSucc, 0, nodeCount, -1);
+      java.util.Arrays.fill(bestEdge, 0, nodeCount, -1);
+      java.util.Arrays.fill(bestPrimitive, 0, nodeCount, (short) -1);
+      java.util.Arrays.fill(bestPayload, 0, nodeCount, 0);
+      java.util.Arrays.fill(bestEdgeCost, 0, nodeCount, Double.POSITIVE_INFINITY);
+      java.util.Arrays.fill(heapIndex, 0, nodeCount, -1);
+      terminalCount = 0;
+      open.clear();
     }
 
     private RepairStats repair(int start, long deadlineMillis, CancelFlag cancel) {
@@ -403,7 +477,18 @@ public final class PedestrianLocalHotPlanner {
     private Extracted extract(int start, int maxMovements) {
       ArrayList<Integer> edgeIds = new ArrayList<>();
       int u = start;
-      while (!selectedTerminal(u) && edgeIds.size() < maxMovements) {
+      int generation = nextExtractionGeneration();
+      while (true) {
+        if (extractionGeneration[u] == generation) {
+          return null;
+        }
+        extractionGeneration[u] = generation;
+        if (selectedTerminal(u)) {
+          return new Extracted(edgeIds, terminal[u], ExtractionKind.SELECTED_TERMINAL);
+        }
+        if (edgeIds.size() >= maxMovements) {
+          break;
+        }
         int v = bestSucc[u];
         if (v < 0) {
           return null;
@@ -416,13 +501,19 @@ public final class PedestrianLocalHotPlanner {
         edgeIds.add(edgeId);
         u = v;
       }
-      if (selectedTerminal(u)) {
-        return new Extracted(edgeIds, terminal[u], ExtractionKind.SELECTED_TERMINAL);
-      }
       if (!same(g[u], rhs[u]) || !Double.isFinite(g[u])) {
         return null;
       }
       return new Extracted(edgeIds, g[u], ExtractionKind.LOCAL_VALUE_CONTINUATION);
+    }
+
+    private int nextExtractionGeneration() {
+      int generation = ++extractionGenerationCounter;
+      if (generation == 0) {
+        java.util.Arrays.fill(extractionGeneration, 0, nodeCount, 0);
+        generation = extractionGenerationCounter = 1;
+      }
+      return generation;
     }
 
     private Optional<IPath> materialize(CalculationContext context, BetterBlockPos realStart, int start, Extracted extracted, Goal localGoal) {
@@ -626,6 +717,7 @@ public final class PedestrianLocalHotPlanner {
       queryGeneration = java.util.Arrays.copyOf(queryGeneration, next);
       firstOutgoingEdge = java.util.Arrays.copyOf(firstOutgoingEdge, next);
       firstIncomingEdge = java.util.Arrays.copyOf(firstIncomingEdge, next);
+      extractionGeneration = java.util.Arrays.copyOf(extractionGeneration, next);
       outgoingEdgeCount = java.util.Arrays.copyOf(outgoingEdgeCount, next);
       fillNodeDefaults(old, next);
     }
@@ -920,7 +1012,6 @@ public final class PedestrianLocalHotPlanner {
 
     void clear() {
       size = 0;
-      heap = new int[1024];
     }
 
     void upsert(int node) {

@@ -37,7 +37,6 @@
   },
   "settings": {
     "chunkCaching": false,
-    "macroPlanning": true,
     "macroBiome": true,
     "macroBiomePriorsFile": "scenarios/playtest/macro_dummy_priors.json",
     "macroBiomeFactsFile": "scenarios/playtest/macro_smoke_mixed_facts.json",

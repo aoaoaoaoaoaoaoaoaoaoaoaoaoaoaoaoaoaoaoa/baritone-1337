@@ -33,23 +33,6 @@
   "saturationBoost": true,
   "seed": "baritone-nether-thisway-500-0",
   "selectedSlot": 0,
-  "settings": {
-    "allowBreak": true,
-    "allowPlace": true,
-    "allowSprint": true,
-    "chunkCaching": false,
-    "elytraEnabled": false,
-    "failureTimeoutMS": 60000,
-    "macroBiome": true,
-    "macroBiomeFactsFile": "",
-    "macroBiomePriorsFile": "",
-    "macroNether": true,
-    "macroPlanning": true,
-    "planAheadFailureTimeoutMS": 60000,
-    "planAheadPrimaryTimeoutMS": 60000,
-    "primaryTimeoutMS": 60000,
-    "sprintInWater": true
-  },
   "setupCommands": [
     "difficulty peaceful"
   ],

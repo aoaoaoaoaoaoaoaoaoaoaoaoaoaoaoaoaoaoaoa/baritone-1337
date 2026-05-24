@@ -50,7 +50,7 @@ public class MountTuningTest {
 
   @Test
   public void explicitProfileParseFailuresAreFatal() throws Exception {
-    Path profile = Files.createTempFile("mount-tuning-bad-", ".toml");
+    Path profile = Files.createTempFile("golden-tuning-bad-", ".toml");
     Files.writeString(profile, """
       [planner]
       water-wade-cost-multiplier = "submarine"
@@ -58,12 +58,12 @@ public class MountTuningTest {
 
     IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> MountTuning.load(profile));
 
-    assertTrue(error.getMessage().contains("failed to load mounted tuning profile"));
+    assertTrue(error.getMessage().contains("failed to load mounted tuning projection"));
   }
 
   @Test
   public void duplicateNormalizedKeysAreFatal() throws Exception {
-    Path profile = Files.createTempFile("mount-tuning-duplicate-", ".toml");
+    Path profile = Files.createTempFile("golden-tuning-duplicate-", ".toml");
     Files.writeString(profile, """
       [controller]
       stall-grace-ticks = 20
@@ -72,27 +72,27 @@ public class MountTuningTest {
 
     IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> MountTuning.load(profile));
 
-    assertTrue(error.getMessage().contains("duplicate mounted tuning key"));
+    assertTrue(error.getMessage().contains("duplicate Golden tuning key"));
   }
 
   @Test
   public void currentUsesExplicitFabricLaunchProperty() throws Exception {
-    Path profile = Files.createTempFile("mount-tuning-current-", ".toml");
+    Path profile = Files.createTempFile("golden-tuning-current-", ".toml");
     Files.writeString(profile, """
       [controller]
       stall-grace-ticks = 19
       """);
-    String previous = System.getProperty("baritone.mountTuning");
+    String previous = System.getProperty("baritone.goldenTuning");
     try {
-      System.setProperty("baritone.mountTuning", profile.toString());
+      System.setProperty("baritone.goldenTuning", profile.toString());
       MountTuning.resetForTests();
 
       assertEquals(19, MountTuning.current().controller().stallGraceTicks());
     } finally {
       if (previous == null) {
-        System.clearProperty("baritone.mountTuning");
+        System.clearProperty("baritone.goldenTuning");
       } else {
-        System.setProperty("baritone.mountTuning", previous);
+        System.setProperty("baritone.goldenTuning", previous);
       }
       MountTuning.resetForTests();
     }
@@ -100,7 +100,7 @@ public class MountTuningTest {
 
   @Test
   public void installRejectsDigestMismatchAndRecordsMetadata() throws Exception {
-    Path profile = Files.createTempFile("mount-tuning-digest-", ".toml");
+    Path profile = Files.createTempFile("golden-tuning-digest-", ".toml");
     String text = """
       [motion]
       low-max-forward = 0.25

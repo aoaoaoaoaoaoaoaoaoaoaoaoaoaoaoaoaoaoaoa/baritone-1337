@@ -11,11 +11,15 @@ final class PathNodeArena {
   private int mask;
   private int maxFill;
   private int size;
+  private final int maxSize;
+  private final int maxCapacity;
 
-  PathNodeArena(Goal goal, int expectedSize, float loadFactor) {
+  PathNodeArena(Goal goal, int expectedSize, float loadFactor, int maxSize) {
     this.goal = goal;
     this.loadFactor = loadFactor;
-    int capacity = HashCommon.arraySize(Math.max(16, expectedSize), loadFactor);
+    this.maxSize = Math.max(16, maxSize);
+    this.maxCapacity = HashCommon.arraySize(this.maxSize, loadFactor);
+    int capacity = Math.min(HashCommon.arraySize(Math.max(16, expectedSize), loadFactor), maxCapacity);
     this.keys = new long[capacity];
     this.values = new PathNode[capacity];
     this.mask = capacity - 1;
@@ -31,6 +35,9 @@ final class PathNodeArena {
   }
 
   PathNode createAbsent(int x, int y, int z, long blockKey) {
+    if (full()) {
+      throw new IllegalStateException("path node arena cap exceeded: " + maxSize);
+    }
     PathNode node = new PathNode(x, y, z, goal);
     putKnownAbsent(blockKey, node);
     return node;
@@ -42,6 +49,10 @@ final class PathNodeArena {
 
   int size() {
     return size;
+  }
+
+  boolean full() {
+    return size >= maxSize;
   }
 
   private PathNode get(long key) {
@@ -57,8 +68,11 @@ final class PathNodeArena {
   }
 
   private void putKnownAbsent(long key, PathNode value) {
+    if (full()) {
+      throw new IllegalStateException("path node arena cap exceeded: " + maxSize);
+    }
     if (size + 1 > maxFill) {
-      rehash(keys.length << 1);
+      rehash(Math.min(keys.length << 1, maxCapacity));
     }
     int pos = (int) HashCommon.mix(key) & mask;
     while (values[pos] != null) {

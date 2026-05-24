@@ -20,6 +20,7 @@
     "radius": 5
   },
   "setupCommands": [
+    "execute in minecraft:overworld run fill 1171 118 -1112 1176 123 -1108 minecraft:air",
     "execute in minecraft:overworld positioned 1173.5 118.0 -1109.5 run kill @e[type=minecraft:horse,tag=baritone_playtest,distance=..32]",
     "execute in minecraft:overworld run summon minecraft:horse 1173.5 118.0 -1109.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}"
   ],
@@ -41,7 +42,6 @@
     "chunkCaching": false,
     "allowBreak": false,
     "allowPlace": false,
-    "macroPlanning": false,
     "primaryTimeoutMS": 12000,
     "failureTimeoutMS": 12000
   },

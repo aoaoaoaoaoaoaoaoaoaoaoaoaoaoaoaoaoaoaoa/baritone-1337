@@ -29,6 +29,10 @@ GRADLE_USER_HOME=/home/main/.cache/gradle ./gradlew :fabric:build
 
 Fabric artifacts land in `dist/`; the standalone Fabric jar is the normal playtest artifact.
 
+## Tuning
+
+The Golden Default doctrine lives in [TUNING.md](TUNING.md). Every accepted tuning win is promoted into the one canonical Golden Default file before it becomes a baseline; no harness, scenario, or Java literal may become a second source of tuning truth.
+
 ## Local Instances
 
 `vims` is the local MultiMC instance used for ordinary manual Minecraft testing, not an SSH host. Its mod directory is:
@@ -58,7 +62,7 @@ The authoritative Java formatter profile is `eclipse-compact.xml`; do not hand-f
 
 ## Notes
 
-Long-lived public prose belongs only in `README.md`, `LICENSE`, this file, and `TESTING.md`. Speculative design and planning notes belong in ignored `notes/`.
+Long-lived public prose belongs only in `README.md`, `LICENSE`, this file, `TESTING.md`, and `TUNING.md`. Speculative design and planning notes belong in ignored `notes/`.
 
 ## Testing Polygons
 

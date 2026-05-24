@@ -1,13 +1,8 @@
 package baritone.pathing.mounted;
 
+import baritone.api.utils.GoldenTuning;
 import baritone.pathing.direct.DirectPullSchedule;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -16,9 +11,6 @@ import org.slf4j.LoggerFactory;
 
 public record MountTuning(Planner planner, Motion motion, Controller controller) {
   private static final Logger LOGGER = LoggerFactory.getLogger("Baritone");
-  private static final String PROFILE_PROPERTY = "baritone.mountTuning";
-  private static final String PROFILE_ENV = "BARITONE_MOUNT_TUNING";
-  private static final Path DEFAULT_PROFILE = Path.of("config", "baritone", "mount-tuning.toml");
   private static volatile MountTuning current;
   private static volatile Metadata metadata = Metadata.defaults();
 
@@ -49,6 +41,7 @@ public record MountTuning(Planner planner, Motion motion, Controller controller)
   static void resetForTests() {
     current = null;
     metadata = Metadata.defaults();
+    GoldenTuning.resetForTests();
   }
 
   public static MountTuning defaults() {
@@ -56,33 +49,21 @@ public record MountTuning(Planner planner, Motion motion, Controller controller)
   }
 
   private static MountTuning loadConfigured() {
-    String explicit = firstNonBlank(System.getProperty(PROFILE_PROPERTY), System.getenv(PROFILE_ENV));
-    if (explicit != null) {
-      Path path = Path.of(explicit);
-      LoadedProfile loaded = loadProfile(path, "");
-      MountTuning tuning = loaded.tuning();
-      metadata = loaded.metadata();
-      LOGGER.info("Loaded mounted tuning profile {}", path.toAbsolutePath());
-      return tuning;
+    LoadedProfile loaded = loadProfile(GoldenTuning.current());
+    metadata = loaded.metadata();
+    if (!metadata.builtin()) {
+      LOGGER.info("Loaded mounted tuning projection from Golden profile {}", metadata.profile());
     }
-    if (Files.isRegularFile(DEFAULT_PROFILE)) {
-      LoadedProfile loaded = loadProfile(DEFAULT_PROFILE, "");
-      MountTuning tuning = loaded.tuning();
-      metadata = loaded.metadata();
-      LOGGER.info("Loaded mounted tuning profile {}", DEFAULT_PROFILE.toAbsolutePath());
-      return tuning;
-    }
-    metadata = Metadata.defaults();
-    return defaults();
+    return loaded.tuning();
   }
 
   public static MountTuning load(Path path) {
-    return loadProfile(path, "").tuning();
+    return loadProfile(GoldenTuning.load(path)).tuning();
   }
 
   public static MountTuning install(Path path, String expectedDigest) {
     synchronized (MountTuning.class) {
-      LoadedProfile loaded = loadProfile(path, expectedDigest);
+      LoadedProfile loaded = loadProfile(GoldenTuning.install(path, expectedDigest));
       current = loaded.tuning();
       metadata = loaded.metadata();
       LOGGER.info("Installed mounted tuning profile {} digest {}", path.toAbsolutePath(), loaded.metadata().digest());
@@ -92,6 +73,7 @@ public record MountTuning(Planner planner, Motion motion, Controller controller)
 
   public static MountTuning reloadConfigured() {
     synchronized (MountTuning.class) {
+      GoldenTuning.reloadConfigured();
       current = loadConfigured();
       return current;
     }
@@ -102,16 +84,12 @@ public record MountTuning(Planner planner, Motion motion, Controller controller)
     return metadata;
   }
 
-  private static LoadedProfile loadProfile(Path path, String expectedDigest) {
+  private static LoadedProfile loadProfile(GoldenTuning.Loaded loaded) {
     try {
-      byte[] bytes = Files.readAllBytes(path);
-      String digest = digest(bytes);
-      if (expectedDigest != null && !expectedDigest.isBlank() && !expectedDigest.equals(digest)) {
-        throw new IllegalArgumentException("digest mismatch: expected " + expectedDigest + ", got " + digest);
-      }
-      return new LoadedProfile(fromFlat(parseTomlSubset(bytes)), new Metadata(path.toAbsolutePath().toString(), digest, false));
-    } catch (IOException | RuntimeException error) {
-      throw new IllegalArgumentException("failed to load mounted tuning profile " + path.toAbsolutePath() + ": " + error.getMessage(), error);
+      return new LoadedProfile(fromFlat(loaded.mountedValues()), new Metadata(loaded.profile(), loaded.digest(), loaded.builtin()));
+    } catch (RuntimeException error) {
+      String profile = loaded.profile().isBlank() ? "<builtin>" : loaded.profile();
+      throw new IllegalArgumentException("failed to load mounted tuning projection from Golden profile " + profile + ": " + error.getMessage(), error);
     }
   }
 
@@ -128,61 +106,6 @@ public record MountTuning(Planner planner, Motion motion, Controller controller)
     return tuning;
   }
 
-  private static String firstNonBlank(String a, String b) {
-    if (a != null && !a.isBlank()) {
-      return a.trim();
-    }
-    if (b != null && !b.isBlank()) {
-      return b.trim();
-    }
-    return null;
-  }
-
-  private static Map<String, String> parseTomlSubset(byte[] bytes) {
-    LinkedHashMap<String, String> out = new LinkedHashMap<>();
-    String section = "";
-    int lineNumber = 0;
-    for (String raw : new String(bytes, StandardCharsets.UTF_8).lines().toList()) {
-      lineNumber++;
-      String line = stripComment(raw).trim();
-      if (line.isEmpty()) {
-        continue;
-      }
-      if (line.startsWith("[") && line.endsWith("]")) {
-        section = line.substring(1, line.length() - 1).trim();
-        if (section.isEmpty()) {
-          throw new IllegalArgumentException("empty TOML section at line " + lineNumber);
-        }
-        continue;
-      }
-      int equals = line.indexOf('=');
-      if (equals <= 0) {
-        throw new IllegalArgumentException("expected key = value at line " + lineNumber + ": " + raw);
-      }
-      String key = line.substring(0, equals).trim();
-      String value = line.substring(equals + 1).trim();
-      if (key.isEmpty() || value.isEmpty()) {
-        throw new IllegalArgumentException("empty key or value at line " + lineNumber + ": " + raw);
-      }
-      if (!section.isEmpty() && key.indexOf('.') < 0) {
-        key = section + "." + key;
-      }
-      key = normalizeKey(key);
-      if (out.put(key, unquote(value)) != null) {
-        throw new IllegalArgumentException("duplicate mounted tuning key '" + key + "' at line " + lineNumber);
-      }
-    }
-    return out;
-  }
-
-  private static String digest(byte[] bytes) {
-    try {
-      return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-    } catch (NoSuchAlgorithmException e) {
-      throw new AssertionError(e);
-    }
-  }
-
   private record LoadedProfile(MountTuning tuning, Metadata metadata) {
   }
 
@@ -190,26 +113,6 @@ public record MountTuning(Planner planner, Motion motion, Controller controller)
     private static Metadata defaults() {
       return new Metadata("", "builtin:defaults", true);
     }
-  }
-
-  private static String stripComment(String raw) {
-    boolean quoted = false;
-    for (int i = 0; i < raw.length(); i++) {
-      char c = raw.charAt(i);
-      if (c == '"' && (i == 0 || raw.charAt(i - 1) != '\\')) {
-        quoted = !quoted;
-      } else if (c == '#' && !quoted) {
-        return raw.substring(0, i);
-      }
-    }
-    return raw;
-  }
-
-  private static String unquote(String raw) {
-    if (raw.length() >= 2 && raw.charAt(0) == '"' && raw.charAt(raw.length() - 1) == '"') {
-      return raw.substring(1, raw.length() - 1).replace("\\\"", "\"").replace("\\\\", "\\");
-    }
-    return raw;
   }
 
   private static String normalizeKey(String key) {

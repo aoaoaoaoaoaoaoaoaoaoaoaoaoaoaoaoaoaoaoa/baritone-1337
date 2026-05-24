@@ -8,6 +8,7 @@ import math
 import os
 import subprocess
 import time
+from itertools import product
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,36 @@ import optuna
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO / "scenarios/playtest/nether_thisway_500_locked.txt"
-WALK_ONE_BLOCK_COST = 20.0 / 4.317
+GOLDEN_TUNING = REPO / "config/baritone/golden-tuning.toml"
+TUNED_SETTINGS = (
+  "pedestrianHotLocalValueField",
+  "pedestrianHotLocalExtractionMaxMovements",
+  "pedestrianHotLocalTerminalTarget",
+  "pedestrianHotLocalPostTerminalExpansions",
+  "pedestrianPathingEarlyIncumbentExecution",
+  "pedestrianPathingIncumbentIntervalMS",
+  "pedestrianPathingMinIncumbentLength",
+  "pedestrianPathingIncumbentHeuristicMargin",
+  "farfieldPlanning",
+  "transitPlanning",
+  "farfieldHorizonBlocks",
+  "farfieldWaypointBlocks",
+  "farfieldLateralCells",
+  "farfieldMinCommittedPrefixTicks",
+  "farfieldRefreshPhysicalReplan",
+  "farfieldPhysicalPreemptMinImprovementTicks",
+  "farfieldPhysicalPreemptMinImprovementRatio",
+  "farfieldOpenSurfaceTicksPerBlock",
+  "farfieldVoidTicksPerBlock",
+  "farfieldLavaTicksPerBlock",
+  "farfieldSolidTicksPerBlock",
+  "farfieldUnknownTicksPerBlock",
+  "farfieldVerticalUpTicksPerBlock",
+  "farfieldVerticalDownTicksPerBlock",
+  "farfieldNetherUnknownLavaProbability",
+  "farfieldNetherUnknownSolidProbability",
+  "pedestrianLavaProximityPenalty",
+)
 
 
 FIXED_SETTINGS: dict[str, Any] = {
@@ -25,7 +55,7 @@ FIXED_SETTINGS: dict[str, Any] = {
   "allowBreak": True,
   "allowPlace": True,
   "allowSprint": True,
-  "macroPlanning": True,
+  "transitPlanning": False,
   "macroBiome": True,
   "macroNether": True,
   "macroBiomePriorsFile": "",
@@ -75,6 +105,48 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
   path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def strip_comment(raw: str) -> str:
+  quoted = False
+  for i, char in enumerate(raw):
+    if char == '"' and (i == 0 or raw[i - 1] != "\\"):
+      quoted = not quoted
+    elif char == "#" and not quoted:
+      return raw[:i]
+  return raw
+
+
+def parse_toml_scalar(raw: str) -> Any:
+  text = raw.strip()
+  lowered = text.lower()
+  if lowered == "true":
+    return True
+  if lowered == "false":
+    return False
+  if text.startswith('"') and text.endswith('"'):
+    return text[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+  try:
+    return int(text)
+  except ValueError:
+    return float(text)
+
+
+def golden_settings() -> dict[str, Any]:
+  values: dict[str, Any] = {}
+  section = ""
+  for raw in GOLDEN_TUNING.read_text(encoding="utf-8").splitlines():
+    line = strip_comment(raw).strip()
+    if not line:
+      continue
+    if line.startswith("[") and line.endswith("]"):
+      section = line[1:-1].strip()
+      continue
+    if section != "settings":
+      continue
+    key, value = line.split("=", 1)
+    values[key.strip()] = parse_toml_scalar(value)
+  return values
+
+
 def manifest_scenarios(path: Path) -> list[Path]:
   scenarios: list[Path] = []
   for raw in path.read_text(encoding="utf-8").splitlines():
@@ -88,30 +160,41 @@ def manifest_scenarios(path: Path) -> list[Path]:
 
 
 def default_params() -> dict[str, Any]:
-  return {
-    "pedestrianPathingEarlyIncumbentExecution": True,
-    "pedestrianPathingIncumbentIntervalMS": 100,
-    "pedestrianPathingMinIncumbentLength": 12,
-    "pedestrianPathingIncumbentHeuristicMargin": 6.0,
-    "macroBiomeHorizonBlocks": 2048,
-    "macroBiomeWaypointBlocks": 192,
-    "macroBiomeUnknownPenalty": 1.0,
-    "macroBiomeUncertaintyWeight": 20.0,
-    "pedestrianLavaProximityPenalty": 2.0 * WALK_ONE_BLOCK_COST,
-  }
+  settings = golden_settings()
+  missing = [key for key in TUNED_SETTINGS if key not in settings]
+  if missing:
+    raise SystemExit(f"Golden tuning lacks pedestrian macro key(s): {missing}")
+  return {key: settings[key] for key in TUNED_SETTINGS}
 
 
 def trial_params(trial: optuna.Trial) -> dict[str, Any]:
   return {
+    "pedestrianHotLocalValueField": trial.suggest_categorical("pedestrianHotLocalValueField", [True, False]),
+    "pedestrianHotLocalExtractionMaxMovements": trial.suggest_categorical("pedestrianHotLocalExtractionMaxMovements", [128, 192, 256, 384, 512, 768]),
+    "pedestrianHotLocalTerminalTarget": trial.suggest_categorical("pedestrianHotLocalTerminalTarget", [1, 2, 4]),
+    "pedestrianHotLocalPostTerminalExpansions": trial.suggest_categorical("pedestrianHotLocalPostTerminalExpansions", [0, 4, 8, 16]),
     "pedestrianPathingEarlyIncumbentExecution": trial.suggest_categorical("pedestrianPathingEarlyIncumbentExecution", [True, False]),
     "pedestrianPathingIncumbentIntervalMS": trial.suggest_int("pedestrianPathingIncumbentIntervalMS", 25, 500, log=True),
     "pedestrianPathingMinIncumbentLength": trial.suggest_int("pedestrianPathingMinIncumbentLength", 4, 96),
     "pedestrianPathingIncumbentHeuristicMargin": trial.suggest_float("pedestrianPathingIncumbentHeuristicMargin", 0.0, 48.0),
-    "macroBiomeHorizonBlocks": trial.suggest_categorical("macroBiomeHorizonBlocks", [1024, 1536, 2048, 3072, 4096]),
-    "macroBiomeWaypointBlocks": trial.suggest_categorical("macroBiomeWaypointBlocks", [64, 96, 128, 160, 192, 256, 384, 512]),
-    "macroBiomeUnknownPenalty": trial.suggest_float("macroBiomeUnknownPenalty", 0.0, 8.0),
-    "macroBiomeUncertaintyWeight": trial.suggest_float("macroBiomeUncertaintyWeight", 0.0, 80.0),
-    "pedestrianLavaProximityPenalty": trial.suggest_float("pedestrianLavaProximityPenalty", 0.0, 16.0),
+    "farfieldPlanning": trial.suggest_categorical("farfieldPlanning", [True, False]),
+    "transitPlanning": False,
+    "farfieldHorizonBlocks": trial.suggest_categorical("farfieldHorizonBlocks", [1024, 1536, 2048, 3072, 4096]),
+    "farfieldWaypointBlocks": trial.suggest_categorical("farfieldWaypointBlocks", [64, 96, 128, 160, 192, 256, 384, 512]),
+    "farfieldLateralCells": trial.suggest_categorical("farfieldLateralCells", [4, 8, 12, 16, 24, 32]),
+    "farfieldMinCommittedPrefixTicks": trial.suggest_categorical("farfieldMinCommittedPrefixTicks", [0.0, 40.0, 80.0, 120.0, 200.0, 320.0, 480.0]),
+    "farfieldRefreshPhysicalReplan": trial.suggest_categorical("farfieldRefreshPhysicalReplan", [False, True]),
+    "farfieldPhysicalPreemptMinImprovementTicks": trial.suggest_float("farfieldPhysicalPreemptMinImprovementTicks", 0.0, 400.0),
+    "farfieldPhysicalPreemptMinImprovementRatio": trial.suggest_float("farfieldPhysicalPreemptMinImprovementRatio", 0.0, 0.30),
+    "farfieldOpenSurfaceTicksPerBlock": trial.suggest_float("farfieldOpenSurfaceTicksPerBlock", 5.0, 16.0),
+    "farfieldVoidTicksPerBlock": trial.suggest_float("farfieldVoidTicksPerBlock", 16.0, 96.0),
+    "farfieldLavaTicksPerBlock": trial.suggest_float("farfieldLavaTicksPerBlock", 16.0, 80.0),
+    "farfieldSolidTicksPerBlock": trial.suggest_float("farfieldSolidTicksPerBlock", 48.0, 192.0),
+    "farfieldUnknownTicksPerBlock": trial.suggest_float("farfieldUnknownTicksPerBlock", 8.0, 80.0),
+    "farfieldVerticalUpTicksPerBlock": trial.suggest_float("farfieldVerticalUpTicksPerBlock", 2.0, 32.0),
+    "farfieldVerticalDownTicksPerBlock": trial.suggest_float("farfieldVerticalDownTicksPerBlock", 1.0, 24.0),
+    "farfieldNetherUnknownLavaProbability": trial.suggest_float("farfieldNetherUnknownLavaProbability", 0.0, 0.60),
+    "farfieldNetherUnknownSolidProbability": trial.suggest_float("farfieldNetherUnknownSolidProbability", 0.0, 0.40),
   }
 
 
@@ -151,9 +234,18 @@ def elapsed_seconds(summary: dict[str, Any], measured_wall: float) -> float:
   return elapsed if elapsed > 0.0 else measured_wall
 
 
+def path_seconds(summary: dict[str, Any], measured_wall: float) -> float:
+  ticks = finite_float(summary.get("elapsedTicks"), 0.0)
+  return ticks / 20.0 if ticks > 0.0 else elapsed_seconds(summary, measured_wall)
+
+
 def mode_ticks(summary: dict[str, Any], mode: str) -> int:
   ticks = summary.get("actualModeTicks")
   return int(ticks.get(mode, 0) if isinstance(ticks, dict) else 0)
+
+
+def stalled_ticks(summary: dict[str, Any]) -> int:
+  return int(summary.get("postActuationStalledTicks") or summary.get("totalStalledTicks") or 0)
 
 
 def accepted(summary: dict[str, Any], status: int) -> bool:
@@ -175,6 +267,7 @@ def run_one(scenario: Path, playtest_root: Path, out_dir: Path) -> dict[str, Any
   env.setdefault("PLAYTEST_RESULT_TIMEOUT", "2400")
   env.setdefault("PLAYTEST_VIEW_DISTANCE", "6")
   env.setdefault("PLAYTEST_SIMULATION_DISTANCE", "4")
+  env.setdefault("PLAYTEST_SCREEN", "320x180x16")
   env.setdefault("PLAYTEST_MAX_TICK_TIME", "600000")
   started = time.monotonic()
   proc = subprocess.run([str(REPO / "scripts/playtest"), "once", str(scenario)], cwd=REPO, env=env, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -189,7 +282,7 @@ def run_one(scenario: Path, playtest_root: Path, out_dir: Path) -> dict[str, Any
     summary = read_json(path)
   ok = accepted(summary, proc.returncode)
   distance = 0.0 if ok else finite_float(summary.get("distanceToGoal"), 1.0e9)
-  seconds = elapsed_seconds(summary, measured_wall)
+  seconds = path_seconds(summary, measured_wall)
   return {
     "scenario": str(scenario),
     "status": proc.returncode,
@@ -197,8 +290,11 @@ def run_one(scenario: Path, playtest_root: Path, out_dir: Path) -> dict[str, Any
     "success": ok,
     "distance": distance,
     "seconds": seconds,
+    "wallSeconds": elapsed_seconds(summary, measured_wall),
     "terminalReason": summary.get("terminalReason"),
     "nextCalcFailures": int(summary.get("nextCalcFailures") or 0),
+    "stalledTicks": stalled_ticks(summary),
+    "stalledSeconds": stalled_ticks(summary) / 20.0,
   }
 
 
@@ -207,8 +303,9 @@ def score(results: list[dict[str, Any]]) -> tuple[float, list[Any]]:
   mean_distance = sum(float(result["distance"]) for result in results) / max(1, len(results))
   log_time = sum(math.log(max(1.0e-3, float(result["seconds"]))) for result in results) / max(1, len(results))
   gmean_time = math.exp(log_time)
-  vector = [failures, 0.0 if failures == 0 else mean_distance, gmean_time]
-  scalar = failures * 1.0e12 + vector[1] * 1.0e6 + gmean_time
+  mean_stalled_seconds = sum(float(result.get("stalledSeconds", 0.0)) for result in results) / max(1, len(results))
+  vector = [failures, 0.0 if failures == 0 else mean_distance, gmean_time, mean_stalled_seconds]
+  scalar = failures * 1.0e12 + vector[1] * 1.0e6 + gmean_time + mean_stalled_seconds
   return scalar, vector
 
 
@@ -246,6 +343,60 @@ def selected_trial(study: optuna.Study) -> optuna.trial.FrozenTrial:
   return min(completed, key=lambda trial: tuple(trial.user_attrs.get("score", [float("inf"), float("inf"), float("inf")])))
 
 
+def typed_scan_value(raw: str, exemplar: Any) -> Any:
+  if isinstance(exemplar, bool):
+    return bool_arg(raw)
+  if isinstance(exemplar, int) and not isinstance(exemplar, bool):
+    return int(raw)
+  if isinstance(exemplar, float):
+    return float(raw)
+  return raw
+
+
+def scan_rows(scan: list[str]) -> list[dict[str, Any]]:
+  base = default_params()
+  axes: list[tuple[str, list[Any]]] = []
+  for raw in scan:
+    if "=" not in raw:
+      raise SystemExit(f"--scan expects key=v1,v2,..., got {raw!r}")
+    key, values = raw.split("=", 1)
+    key = key.strip()
+    if key not in base:
+      raise SystemExit(f"--scan key {key!r} is not a tuned parameter")
+    parsed = [typed_scan_value(value.strip(), base[key]) for value in values.split(",") if value.strip()]
+    if not parsed:
+      raise SystemExit(f"--scan key {key!r} has no values")
+    axes.append((key, parsed))
+  rows: list[dict[str, Any]] = []
+  seen: set[str] = set()
+  for combo in product(*(values for _, values in axes)):
+    params = dict(base)
+    for (key, _), value in zip(axes, combo):
+      params[key] = value
+    fingerprint = json.dumps(params, sort_keys=True)
+    if fingerprint not in seen:
+      rows.append(params)
+      seen.add(fingerprint)
+  return rows
+
+
+def run_scan(args: argparse.Namespace, root: Path, scenarios: list[Path]) -> int:
+  rows = scan_rows(args.scan)
+  records: list[dict[str, Any]] = []
+  for number, params in enumerate(rows):
+    out_dir = root / f"scan-{number:04d}"
+    record = run_trial(params, scenarios, args.playtest_root.resolve(), out_dir, args.trace_trials, args.reset_world, args.world_template)
+    changed = {key: params[key] for key in params if params[key] != default_params()[key]}
+    record["changed"] = changed
+    records.append(record)
+    print(f"scan {number}/{len(rows) - 1}: score={record['score']} changed={json.dumps(changed, sort_keys=True)}", flush=True)
+  chosen = min(records, key=lambda record: tuple(record["score"]))
+  write_json(root / "scan-summary.json", {"scan": args.scan, "selected": chosen, "records": records})
+  print(f"selected scan score={chosen['score']} changed={json.dumps(chosen['changed'], sort_keys=True)}")
+  print(root / "scan-summary.json")
+  return 0
+
+
 def parser() -> argparse.ArgumentParser:
   p = argparse.ArgumentParser(description="Optuna grind for pedestrian/macro nether routing tunables.")
   p.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -260,6 +411,7 @@ def parser() -> argparse.ArgumentParser:
   p.add_argument("--reset-world", type=bool_arg, default=True)
   p.add_argument("--world-template", type=Path, help="Pregenerated pristine world directory copied into the playtest server directory before each run.")
   p.add_argument("--dry-run-settings", type=Path)
+  p.add_argument("--scan", action="append", default=[], help="Deterministic grid scan axis, key=v1,v2,...")
   return p
 
 
@@ -285,8 +437,11 @@ def main() -> int:
       "defaultParams": default_params(),
       "resetWorld": args.reset_world,
       "worldTemplate": str(args.world_template.resolve()) if args.world_template else "",
+      "scan": args.scan,
     },
   )
+  if args.scan:
+    return run_scan(args, root, scenarios)
   storage = f"sqlite:///{root / 'study.db'}"
   sampler = optuna.samplers.TPESampler(seed=args.sampler_seed, multivariate=True, group=True)
   study = optuna.create_study(study_name=study_name, storage=storage, load_if_exists=True, direction="minimize", sampler=sampler)

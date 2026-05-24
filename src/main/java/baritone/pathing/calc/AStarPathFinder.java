@@ -1,6 +1,7 @@
 package baritone.pathing.calc;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
@@ -17,6 +18,7 @@ import baritone.pathing.movement.MovementPrimitive;
 import baritone.pathing.movement.NodeTerrainFacts;
 import baritone.utils.pathing.BetterWorldBorder;
 import baritone.utils.pathing.Favoring;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,15 +29,27 @@ import java.util.Optional;
 public final class AStarPathFinder extends AbstractNodeCostSearch {
   private final Favoring favoring;
   private final CalculationContext calcContext;
+  private final double oracleUpperBoundTicks;
+  private String lastStopReason = "not_started";
+  private int lastMovementsConsidered;
+  private int lastEmptyChunkFetches;
+  private int lastNodeMapSize;
 
   public AStarPathFinder(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, Favoring favoring, CalculationContext context, PathingIncumbentPolicy incumbentPolicy) {
+    this(realStart, startX, startY, startZ, goal, favoring, context, incumbentPolicy, Double.POSITIVE_INFINITY);
+  }
+
+  public AStarPathFinder(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, Favoring favoring, CalculationContext context, PathingIncumbentPolicy incumbentPolicy,
+    double oracleUpperBoundTicks) {
     super(realStart, startX, startY, startZ, goal, context, incumbentPolicy);
     this.favoring = favoring;
     this.calcContext = context;
+    this.oracleUpperBoundTicks = oracleUpperBoundTicks;
   }
 
   @Override
   protected Optional<IPath> calculate0(long primaryTimeout, long failureTimeout) {
+    recordStop("running", 0, 0);
     PathingProfiler.Active activeProfile = profile;
     long searchLoopStarted = activeProfile == null ? 0 : System.nanoTime();
     long heapNanos = 0;
@@ -75,16 +89,21 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     int numEmptyChunk = 0;
     boolean isFavoring = !favoring.isEmpty();
     int timeCheckInterval = 1 << 6;
-    int pathingMaxChunkBorderFetch = Baritone.settings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
+    int pathingMaxChunkBorderFetch = BaritoneAPI.getSettings().pathingMaxChunkBorderFetch.value; // grab all settings beforehand so that changing settings during pathing doesn't cause a crash or unpredictable behavior
     double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
-    LocalExitObjective localExit = goal instanceof LocalExitObjective exit ? exit : null;
+    FrontierValueObjective frontier = goal instanceof FrontierValueObjective value ? value : null;
+    LocalExitObjective localExit = frontier == null && goal instanceof LocalExitObjective exit ? exit : null;
+    boolean scoredExitSearch = frontier != null || localExit != null;
     PathNode bestExit = null;
     double bestExitScore = Double.POSITIVE_INFINITY;
-    while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
-      if (localExit != null && bestExit != null && openSet.lowestCombinedCost() + minimumImprovement >= bestExitScore) {
+    boolean nodeCapReached = false;
+    boolean upperBoundExhausted = false;
+    search : while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested && !nodeMapFull()) {
+      if (scoredExitSearch && bestExit != null && openSet.lowestCombinedCost() + minimumImprovement >= bestExitScore) {
         logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; proved best local exit");
+        recordStop("best_exit", numMovementsConsidered, numEmptyChunk);
         if (activeProfile != null) {
           activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "best_exit", System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
         }
@@ -96,7 +115,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           break;
         }
         if (now - nextIncumbentPublishTime >= 0) {
-          if (localExit != null && bestExit != null) {
+          if (scoredExitSearch && bestExit != null) {
             publishPathToNode(bestExit, numNodes);
           } else {
             publishBestSoFar(numNodes);
@@ -109,11 +128,16 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       if (activeProfile != null) {
         heapNanos += System.nanoTime() - heapStart;
       }
+      if (currentNode.combinedCost - oracleUpperBoundTicks > minimumImprovement) {
+        upperBoundExhausted = true;
+        break;
+      }
       mostRecentConsidered = currentNode;
       numNodes++;
       if (goal.isInGoal(currentNode.x, currentNode.y, currentNode.z)) {
-        if (localExit != null) {
-          double score = currentNode.cost + localExit.terminalExitValue(currentNode.x, currentNode.y, currentNode.z);
+        if (scoredExitSearch) {
+          double score =
+            currentNode.cost + (frontier == null ? localExit.terminalExitValue(currentNode.x, currentNode.y, currentNode.z) : frontier.terminalExitValue(currentNode.x, currentNode.y, currentNode.z));
           if (bestExitScore - score > minimumImprovement) {
             bestExit = currentNode;
             bestExitScore = score;
@@ -121,6 +145,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           continue;
         }
         logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
+        recordStop("goal", numMovementsConsidered, numEmptyChunk);
         if (activeProfile != null) {
           activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(), "goal", System.nanoTime() - searchLoopStarted, heapNanos, nodeMapNanos);
         }
@@ -135,7 +160,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         continue;
       }
       terrainFacts.load(calcContext, currentNode.x, currentNode.y, currentNode.z);
-      boolean touchesExactBoundary = false;
+      double bestBoundaryValue = Double.POSITIVE_INFINITY;
       for (int primitiveIndex = 0; primitiveIndex < allMoves.length; primitiveIndex++) {
         MovementPrimitive primitive = allMoves[primitiveIndex];
         DestinationSpec spec = primitive.destinationSpec();
@@ -145,8 +170,12 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         int newZ = currentNode.z + probe.dz();
         if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
           // only need to check if the destination is a live chunk if it's in a different chunk than the start of the movement
-          touchesExactBoundary = localExit != null;
-          if (localExit == null && !spec.dynamicXZ()) { // only increment the legacy segment cutoff if this is not a scored-boundary search
+          if (frontier != null) {
+            bestBoundaryValue = Math.min(bestBoundaryValue, frontier.frontierExitValue(currentNode.x, currentNode.y, currentNode.z, newX, newY, newZ));
+          } else if (localExit != null) {
+            bestBoundaryValue = Math.min(bestBoundaryValue, localExit.localExitValue(currentNode.x, currentNode.y, currentNode.z));
+          }
+          if (!scoredExitSearch && !spec.dynamicXZ()) { // only increment the legacy segment cutoff if this is not a scored-boundary search
             numEmptyChunk++;
           }
           continue;
@@ -231,6 +260,10 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         PathNode neighbor;
         if (hasStaticBlockKey && staticIncumbentKnown) {
           if (staticIncumbent == null) {
+            if (nodeMapFull()) {
+              nodeCapReached = true;
+              break search;
+            }
             nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
             neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
             if (activeProfile != null) {
@@ -241,19 +274,33 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           }
         } else {
           nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
-          neighbor = getNodeAtPosition(eval.x, eval.y, eval.z, blockKey);
+          neighbor = peekNodeAtPosition(blockKey);
+          if (neighbor == null) {
+            if (nodeMapFull()) {
+              nodeCapReached = true;
+              if (activeProfile != null) {
+                nodeMapNanos += System.nanoTime() - nodeMapStart;
+              }
+              break search;
+            }
+            neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
+          }
           if (activeProfile != null) {
             nodeMapNanos += System.nanoTime() - nodeMapStart;
           }
         }
         double tentativeCost = currentNode.cost + actionCost;
         if (neighbor.cost - tentativeCost > minimumImprovement) {
+          double combinedCost = tentativeCost + neighbor.estimatedCostToGoal;
+          if (combinedCost - oracleUpperBoundTicks > minimumImprovement) {
+            continue;
+          }
           neighbor.previous = currentNode;
           neighbor.previousPrimitiveIndex = (short) primitiveIndex;
           neighbor.previousEdgePayload = eval.payload;
           neighbor.previousEdgeCost = actionCost;
           neighbor.cost = tentativeCost;
-          neighbor.combinedCost = tentativeCost + neighbor.estimatedCostToGoal;
+          neighbor.combinedCost = combinedCost;
           if (neighbor.isOpen()) {
             heapStart = activeProfile == null ? 0 : System.nanoTime();
             openSet.update(neighbor);
@@ -279,8 +326,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           }
         }
       }
-      if (touchesExactBoundary) {
-        double score = currentNode.cost + localExit.localExitValue(currentNode.x, currentNode.y, currentNode.z);
+      if (Double.isFinite(bestBoundaryValue)) {
+        double score = currentNode.cost + bestBoundaryValue;
         if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
           bestExit = currentNode;
           bestExitScore = score;
@@ -289,14 +336,16 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     }
     if (activeProfile != null) {
       activeProfile.finishSearchLoop(numNodes, numMovementsConsidered, numEmptyChunk, nodeMapSize(),
-        cancelRequested ? "cancel" : openSet.isEmpty() ? "open_set_empty" : numEmptyChunk >= pathingMaxChunkBorderFetch ? "empty_chunk_limit" : "timeout", System.nanoTime() - searchLoopStarted,
-        heapNanos, nodeMapNanos);
+        terminalReason(cancelRequested, nodeCapReached, upperBoundExhausted, openSet.isEmpty(), numEmptyChunk, pathingMaxChunkBorderFetch), System.nanoTime() - searchLoopStarted, heapNanos,
+        nodeMapNanos);
     }
+    recordStop(terminalReason(cancelRequested, nodeCapReached, upperBoundExhausted, openSet.isEmpty(), numEmptyChunk, pathingMaxChunkBorderFetch), numMovementsConsidered, numEmptyChunk);
     if (cancelRequested) {
       return Optional.empty();
     }
-    if (localExit != null && bestExit != null) {
+    if (scoredExitSearch && bestExit != null) {
       logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered; using best local exit without proof");
+      recordStop("best_exit_unproven", numMovementsConsidered, numEmptyChunk);
       return Optional.of(new Path(realStart, startNode, bestExit, numNodes, goal, calcContext));
     }
     logDebug(numMovementsConsidered + " movements considered");
@@ -308,5 +357,33 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       logDebug("Took " + (System.currentTimeMillis() - startTime) + "ms, " + numMovementsConsidered + " movements considered");
     }
     return result;
+  }
+
+  public OracleSearchResult calculateForOracle(long timeout) {
+    cancelRequested = false;
+    Optional<IPath> path = calculate0(timeout, timeout);
+    return path.map(raw -> {
+      if (!(raw instanceof Path p)) {
+        throw new IllegalStateException("A* oracle expected raw Path, got " + raw.getClass().getName());
+      }
+      return new OracleSearchResult(p.positions(), p.totalCost(), p.getNumNodesConsidered(), goal.isInGoal(p.getDest()), lastStopReason, lastMovementsConsidered, lastEmptyChunkFetches,
+        lastNodeMapSize);
+    }).orElseGet(() -> new OracleSearchResult(List.of(), Double.POSITIVE_INFINITY, nodeMapSize(), false, lastStopReason, lastMovementsConsidered, lastEmptyChunkFetches, lastNodeMapSize));
+  }
+
+  private void recordStop(String reason, int movementsConsidered, int emptyChunkFetches) {
+    lastStopReason = reason;
+    lastMovementsConsidered = movementsConsidered;
+    lastEmptyChunkFetches = emptyChunkFetches;
+    lastNodeMapSize = nodeMapSize();
+  }
+
+  private String terminalReason(boolean cancelled, boolean nodeCapReached, boolean upperBoundExhausted, boolean openSetEmpty, int emptyChunkFetches, int emptyChunkLimit) {
+    return cancelled ? "cancel" : nodeCapReached || nodeMapFull() ? "node_cap"
+      : upperBoundExhausted ? "upper_bound_exhausted" : openSetEmpty ? "open_set_empty" : emptyChunkFetches >= emptyChunkLimit ? "empty_chunk_limit" : "timeout";
+  }
+
+  public record OracleSearchResult(List<BetterBlockPos> positions, double nominalCostTicks, int nodesExpanded, boolean reachedGoal, String stopReason, int movementsConsidered, int emptyChunkFetches,
+    int nodeMapSize) {
   }
 }

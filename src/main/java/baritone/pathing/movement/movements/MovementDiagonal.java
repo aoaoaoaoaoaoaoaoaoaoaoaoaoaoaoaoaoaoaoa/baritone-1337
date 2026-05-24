@@ -1,6 +1,9 @@
 package baritone.pathing.movement.movements;
 
-import baritone.Baritone;
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -56,13 +59,13 @@ public class MovementDiagonal extends Movement {
       return true;
     }
     // both corners are walkable
-    if (MovementHelper.canWalkOn(ctx, new BlockPos(src.x, src.y - 1, dest.z)) && MovementHelper.canWalkOn(ctx, new BlockPos(dest.x, src.y - 1, src.z))) {
+    if (MovementClientHelper.canWalkOn(ctx, new BlockPos(src.x, src.y - 1, dest.z)) && MovementClientHelper.canWalkOn(ctx, new BlockPos(dest.x, src.y - 1, src.z))) {
       return true;
     }
     // we are in a likely unwalkable corner, check for a supporting block
     if (ctx.playerFeet().equals(new BetterBlockPos(src.x, src.y, dest.z)) || ctx.playerFeet().equals(new BetterBlockPos(dest.x, src.y, src.z))) {
-      return (MovementHelper.canWalkOn(ctx, new BetterBlockPos(x + offset, y, z + offset)) || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x + offset, y, z - offset))
-        || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z + offset)) || MovementHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z - offset)));
+      return (MovementClientHelper.canWalkOn(ctx, new BetterBlockPos(x + offset, y, z + offset)) || MovementClientHelper.canWalkOn(ctx, new BetterBlockPos(x + offset, y, z - offset))
+        || MovementClientHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z + offset)) || MovementClientHelper.canWalkOn(ctx, new BetterBlockPos(x - offset, y, z - offset)));
     }
     return true;
   }
@@ -265,7 +268,7 @@ public class MovementDiagonal extends Movement {
 
     if (playerAtDest()) {
       return state.setStatus(MovementStatus.SUCCESS);
-    } else if (!playerInValidPosition() && !(MovementHelper.isLiquid(ctx, src) && getValidPositions().contains(ctx.playerFeet().above()))) {
+    } else if (!playerInValidPosition() && !(MovementClientHelper.isLiquid(ctx, src) && getValidPositions().contains(ctx.playerFeet().above()))) {
       return state.setStatus(MovementStatus.UNREACHABLE);
     }
     if (dest.y > src.y && ctx.player().position().y < src.y + 0.1 && ctx.player().horizontalCollision) {
@@ -275,17 +278,17 @@ public class MovementDiagonal extends Movement {
       state.setInput(Input.SPRINT, true);
     }
     state.setInput(Input.SNEAK,
-      Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
-    MovementHelper.moveTowards(ctx, state, dest);
+      BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value && MovementClientHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
+    MovementClientHelper.moveTowards(ctx, state, dest);
     return state;
   }
 
   private boolean sprint() {
-    if (MovementHelper.isLiquid(ctx, ctx.playerFeet()) && !Baritone.settings().sprintInWater.value) {
+    if (MovementClientHelper.isLiquid(ctx, ctx.playerFeet()) && !BaritoneAPI.getSettings().sprintInWater.value) {
       return false;
     }
     for (int i = 0; i < 4; i++) {
-      if (!MovementHelper.canMoveThrough(ctx, positionsToBreak[i])) {
+      if (!MovementClientHelper.canMoveThrough(ctx, positionsToBreak[i])) {
         return false;
       }
     }

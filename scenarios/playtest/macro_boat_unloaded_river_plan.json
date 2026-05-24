@@ -48,7 +48,6 @@
     "allowSprint": true,
     "sprintInWater": true,
     "jumpPenalty": 1000.0,
-    "macroPlanning": true,
     "macroBiome": true,
     "macroBiomePriorsFile": "scenarios/playtest/macro_river_boat_spoof_priors.json",
     "macroBiomeFactsFile": "scenarios/playtest/macro_river_boat_spoof_facts.json",

@@ -3,9 +3,11 @@ package baritone.process;
 import baritone.Baritone;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.goals.GoalBlock;
+import baritone.api.pathing.goals.GoalGetToBlock;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.Rotation;
 import baritone.api.utils.RotationUtils;
 import baritone.api.utils.input.Input;
 import baritone.pathing.macro.core.MacroActionInstance;
@@ -27,7 +29,6 @@ import baritone.utils.BaritoneProcessHelper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -54,33 +55,51 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
   @Override
   public boolean isActive() { return !(execution instanceof Execution.Idle) || eligibleAction().isPresent(); }
 
+  public Optional<MacroPlan> activeMacroPlan() {
+    return switch (execution) {
+      case Execution.Idle ignored -> Optional.empty();
+      case Execution.Traveling traveling -> Optional.of(traveling.plan());
+      case Execution.Entering entering -> Optional.of(entering.plan());
+      case Execution.Building building -> Optional.of(building.macroPlan());
+    };
+  }
+
   @Override
   public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+    if (!(execution instanceof Execution.Idle) && (ctx.world() == null || ctx.player() == null)) {
+      return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+    }
     return switch (execution) {
       case Execution.Idle ignored -> start();
+      case Execution.Traveling traveling -> travel(traveling);
       case Execution.Entering entering -> enter(entering);
       case Execution.Building building -> build(building);
     };
   }
 
   private PathingCommand start() {
-    Optional<MacroActionInstance> action = eligibleAction();
+    Optional<EligibleAction> action = eligibleAction();
     if (action.isEmpty()) {
       return null;
     }
-    MacroActionInstance instance = action.get();
+    return solveAndBegin(action.get());
+  }
+
+  private PathingCommand solveAndBegin(EligibleAction action) {
+    MacroActionInstance instance = action.action();
     PortalTaskIntent intent = (PortalTaskIntent) instance.taskIntent();
     CalculationContext calculation = new CalculationContext(baritone, true);
     MesoTaskRequest<PortalTaskIntent> request = new MesoTaskRequest<>(calculation, ctx.playerFeet(), MacroCapabilities.physical(calculation), MacroPolicy.configured(), intent);
     return switch (siter.solve(request, MesoTaskBudget.FAST)) {
-      case MesoTaskResult.Solved<PortalTaskPlan> solved -> begin(instance, solved.plan());
+      case MesoTaskResult.Solved<PortalTaskPlan> solved -> begin(action, solved.plan());
       case MesoTaskResult.NeedSurvey<PortalTaskPlan> survey -> new PathingCommand(survey.surveyGoal(), PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
       case MesoTaskResult.RefinedTooExpensive<PortalTaskPlan> ignored -> reject(instance, "portal task refined too expensive");
       case MesoTaskResult.Impossible<PortalTaskPlan> impossible -> reject(instance, "portal task impossible: " + impossible.failure().code() + " " + impossible.failure().detail());
     };
   }
 
-  private PathingCommand begin(MacroActionInstance action, PortalTaskPlan plan) {
+  private PathingCommand begin(EligibleAction eligible, PortalTaskPlan plan) {
+    MacroActionInstance action = eligible.action();
     Goal terminalGoal = baritone.getCustomGoalProcess().mostRecentGoal();
     if (terminalGoal == null) {
       return reject(action, "portal task has no terminal custom goal to restore");
@@ -88,16 +107,32 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     int sourceDimension = MacroNodeKey.dimensionId(action.fromNode());
     rejected = null;
     logDebug("Executing macro portal task " + action.kind() + " at " + plan.approachAnchor());
+    baritone.getPathingBehavior().pinMacroPlan(eligible.plan());
     execution = switch (plan) {
-      case PortalTaskPlan.EnterExisting enter -> new Execution.Entering(terminalGoal, sourceDimension, enter.portalBlock(), 0, false);
-      case PortalTaskPlan.BuildPortal build -> new Execution.Building(terminalGoal, sourceDimension, build, BuildPhase.START_BUILD, 0, 0);
+      case PortalTaskPlan.EnterExisting enter -> new Execution.Entering(terminalGoal, eligible.plan(), sourceDimension, enter.portalBlock(), eligible.remaining(), 0, false);
+      case PortalTaskPlan.BuildPortal build -> new Execution.Building(terminalGoal, eligible.plan(), sourceDimension, build, eligible.remaining(), BuildPhase.START_BUILD, 0, 0);
     };
     return onTick(false, true);
   }
 
+  private PathingCommand travel(Execution.Traveling traveling) {
+    if (MacroNodeKey.dimensionId(ctx.world().dimension()) != MacroNodeKey.dimensionId(traveling.action().fromNode())) {
+      return continueOrComplete(traveling.terminalGoal(), traveling.plan(), traveling.remaining());
+    }
+    if (near(traveling.action())) {
+      return solveAndBegin(new EligibleAction(traveling.plan(), traveling.action(), traveling.remaining()));
+    }
+    if (traveling.ticks() > PORTAL_WAIT_TIMEOUT_TICKS * 20) {
+      logDebug("Timed out walking to chained portal task; restoring terminal goal");
+      return complete(traveling.terminalGoal());
+    }
+    execution = traveling.tick();
+    return new PathingCommand(new GoalGetToBlock(traveling.action().renderPositions().getFirst()), PathingCommandType.SET_GOAL_AND_PATH);
+  }
+
   private PathingCommand enter(Execution.Entering entering) {
     if (dimensionChanged(entering.sourceDimension())) {
-      return complete(entering.terminalGoal());
+      return continueOrComplete(entering.terminalGoal(), entering.plan(), entering.remaining());
     }
     if (insidePortal() || entering.entered()) {
       baritone.getInputOverrideHandler().clearAllKeys();
@@ -128,7 +163,7 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     BetterBlockPos feet = ctx.playerFeet();
     int dx = feet.x - portalBlock.x;
     int dz = feet.z - portalBlock.z;
-    return Math.abs(feet.y - portalBlock.y) <= 3 && dx * dx + dz * dz <= 16;
+    return Math.abs(feet.y - portalBlock.y) <= 2 && dx * dx + dz * dz <= 1;
   }
 
   private void steerIntoPortal(BetterBlockPos portalBlock) {
@@ -142,11 +177,11 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
 
   private PathingCommand build(Execution.Building building) {
     if (dimensionChanged(building.sourceDimension())) {
-      return complete(building.terminalGoal());
+      return continueOrComplete(building.terminalGoal(), building.macroPlan(), building.remaining());
     }
     Optional<BetterBlockPos> lit = litInterior(building.plan().frame());
     if (lit.isPresent()) {
-      execution = new Execution.Entering(building.terminalGoal(), building.sourceDimension(), lit.get(), 0, false);
+      execution = new Execution.Entering(building.terminalGoal(), building.macroPlan(), building.sourceDimension(), lit.get(), building.remaining(), 0, false);
       return onTick(false, true);
     }
     if (frameComplete(building.plan().frame())) {
@@ -196,8 +231,8 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
       InteractionResult result = ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, hit.get());
       if (result.consumesAction()) {
         ctx.player().swing(InteractionHand.MAIN_HAND);
+        return Optional.of(new PathingCommand(null, PathingCommandType.REQUEST_PAUSE));
       }
-      return Optional.of(new PathingCommand(null, PathingCommandType.REQUEST_PAUSE));
     }
     return Optional.empty();
   }
@@ -239,8 +274,12 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
 
   private PathingCommand ignite(Execution.Building building) {
     PortalFrame.FrameMatch frame = building.plan().frame();
-    BlockPos target = ignitionTarget(frame);
-    RotationUtils.reachable(ctx, target, ctx.playerController().getBlockReachDistance()).ifPresent(rotation -> baritone.getLookBehavior().updateTarget(rotation, true));
+    Optional<IgnitionClick> click = ignitionClick(frame);
+    if (click.isEmpty()) {
+      execution = building.withPhase(BuildPhase.IGNITING).tick();
+      return new PathingCommand(new GoalGetToBlock(ignitionTarget(frame)), PathingCommandType.SET_GOAL_AND_PATH);
+    }
+    baritone.getLookBehavior().updateTarget(click.get().rotation(), true);
     Optional<InteractionHand> hand = flintAndSteelHand();
     if (hand.isEmpty()) {
       if (!baritone.getInventoryBehavior().throwaway(true, stack -> stack.is(Items.FLINT_AND_STEEL))) {
@@ -254,8 +293,7 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
       execution = building.cooldown().tick();
       return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
-    BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(target).add(0D, 0.5D, 0D), Direction.UP, target, false);
-    InteractionResult result = ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), hand.get(), hit);
+    InteractionResult result = ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), hand.get(), click.get().hit());
     if (result.consumesAction()) {
       ctx.player().swing(hand.get());
     }
@@ -263,9 +301,9 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
   }
 
-  private Optional<MacroActionInstance> eligibleAction() {
-    if (!(execution instanceof Execution.Idle) || baritone.getPathingBehavior().getCurrent() != null || baritone.getPathingBehavior().getInProgress().isPresent()
-      || baritone.getCustomGoalProcess().mostRecentGoal() == null) {
+  private Optional<EligibleAction> eligibleAction() {
+    if (!(execution instanceof Execution.Idle) || ctx.world() == null || ctx.player() == null || baritone.getPathingBehavior().getCurrent() != null
+      || baritone.getPathingBehavior().getInProgress().isPresent() || baritone.getCustomGoalProcess().mostRecentGoal() == null) {
       return Optional.empty();
     }
     int dimension = MacroNodeKey.dimensionId(ctx.world().dimension());
@@ -273,9 +311,16 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     if (plan.isEmpty()) {
       return Optional.empty();
     }
-    return plan.get().actions().stream().filter(action -> action.kind().portal()).filter(action -> action.taskIntent() instanceof PortalTaskIntent)
-      .filter(action -> !MacroNodeKey.anchorKey(action.fromNode()) && MacroNodeKey.dimensionId(action.fromNode()) == dimension).filter(action -> !new ActionKey(action).equals(rejected))
-      .filter(this::near).findFirst();
+    MacroPlan macroPlan = plan.get();
+    List<MacroActionInstance> actions = macroPlan.actions();
+    for (int i = 0; i < actions.size(); i++) {
+      MacroActionInstance action = actions.get(i);
+      if (action.kind().portal() && action.taskIntent() instanceof PortalTaskIntent && !MacroNodeKey.anchorKey(action.fromNode()) && MacroNodeKey.dimensionId(action.fromNode()) == dimension
+        && !new ActionKey(action).equals(rejected) && near(action)) {
+        return Optional.of(new EligibleAction(macroPlan, action, actions.subList(i + 1, actions.size())));
+      }
+    }
+    return Optional.empty();
   }
 
   private boolean near(MacroActionInstance action) {
@@ -305,6 +350,18 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
       baritone.getCustomGoalProcess().path();
     }
     return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+  }
+
+  private PathingCommand continueOrComplete(Goal terminalGoal, MacroPlan macroPlan, List<MacroActionInstance> remaining) {
+    int dimension = MacroNodeKey.dimensionId(ctx.world().dimension());
+    for (int i = 0; i < remaining.size(); i++) {
+      MacroActionInstance action = remaining.get(i);
+      if (action.kind().portal() && action.taskIntent() instanceof PortalTaskIntent && !MacroNodeKey.anchorKey(action.fromNode()) && MacroNodeKey.dimensionId(action.fromNode()) == dimension) {
+        execution = new Execution.Traveling(terminalGoal, macroPlan, action, remaining.subList(i + 1, remaining.size()), 0);
+        return travel((Execution.Traveling) execution);
+      }
+    }
+    return complete(terminalGoal);
   }
 
   private boolean dimensionChanged(int sourceDimension) {
@@ -346,6 +403,13 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     return frame.lowerLeftInterior().below();
   }
 
+  private Optional<IgnitionClick> ignitionClick(PortalFrame.FrameMatch frame) {
+    BetterBlockPos target = ignitionTarget(frame);
+    Vec3 hit = Vec3.atCenterOf(target).add(0D, 0.5D, 0D);
+    return RotationUtils.reachableOffset(ctx, target, hit, ctx.playerController().getBlockReachDistance(), false)
+      .map(rotation -> new IgnitionClick(new BlockHitResult(hit, Direction.UP, target, false), rotation));
+  }
+
   private Optional<InteractionHand> flintAndSteelHand() {
     if (ctx.player().getMainHandItem().is(Items.FLINT_AND_STEEL)) {
       return Optional.of(InteractionHand.MAIN_HAND);
@@ -359,6 +423,7 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
   @Override
   public void onLostControl() {
     execution = new Execution.Idle();
+    baritone.getInputOverrideHandler().clearAllKeys();
   }
 
   @Override
@@ -421,36 +486,64 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     }
   }
 
-  private sealed interface Execution permits Execution.Idle, Execution.Entering, Execution.Building {
+  private sealed interface Execution permits Execution.Idle, Execution.Traveling, Execution.Entering, Execution.Building {
     record Idle() implements Execution {
     }
 
-    record Entering(Goal terminalGoal, int sourceDimension, BetterBlockPos portalBlock, int ticks, boolean entered) implements Execution {
-      private Entering tick() {
-        return new Entering(terminalGoal, sourceDimension, portalBlock, ticks + 1, entered);
+    record Traveling(Goal terminalGoal, MacroPlan plan, MacroActionInstance action, List<MacroActionInstance> remaining, int ticks) implements Execution {
+      public Traveling {
+        remaining = List.copyOf(remaining);
       }
 
-      private Entering markEntered() {
-        return new Entering(terminalGoal, sourceDimension, portalBlock, ticks, true);
+      private Traveling tick() {
+        return new Traveling(terminalGoal, plan, action, remaining, ticks + 1);
       }
     }
 
-    record Building(Goal terminalGoal, int sourceDimension, PortalTaskPlan.BuildPortal plan, BuildPhase phase, int ticks, int ignitionCooldown) implements Execution {
+    record Entering(Goal terminalGoal, MacroPlan plan, int sourceDimension, BetterBlockPos portalBlock, List<MacroActionInstance> remaining, int ticks, boolean entered) implements Execution {
+      public Entering {
+        remaining = List.copyOf(remaining);
+      }
+
+      private Entering tick() {
+        return new Entering(terminalGoal, plan, sourceDimension, portalBlock, remaining, ticks + 1, entered);
+      }
+
+      private Entering markEntered() {
+        return new Entering(terminalGoal, plan, sourceDimension, portalBlock, remaining, ticks, true);
+      }
+    }
+
+    record Building(Goal terminalGoal, MacroPlan macroPlan, int sourceDimension, PortalTaskPlan.BuildPortal plan, List<MacroActionInstance> remaining, BuildPhase phase, int ticks,
+      int ignitionCooldown) implements Execution {
+      public Building {
+        remaining = List.copyOf(remaining);
+      }
+
       private Building tick() {
-        return new Building(terminalGoal, sourceDimension, plan, phase, ticks + 1, ignitionCooldown);
+        return new Building(terminalGoal, macroPlan, sourceDimension, plan, remaining, phase, ticks + 1, ignitionCooldown);
       }
 
       private Building withPhase(BuildPhase phase) {
-        return new Building(terminalGoal, sourceDimension, plan, phase, ticks, ignitionCooldown);
+        return new Building(terminalGoal, macroPlan, sourceDimension, plan, remaining, phase, ticks, ignitionCooldown);
       }
 
       private Building withCooldown(int cooldown) {
-        return new Building(terminalGoal, sourceDimension, plan, phase, ticks, cooldown);
+        return new Building(terminalGoal, macroPlan, sourceDimension, plan, remaining, phase, ticks, cooldown);
       }
 
       private Building cooldown() {
-        return new Building(terminalGoal, sourceDimension, plan, phase, ticks, Math.max(0, ignitionCooldown - 1));
+        return new Building(terminalGoal, macroPlan, sourceDimension, plan, remaining, phase, ticks, Math.max(0, ignitionCooldown - 1));
       }
+    }
+  }
+
+  private record EligibleAction(MacroPlan plan, MacroActionInstance action, List<MacroActionInstance> remaining) {
+    private EligibleAction {
+      if (plan == null) {
+        throw new IllegalArgumentException("eligible portal action requires source macro plan");
+      }
+      remaining = List.copyOf(remaining);
     }
   }
 
@@ -458,5 +551,8 @@ public final class PortalTaskProcess extends BaritoneProcessHelper {
     private ActionKey(MacroActionInstance action) {
       this(action.kind(), action.fromNode(), action.toNode());
     }
+  }
+
+  private record IgnitionClick(BlockHitResult hit, Rotation rotation) {
   }
 }

@@ -320,10 +320,14 @@ def score(summary: dict[str, Any], status: int, measured_wall: float) -> tuple[f
   return scalar, frontier, acceptance, ok
 
 
+def stalled_ticks(summary: dict[str, Any]) -> int:
+  return int(summary.get("postActuationStalledTicks") or summary.get("totalStalledTicks") or 0)
+
+
 def tuning_scenario(source: Path, target: Path, profile: Path, digest: str, trace: bool) -> Path:
   scenario = json.loads(source.read_text(encoding="utf-8"))
   scenario["trace"] = trace
-  scenario["mountTuning"] = {"profile": str(profile.resolve()), "digest": digest}
+  scenario["goldenTuning"] = {"profile": str(profile.resolve()), "digest": digest}
   target.write_text(json.dumps(scenario, indent=2, sort_keys=True) + "\n", encoding="utf-8")
   return target
 
@@ -345,7 +349,7 @@ def run_trial(profile: Path, scenario: Path, playtest_root: Path, out_dir: Path,
     summary = json.loads(path.read_text(encoding="utf-8"))
   scalar, frontier, acceptance_score, ok = score(summary, proc.returncode, measured_wall)
   expected_digest = profile_digest(profile)
-  observed_digest = str(summary.get("mountTuningDigest") or "")
+  observed_digest = str(summary.get("goldenTuningDigest") or "")
   tuning_matched = expected_digest == observed_digest
   if not tuning_matched:
     ok = False
@@ -360,8 +364,10 @@ def run_trial(profile: Path, scenario: Path, playtest_root: Path, out_dir: Path,
     "scoredDistance": horse_only_distance(summary),
     "accepted": ok,
     "tuningDigestMatched": tuning_matched,
-    "expectedMountTuningDigest": expected_digest,
-    "observedMountTuningDigest": observed_digest,
+    "expectedGoldenTuningDigest": expected_digest,
+    "observedGoldenTuningDigest": observed_digest,
+    "stalledTicks": stalled_ticks(summary),
+    "stalledSeconds": stalled_ticks(summary) / 20.0,
     "acceptanceScore": acceptance_score,
     "frontierScore": frontier,
   }
@@ -412,7 +418,7 @@ def objective_factory(args: argparse.Namespace, root: Path):
     params = trial_params(trial)
     trial_dir = trials / f"trial-{trial.number:05d}"
     trial_dir.mkdir(parents=True, exist_ok=True)
-    profile = trial_dir / "mount-tuning.toml"
+    profile = trial_dir / "golden-tuning.toml"
     text = profile_toml(params)
     profile.write_text(text, encoding="utf-8")
     digest = digest_bytes(text.encode("utf-8"))
@@ -661,7 +667,7 @@ def run_scan(args: argparse.Namespace, root: Path) -> int:
   for number, params in enumerate(rows):
     trial_dir = trials / f"trial-{number:05d}"
     trial_dir.mkdir(parents=True, exist_ok=True)
-    profile = trial_dir / "mount-tuning.toml"
+    profile = trial_dir / "golden-tuning.toml"
     text = profile_toml(params)
     profile.write_text(text, encoding="utf-8")
     digest = digest_bytes(text.encode("utf-8"))

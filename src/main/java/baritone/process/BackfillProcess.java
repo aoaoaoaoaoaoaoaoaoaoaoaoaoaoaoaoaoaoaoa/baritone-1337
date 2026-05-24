@@ -1,11 +1,12 @@
 package baritone.process;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.Movement;
-import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.path.RouteExecutor;
 import baritone.utils.BaritoneProcessHelper;
@@ -56,7 +57,7 @@ public final class BackfillProcess extends BaritoneProcessHelper {
     baritone.getInputOverrideHandler().clearAllKeys();
     for (BlockPos toPlace : toFillIn()) {
       ControlFrame.Builder fake = ControlFrame.builder();
-      switch (MovementHelper.attemptToPlaceABlock(fake, baritone, toPlace, false, false)) {
+      switch (MovementClientHelper.attemptToPlaceABlock(fake, baritone, toPlace, false, false)) {
         case NO_OPTION :
           continue;
         case READY_TO_PLACE :

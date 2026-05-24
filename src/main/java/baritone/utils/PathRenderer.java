@@ -7,6 +7,7 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.behavior.PathingBehavior;
+import baritone.pathing.farfield.FarfieldObjective;
 import baritone.pathing.macro.core.MacroCellEvidence;
 import baritone.pathing.macro.core.MacroPlan;
 import baritone.pathing.macro.core.MacroPlanVertex;
@@ -99,6 +100,9 @@ public final class PathRenderer implements IRenderer {
     if (settings.renderMacroPlan.value) {
       behavior.getRenderableMacroPlan().ifPresent(plan -> drawMacroPlan(view, ctx.player(), plan));
     }
+    if (settings.renderFarfield.value) {
+      behavior.getRenderableFarfield().ifPresent(objective -> drawFarfield(view, objective));
+    }
     if (current != null) {
       drawRoutePlan(view, ctx.player(), current.renderPlan(true, behavior.committedRouteProgress()), true);
     }
@@ -151,6 +155,13 @@ public final class PathRenderer implements IRenderer {
         cells.add(plan.vertices().get(i).pos());
       }
       drawManySelectionBoxes(view, player, cells, settings.colorMacroRouteAnchor.value);
+    }
+  }
+
+  private static void drawFarfield(RenderContext view, FarfieldObjective objective) {
+    List<BetterBlockPos> skeleton = objective.skeleton();
+    if (skeleton.size() >= 2) {
+      drawPath(view, skeleton, 0, blend(settings.colorMacroPriorPlan.value, settings.colorMostRecentConsidered.value, 0.35D), false, 10, 20, 0.92D);
     }
   }
 

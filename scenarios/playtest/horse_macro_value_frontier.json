@@ -49,7 +49,6 @@
     "chunkCaching": false,
     "allowBreak": false,
     "allowPlace": false,
-    "macroPlanning": true,
     "macroBiome": true,
     "macroBiomePriorsFile": "",
     "primaryTimeoutMS": 12000,

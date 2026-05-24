@@ -1,6 +1,7 @@
 package baritone.pathing.calc;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
 import baritone.api.Settings;
 import baritone.pathing.transport.TransportMode;
 
@@ -26,18 +27,18 @@ public record PathingIncumbentPolicy(boolean earlyExecution, long intervalMS, in
   }
 
   public static PathingIncumbentPolicy defaults() {
-    Settings s = Baritone.settings();
+    Settings s = BaritoneAPI.getSettings();
     return new PathingIncumbentPolicy(s.pathingEarlyIncumbentExecution.value, s.pathingIncumbentIntervalMS.value, s.pathingMinIncumbentLength.value, s.pathingIncumbentHeuristicMargin.value);
   }
 
   public static PathingIncumbentPolicy pedestrian() {
-    Settings s = Baritone.settings();
+    Settings s = BaritoneAPI.getSettings();
     return new PathingIncumbentPolicy(s.pedestrianPathingEarlyIncumbentExecution.value, s.pedestrianPathingIncumbentIntervalMS.value, s.pedestrianPathingMinIncumbentLength.value,
       s.pedestrianPathingIncumbentHeuristicMargin.value);
   }
 
   public static PathingIncumbentPolicy horse() {
-    Settings s = Baritone.settings();
+    Settings s = BaritoneAPI.getSettings();
     return new PathingIncumbentPolicy(s.horsePathingEarlyIncumbentExecution.value, s.horsePathingIncumbentIntervalMS.value, s.horsePathingMinIncumbentLength.value,
       s.horsePathingIncumbentHeuristicMargin.value);
   }

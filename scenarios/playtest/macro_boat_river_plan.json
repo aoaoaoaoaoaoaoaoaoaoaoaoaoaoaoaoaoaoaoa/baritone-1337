@@ -48,7 +48,6 @@
     "sprintInWater": true,
     "jumpPenalty": 1000.0,
     "chatDebug": true,
-    "macroPlanning": true,
     "macroWaterHorizonBlocks": 256,
     "macroWaterMaxLaunchCandidates": 24,
     "macroWaterMaxSegmentBlocks": 96,

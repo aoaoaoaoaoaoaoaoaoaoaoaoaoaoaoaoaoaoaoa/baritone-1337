@@ -49,7 +49,7 @@ public final class MacroPlanner {
   }
 
   private static Optional<MacroPlan> plan(CalculationContext calculation, BetterBlockPos start, Goal goal, MacroTraversalProfile profile, MacroPlanningMode planningMode) {
-    if (!Baritone.settings().macroPlanning.value || !portalSupportedDimension(calculation)) {
+    if (!Baritone.settings().transitPlanning.value || !portalSupportedDimension(calculation)) {
       return Optional.empty();
     }
     MacroCapabilities capabilities = MacroCapabilities.physical(calculation);

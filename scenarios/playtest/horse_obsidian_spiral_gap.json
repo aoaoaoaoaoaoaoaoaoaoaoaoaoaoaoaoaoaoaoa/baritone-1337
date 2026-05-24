@@ -20,6 +20,15 @@
     "radius": 3
   },
   "setupCommands": [
+    "execute in minecraft:overworld run fill 1187 80 -1165 1198 91 -1157 minecraft:air",
+    "execute in minecraft:overworld run fill 1194 79 -1164 1198 79 -1161 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1192 80 -1164 1195 80 -1161 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1190 81 -1164 1193 81 -1161 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1188 82 -1163 1191 82 -1160 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1188 83 -1162 1191 83 -1159 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1188 84 -1161 1191 84 -1158 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1188 85 -1160 1191 85 -1158 minecraft:obsidian",
+    "execute in minecraft:overworld run fill 1188 86 -1160 1190 86 -1158 minecraft:obsidian",
     "execute in minecraft:overworld positioned 1196.5 80.0 -1162.5 run kill @e[type=minecraft:horse,tag=baritone_playtest,distance=..32]",
     "execute in minecraft:overworld run summon minecraft:horse 1196.5 80.0 -1162.5 {Tags:[\"baritone_playtest\"],Tame:1b,Temper:100,equipment:{saddle:{id:\"minecraft:saddle\",count:1}},attributes:[{id:\"minecraft:movement_speed\",base:0.30},{id:\"minecraft:jump_strength\",base:0.90}]}"
   ],
@@ -43,7 +52,6 @@
     "chunkCaching": false,
     "allowBreak": false,
     "allowPlace": false,
-    "macroPlanning": false,
     "primaryTimeoutMS": 12000,
     "failureTimeoutMS": 12000
   },

@@ -55,7 +55,6 @@
     "allowSprint": true,
     "sprintInWater": true,
     "jumpPenalty": 20.0,
-    "macroPlanning": true,
     "macroWaterHorizonBlocks": 384,
     "macroWaterMaxLaunchCandidates": 24,
     "macroWaterMaxSegmentBlocks": 96,

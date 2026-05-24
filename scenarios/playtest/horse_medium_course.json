@@ -52,7 +52,6 @@
     "chunkCaching": false,
     "allowBreak": false,
     "allowPlace": false,
-    "macroPlanning": false,
     "primaryTimeoutMS": 12000,
     "failureTimeoutMS": 12000
   },

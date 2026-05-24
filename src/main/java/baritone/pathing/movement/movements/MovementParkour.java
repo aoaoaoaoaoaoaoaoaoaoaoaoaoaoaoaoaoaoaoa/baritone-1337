@@ -1,5 +1,9 @@
 package baritone.pathing.movement.movements;
 
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
@@ -233,11 +237,11 @@ public class MovementParkour extends Movement {
     if (dist >= 4 || ascend) {
       state.setInput(Input.SPRINT, true);
     }
-    if (Baritone.settings().allowWalkOnMagmaBlocks.value && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.MAGMA_BLOCK)) {
+    if (BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.MAGMA_BLOCK)) {
       state.setInput(Input.SNEAK, true);
     }
 
-    MovementHelper.moveTowards(ctx, state, dest);
+    MovementClientHelper.moveTowards(ctx, state, dest);
     if (ctx.playerFeet().equals(dest)) {
       Block d = BlockStateInterface.getBlock(ctx, dest);
       if (d == Blocks.VINE || d == Blocks.LADDER) {
@@ -250,9 +254,9 @@ public class MovementParkour extends Movement {
       }
     } else if (!ctx.playerFeet().equals(src)) {
       if (ctx.playerFeet().equals(src.relative(direction)) || ctx.player().position().y - src.y > 0.0001) {
-        if (Baritone.settings().allowPlace.value // see PR #3775
-          && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway() && !MovementHelper.canWalkOn(ctx, dest.below()) && !ctx.player().onGround()
-          && MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == PlaceResult.READY_TO_PLACE) {
+        if (BaritoneAPI.getSettings().allowPlace.value // see PR #3775
+          && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway() && !MovementClientHelper.canWalkOn(ctx, dest.below()) && !ctx.player().onGround()
+          && MovementClientHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == PlaceResult.READY_TO_PLACE) {
           // go in the opposite order to check DOWN before all horizontals -- down is preferable because you don't have to look to the side while in midair, which could mess up the trajectory
           state.setInput(Input.CLICK_RIGHT, true);
         }
@@ -270,9 +274,9 @@ public class MovementParkour extends Movement {
       } else if (!ctx.playerFeet().equals(dest.relative(direction, -1))) {
         state.setInput(Input.SPRINT, false);
         if (ctx.playerFeet().equals(src.relative(direction, -1))) {
-          MovementHelper.moveTowards(ctx, state, src);
+          MovementClientHelper.moveTowards(ctx, state, src);
         } else {
-          MovementHelper.moveTowards(ctx, state, src.relative(direction, -1));
+          MovementClientHelper.moveTowards(ctx, state, src.relative(direction, -1));
         }
       }
     }

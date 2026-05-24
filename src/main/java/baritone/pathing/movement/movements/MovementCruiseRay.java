@@ -1,10 +1,13 @@
 package baritone.pathing.movement.movements;
 
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.input.Input;
-import baritone.Baritone;
 import baritone.pathing.control.ControlFrame;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
@@ -124,10 +127,10 @@ public final class MovementCruiseRay extends Movement {
     if (!playerInValidPosition() && !acceptsPathingDrift(ctx.playerFeet())) {
       return state.setStatus(MovementStatus.UNREACHABLE);
     }
-    if (Baritone.settings().allowSprint.value) {
+    if (BaritoneAPI.getSettings().allowSprint.value) {
       state.setInput(Input.SPRINT, true);
     }
-    MovementHelper.moveTowards(ctx, state, dest);
+    MovementClientHelper.moveTowards(ctx, state, dest);
     return state;
   }
 

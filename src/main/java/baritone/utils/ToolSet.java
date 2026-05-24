@@ -1,9 +1,11 @@
 package baritone.utils;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.effect.MobEffects;
@@ -18,10 +20,10 @@ import net.minecraft.world.item.enchantment.effects.EnchantmentAttributeEffect;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
+import java.util.Set;
 
 /**
  * A cached list of the best tools on the hotbar for any block
@@ -34,14 +36,17 @@ public class ToolSet {
    * A cache mapping a {@link Block} to how long it will take to break
    * with this toolset, given the optimum tool is used.
    */
-  private final Map<Block, Double> breakStrengthCache;
+  private final double[] breakStrengthCache;
 
-  /**
-   * My buddy leijurv owned me so we have this to not create a new lambda instance.
-   */
-  private final Function<Block, Double> backendCalculation;
-
-  private final LocalPlayer player;
+  private final List<ItemStack> hotbar;
+  private final int selectedSlot;
+  private final double potionAmplifier;
+  private final boolean autoTool;
+  private final boolean useSwordToMine;
+  private final boolean itemSaver;
+  private final int itemSaverThreshold;
+  private final Set<Block> blocksToAvoidBreaking;
+  private final double avoidBreakingMultiplier;
 
   /**
    * Used for evaluating the material cost of a tool.
@@ -52,16 +57,26 @@ public class ToolSet {
     ItemTags.DIAMOND_TOOL_MATERIALS, ItemTags.NETHERITE_TOOL_MATERIALS);
 
   public ToolSet(LocalPlayer player) {
-    breakStrengthCache = new HashMap<>();
-    this.player = player;
+    this(hotbar(player), player.getInventory().getSelectedSlot(), BaritoneAPI.getSettings().considerPotionEffects.value ? potionAmplifier(player) : 1D);
+  }
 
-    if (Baritone.settings().considerPotionEffects.value) {
-      double amplifier = potionAmplifier();
-      Function<Double, Double> amplify = x -> amplifier * x;
-      backendCalculation = amplify.compose(this::getBestDestructionTime);
-    } else {
-      backendCalculation = this::getBestDestructionTime;
-    }
+  public ToolSet(List<ItemStack> hotbar) {
+    this(hotbar, 0, 1D);
+  }
+
+  private ToolSet(List<ItemStack> hotbar, int selectedSlot, double potionAmplifier) {
+    this.breakStrengthCache = new double[BuiltInRegistries.BLOCK.size()];
+    Arrays.fill(this.breakStrengthCache, Double.NaN);
+    this.hotbar = List.copyOf(hotbar);
+    this.selectedSlot = Math.clamp(selectedSlot, 0, Math.max(0, this.hotbar.size() - 1));
+    this.potionAmplifier = potionAmplifier;
+    var settings = BaritoneAPI.getSettings();
+    this.autoTool = settings.autoTool.value;
+    this.useSwordToMine = settings.useSwordToMine.value;
+    this.itemSaver = settings.itemSaver.value;
+    this.itemSaverThreshold = settings.itemSaverThreshold.value;
+    this.blocksToAvoidBreaking = Set.copyOf(settings.blocksToAvoidBreaking.value);
+    this.avoidBreakingMultiplier = settings.avoidBreakingMultiplier.value;
   }
 
   /**
@@ -71,7 +86,18 @@ public class ToolSet {
    * @return the speed of how fast we'll mine it. 1/(time in ticks)
    */
   public double getStrVsBlock(BlockState state) {
-    return breakStrengthCache.computeIfAbsent(state.getBlock(), backendCalculation);
+    Block block = state.getBlock();
+    int id = BuiltInRegistries.BLOCK.getId(block);
+    if (id < 0 || id >= breakStrengthCache.length) {
+      return getBestDestructionTime(block);
+    }
+    double cached = breakStrengthCache[id];
+    if (!Double.isNaN(cached)) {
+      return cached;
+    }
+    double computed = getBestDestructionTime(block);
+    breakStrengthCache[id] = computed;
+    return computed;
   }
 
   /**
@@ -119,8 +145,8 @@ public class ToolSet {
     If we actually want know what efficiency our held item has instead of the best one
     possible, this lets us make pathing depend on the actual tool to be used (if auto tool is disabled)
     */
-    if (!Baritone.settings().autoTool.value && pathingCalculation) {
-      return player.getInventory().getSelectedSlot();
+    if (!autoTool && pathingCalculation) {
+      return selectedSlot;
     }
 
     int best = 0;
@@ -128,13 +154,13 @@ public class ToolSet {
     int lowestCost = Integer.MIN_VALUE;
     boolean bestSilkTouch = false;
     BlockState blockState = b.defaultBlockState();
-    for (int i = 0; i < 9; i++) {
-      ItemStack itemStack = player.getInventory().getItem(i);
-      if (!Baritone.settings().useSwordToMine.value && itemStack.getItem().components().has(DataComponents.WEAPON)) {
+    for (int i = 0; i < Math.min(9, hotbar.size()); i++) {
+      ItemStack itemStack = hotbar.get(i);
+      if (!useSwordToMine && itemStack.getItem().components().has(DataComponents.WEAPON)) {
         continue;
       }
 
-      if (Baritone.settings().itemSaver.value && (itemStack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) >= itemStack.getMaxDamage() && itemStack.getMaxDamage() > 1) {
+      if (itemSaver && (itemStack.getDamageValue() + itemSaverThreshold) >= itemStack.getMaxDamage() && itemStack.getMaxDamage() > 1) {
         continue;
       }
       double speed = calculateSpeedVsBlock(itemStack, blockState);
@@ -164,12 +190,12 @@ public class ToolSet {
    * @return A double containing the destruction ticks with the best tool
    */
   private double getBestDestructionTime(Block b) {
-    ItemStack stack = player.getInventory().getItem(getBestSlot(b, false, true));
-    return calculateSpeedVsBlock(stack, b.defaultBlockState()) * avoidanceMultiplier(b);
+    ItemStack stack = hotbar.isEmpty() ? ItemStack.EMPTY : hotbar.get(getBestSlot(b, false, true));
+    return calculateSpeedVsBlock(stack, b.defaultBlockState()) * avoidanceMultiplier(b) * potionAmplifier;
   }
 
   private double avoidanceMultiplier(Block b) {
-    return Baritone.settings().blocksToAvoidBreaking.value.contains(b) ? Baritone.settings().avoidBreakingMultiplier.value : 1;
+    return blocksToAvoidBreaking.contains(b) ? avoidBreakingMultiplier : 1;
   }
 
   /**
@@ -219,7 +245,15 @@ public class ToolSet {
    *
    * @return a double to scale block breaking speed.
    */
-  private double potionAmplifier() {
+  private static List<ItemStack> hotbar(LocalPlayer player) {
+    ArrayList<ItemStack> hotbar = new ArrayList<>(9);
+    for (int i = 0; i < 9; i++) {
+      hotbar.add(player.getInventory().getItem(i));
+    }
+    return hotbar;
+  }
+
+  private static double potionAmplifier(LocalPlayer player) {
     double speed = 1;
     if (player.hasEffect(MobEffects.HASTE)) {
       speed *= 1 + (player.getEffect(MobEffects.HASTE).getAmplifier() + 1) * 0.2;

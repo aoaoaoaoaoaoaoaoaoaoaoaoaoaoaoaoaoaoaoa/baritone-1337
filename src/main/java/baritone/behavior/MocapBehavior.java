@@ -1,5 +1,7 @@
 package baritone.behavior;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.event.events.WorldEvent;
@@ -436,10 +438,10 @@ public final class MocapBehavior extends Behavior {
   private Object waterState(BlockPos feet) {
     return (JsonWritable) json -> {
       json.append('{');
-      field(json, "feetWater", MovementHelper.isWater(ctx, feet)).append(',');
-      field(json, "belowWater", MovementHelper.isWater(ctx, feet.below())).append(',');
-      field(json, "aboveWater", MovementHelper.isWater(ctx, feet.above())).append(',');
-      field(json, "deepWater", MovementHelper.isDeepWater(ctx, feet)).append(',');
+      field(json, "feetWater", MovementClientHelper.isWater(ctx, feet)).append(',');
+      field(json, "belowWater", MovementClientHelper.isWater(ctx, feet.below())).append(',');
+      field(json, "aboveWater", MovementClientHelper.isWater(ctx, feet.above())).append(',');
+      field(json, "deepWater", MovementClientHelper.isDeepWater(ctx, feet)).append(',');
       double surfaceY = waterSurfaceY(feet);
       field(json, "surfaceY", Double.isNaN(surfaceY) ? null : surfaceY).append(',');
       field(json, "clearance", Double.isNaN(surfaceY) ? null : playerEyeClearance(surfaceY));
@@ -568,12 +570,12 @@ public final class MocapBehavior extends Behavior {
   }
 
   private double waterSurfaceY(BlockPos feet) {
-    if (!MovementHelper.isWater(ctx, feet)) {
+    if (!MovementClientHelper.isWater(ctx, feet)) {
       return Double.NaN;
     }
     BlockPos.MutableBlockPos scan = new BlockPos.MutableBlockPos(feet.getX(), feet.getY(), feet.getZ());
     int maxY = ctx.world().getMaxY();
-    while (scan.getY() < maxY && MovementHelper.isWater(ctx, scan)) {
+    while (scan.getY() < maxY && MovementClientHelper.isWater(ctx, scan)) {
       scan.move(Direction.UP);
     }
     return scan.getY();

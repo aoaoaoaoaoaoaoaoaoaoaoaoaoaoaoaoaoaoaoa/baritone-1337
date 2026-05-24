@@ -1,5 +1,7 @@
 package baritone.pathing.path;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.movement.ActionCosts;
@@ -338,11 +340,11 @@ final class PathRouteLegController implements RouteLegController, Helper {
     if (pathIndex(current.get().getStart()) != -1) {
       return false;
     }
-    if (!MovementHelper.canWalkOn(ctx, ctx.playerFeet().below())) {
+    if (!MovementClientHelper.canWalkOn(ctx, ctx.playerFeet().below())) {
       // we're in some kind of sketchy situation, maybe parkouring
       return false;
     }
-    if (!MovementHelper.canWalkThrough(ctx, ctx.playerFeet()) || !MovementHelper.canWalkThrough(ctx, ctx.playerFeet().above())) {
+    if (!MovementClientHelper.canWalkThrough(ctx, ctx.playerFeet()) || !MovementClientHelper.canWalkThrough(ctx, ctx.playerFeet().above())) {
       // suffocating?
       return false;
     }
@@ -444,7 +446,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
       if (pathPosition < path.length() - 2) {
         // keep this out of onTick, even if that means a tick of delay before it has an effect
         IMovement next = path.movements().get(pathPosition + 1);
-        if (MovementHelper.canUseFrostWalker(ctx, next.getDest().below())) {
+        if (MovementClientHelper.canUseFrostWalker(ctx, next.getDest().below())) {
           // frostwalker only works if you cross the edge of the block on ground so in some cases we may not overshoot
           // Since MovementDescend can't know the next movement we have to tell it
           if (next instanceof MovementTraverse || next instanceof MovementParkour) {
@@ -561,11 +563,11 @@ final class PathRouteLegController implements RouteLegController, Helper {
       }
       for (int y = next.getDest().y; y <= movement.getSrc().y + 1; y++) {
         BlockPos chk = new BlockPos(next.getDest().x, y, next.getDest().z);
-        if (!MovementHelper.fullyPassable(ctx, chk)) {
+        if (!MovementClientHelper.fullyPassable(ctx, chk)) {
           break outer;
         }
       }
-      if (!MovementHelper.canWalkOn(ctx, next.getDest().below())) {
+      if (!MovementClientHelper.canWalkOn(ctx, next.getDest().below())) {
         break;
       }
     }
@@ -718,7 +720,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
     }
     // we are centered
     BlockPos headBonk = current.getSrc().subtract(current.getDirection()).above(2);
-    if (MovementHelper.fullyPassable(ctx, headBonk)) {
+    if (MovementClientHelper.fullyPassable(ctx, headBonk)) {
       return true;
     }
     // wait 0.3
@@ -737,10 +739,10 @@ final class PathRouteLegController implements RouteLegController, Helper {
     if (nextnext.getDirection().getX() != next.getDirection().getX() || nextnext.getDirection().getZ() != next.getDirection().getZ()) {
       return false;
     }
-    if (!MovementHelper.canWalkOn(ctx, current.getDest().below())) {
+    if (!MovementClientHelper.canWalkOn(ctx, current.getDest().below())) {
       return false;
     }
-    if (!MovementHelper.canWalkOn(ctx, next.getDest().below())) {
+    if (!MovementClientHelper.canWalkOn(ctx, next.getDest().below())) {
       return false;
     }
     if (!next.toBreakCached.isEmpty()) {
@@ -752,7 +754,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
         if (x == 1) {
           chk = chk.offset(current.getDirection());
         }
-        if (!MovementHelper.fullyPassable(ctx, chk)) {
+        if (!MovementClientHelper.fullyPassable(ctx, chk)) {
           return false;
         }
       }
@@ -767,7 +769,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
     if (next instanceof MovementDescend && next.getDirection().equals(current.getDirection())) {
       return true;
     }
-    if (!MovementHelper.canWalkOn(ctx, current.getDest().offset(current.getDirection()))) {
+    if (!MovementClientHelper.canWalkOn(ctx, current.getDest().offset(current.getDirection()))) {
       return false;
     }
     if (next instanceof MovementTraverse && next.getDirection().equals(current.getDirection())) {

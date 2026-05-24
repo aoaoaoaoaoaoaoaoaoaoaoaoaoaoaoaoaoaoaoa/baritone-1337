@@ -1,5 +1,9 @@
 package baritone.pathing.movement.movements;
 
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
@@ -80,7 +84,6 @@ public class MovementTraverse extends Movement {
     boolean frostWalker = standingOnABlock && !context.movement.assumeWalkOnWater() && MovementHelper.canUseFrostWalker(context, destOn);
     if (frostWalker || MovementHelper.canWalkOn(context, destX, y - 1, destZ, destOn)) { // this is a walk, not a bridge
       double WC = WALK_ONE_BLOCK_COST;
-      double lavaProximityPenalty = PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y, destZ);
       boolean water = false;
       boolean sneaking = false;
       if (MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1)) {
@@ -106,6 +109,7 @@ public class MovementTraverse extends Movement {
         return COST_INF;
       }
       double hardness2 = MovementHelper.movementPassageCost(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+      double lavaProximityPenalty = PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y, destZ);
       if (hardness1 == 0 && hardness2 == 0) {
         if (!water && !sneaking && context.movement.canSprint()) {
           // If there's nothing in the way, and this isn't water, and we aren't sneak placing
@@ -176,7 +180,7 @@ public class MovementTraverse extends Movement {
     BlockState pb1 = BlockStateInterface.get(ctx, positionsToBreak[1]);
     if (state.getStatus() != MovementStatus.RUNNING) {
       // if the setting is enabled
-      if (!Baritone.settings().walkWhileBreaking.value) {
+      if (!BaritoneAPI.getSettings().walkWhileBreaking.value) {
         return state;
       }
       // and if we're prepping (aka mining the block in front)
@@ -217,11 +221,11 @@ public class MovementTraverse extends Movement {
 
     // sneak may have been set to true in the PREPPING state while mining an adjacent block, but we still want it to be true if the player is about to go on magma
     state.setInput(Input.SNEAK,
-      Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
+      BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value && MovementClientHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
 
     if (pb0.getBlock() instanceof DoorBlock || pb1.getBlock() instanceof DoorBlock) {
       boolean notPassable =
-        pb0.getBlock() instanceof DoorBlock && !MovementHelper.isDoorPassable(ctx, src, dest) || pb1.getBlock() instanceof DoorBlock && !MovementHelper.isDoorPassable(ctx, dest, src);
+        pb0.getBlock() instanceof DoorBlock && !MovementClientHelper.isDoorPassable(ctx, src, dest) || pb1.getBlock() instanceof DoorBlock && !MovementClientHelper.isDoorPassable(ctx, dest, src);
       boolean canOpen = !(Blocks.IRON_DOOR.equals(pb0.getBlock()) || Blocks.IRON_DOOR.equals(pb1.getBlock()));
 
       if (notPassable && canOpen) {
@@ -233,8 +237,8 @@ public class MovementTraverse extends Movement {
     }
 
     if (pb0.getBlock() instanceof FenceGateBlock || pb1.getBlock() instanceof FenceGateBlock) {
-      BlockPos blocked =
-        !MovementHelper.isGatePassable(ctx, positionsToBreak[0], src.above()) ? positionsToBreak[0] : !MovementHelper.isGatePassable(ctx, positionsToBreak[1], src) ? positionsToBreak[1] : null;
+      BlockPos blocked = !MovementClientHelper.isGatePassable(ctx, positionsToBreak[0], src.above()) ? positionsToBreak[0]
+        : !MovementClientHelper.isGatePassable(ctx, positionsToBreak[1], src) ? positionsToBreak[1] : null;
       if (blocked != null) {
         Optional<Rotation> rotation = RotationUtils.reachable(ctx, blocked);
         if (rotation.isPresent()) {
@@ -243,9 +247,9 @@ public class MovementTraverse extends Movement {
       }
     }
 
-    boolean isTheBridgeBlockThere = MovementHelper.canWalkOn(ctx, positionToPlace) || ladder || MovementHelper.canUseFrostWalker(ctx, positionToPlace);
+    boolean isTheBridgeBlockThere = MovementClientHelper.canWalkOn(ctx, positionToPlace) || ladder || MovementClientHelper.canUseFrostWalker(ctx, positionToPlace);
     BlockPos feet = ctx.playerFeet();
-    boolean waterTraverse = MovementHelper.isWater(ctx, feet) || MovementHelper.isWater(ctx, src) || MovementHelper.isWater(ctx, dest);
+    boolean waterTraverse = MovementClientHelper.isWater(ctx, feet) || MovementClientHelper.isWater(ctx, src) || MovementClientHelper.isWater(ctx, dest);
     if (feet.getY() != dest.getY() && !ladder && !waterTraverse) {
       logDebug("Wrong Y coordinate");
       if (feet.getY() < dest.getY()) {
@@ -258,7 +262,7 @@ public class MovementTraverse extends Movement {
       if (playerAtDest()) {
         return state.setStatus(MovementStatus.SUCCESS);
       }
-      if (Baritone.settings().overshootTraverse.value && (playerAt(dest.offset(getDirection())) || playerAt(dest.offset(getDirection()).offset(getDirection())))) {
+      if (BaritoneAPI.getSettings().overshootTraverse.value && (playerAt(dest.offset(getDirection())) || playerAt(dest.offset(getDirection()).offset(getDirection())))) {
         return state.setStatus(MovementStatus.SUCCESS);
       }
       Block low = BlockStateInterface.get(ctx, src).getBlock();
@@ -271,7 +275,7 @@ public class MovementTraverse extends Movement {
       BlockPos into = dest.subtract(src).offset(dest);
       BlockState intoBelow = BlockStateInterface.get(ctx, into);
       BlockState intoAbove = BlockStateInterface.get(ctx, into.above());
-      if (wasTheBridgeBlockAlwaysThere && (!MovementHelper.isLiquid(ctx, feet) || Baritone.settings().sprintInWater.value)
+      if (wasTheBridgeBlockAlwaysThere && (!MovementClientHelper.isLiquid(ctx, feet) || BaritoneAPI.getSettings().sprintInWater.value)
         && (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow)) && !MovementHelper.avoidWalkingInto(intoAbove)) {
         state.setInput(Input.SPRINT, true);
       }
@@ -285,7 +289,7 @@ public class MovementTraverse extends Movement {
           return state.setStatus(MovementStatus.UNREACHABLE);
         }
       }
-      MovementHelper.moveTowards(ctx, state, against);
+      MovementClientHelper.moveTowards(ctx, state, against);
       return state;
     } else {
       wasTheBridgeBlockAlwaysThere = false;
@@ -294,15 +298,15 @@ public class MovementTraverse extends Movement {
       if (standingOn.equals(Blocks.SOUL_SAND)) { // see issue #118
         double dist = Math.max(Math.abs(dest.getX() + 0.5 - ctx.player().position().x), Math.abs(dest.getZ() + 0.5 - ctx.player().position().z));
         if (dist < 0.85) { // 0.5 + 0.3 + epsilon
-          MovementHelper.moveTowards(ctx, state, dest);
+          MovementClientHelper.moveTowards(ctx, state, dest);
           return state.setInput(Input.MOVE_FORWARD, false).setInput(Input.MOVE_BACK, true);
         }
       }
       double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
-      PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, !Baritone.settings().assumeSafeWalk.value);
+      PlaceResult p = MovementClientHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, !BaritoneAPI.getSettings().assumeSafeWalk.value);
       boolean slabBridgeSneakArmed = standingOn instanceof SlabBlock && standingOnState.getValue(SlabBlock.TYPE) != SlabType.DOUBLE
-        && distanceToDestCenterOnTraverseAxis() < SLAB_BRIDGE_SNEAK_ARM_DISTANCE && !Baritone.settings().assumeSafeWalk.value;
-      if ((p == PlaceResult.READY_TO_PLACE || dist1 < 0.6 || slabBridgeSneakArmed) && !Baritone.settings().assumeSafeWalk.value) {
+        && distanceToDestCenterOnTraverseAxis() < SLAB_BRIDGE_SNEAK_ARM_DISTANCE && !BaritoneAPI.getSettings().assumeSafeWalk.value;
+      if ((p == PlaceResult.READY_TO_PLACE || dist1 < 0.6 || slabBridgeSneakArmed) && !BaritoneAPI.getSettings().assumeSafeWalk.value) {
         state.setInput(Input.SNEAK, true);
       }
       if (slabBridgeSneakArmed && !ctx.player().isCrouching()) {
@@ -310,7 +314,7 @@ public class MovementTraverse extends Movement {
       }
       switch (p) {
         case READY_TO_PLACE : {
-          if (ctx.player().isCrouching() || Baritone.settings().assumeSafeWalk.value) {
+          if (ctx.player().isCrouching() || BaritoneAPI.getSettings().assumeSafeWalk.value) {
             state.setInput(Input.CLICK_RIGHT, true);
           }
           return state;
@@ -361,7 +365,7 @@ public class MovementTraverse extends Movement {
         }
         return state;
       }
-      MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
+      MovementClientHelper.moveTowardsWithSlightRotation(ctx, state, dest);
       return state;
     }
   }
@@ -401,7 +405,7 @@ public class MovementTraverse extends Movement {
     // if we're in the process of breaking blocks before walking forwards
     // or if this isn't a sneak place (the block is already there)
     // then it's safe to cancel this
-    return state.getStatus() != MovementStatus.RUNNING || MovementHelper.canWalkOn(ctx, dest.below());
+    return state.getStatus() != MovementStatus.RUNNING || MovementClientHelper.canWalkOn(ctx, dest.below());
   }
 
   @Override

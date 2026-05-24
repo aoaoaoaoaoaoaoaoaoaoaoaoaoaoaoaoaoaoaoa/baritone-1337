@@ -1,0 +1,83 @@
+# Canonical Golden Default.
+# Mounted settings are grandfathered from horse_thisway_200 night-grind trial 152.
+# Pedestrian/Farfield settings are rounded to four decimals from the stable Nether A basin, champion trial 0102.
+# This file contains soft policy and empirical costs only; it must not encode collision truth.
+
+[settings]
+allowBreak = true
+allowPlace = true
+allowSprint = true
+macroBiome = true
+macroBiomeFactsFile = ""
+macroBiomePriorsFile = ""
+macroNether = true
+farfieldPlanning = true
+transitPlanning = false
+sprintInWater = true
+primaryTimeoutMS = 5000
+failureTimeoutMS = 60000
+planAheadPrimaryTimeoutMS = 5000
+planAheadFailureTimeoutMS = 60000
+pedestrianHotLocalValueField = true
+pedestrianHotLocalExtractionMaxMovements = 128
+pedestrianHotLocalTerminalTarget = 2
+pedestrianHotLocalPostTerminalExpansions = 16
+pedestrianPathingEarlyIncumbentExecution = true
+pedestrianPathingIncumbentIntervalMS = 57
+pedestrianPathingMinIncumbentLength = 58
+pedestrianPathingIncumbentHeuristicMargin = 43.9411
+farfieldHorizonBlocks = 4096
+farfieldWaypointBlocks = 384
+farfieldLateralCells = 12
+farfieldMinCommittedPrefixTicks = 0.0
+farfieldRefreshPhysicalReplan = false
+farfieldPhysicalPreemptMinImprovementTicks = 244.4519
+farfieldPhysicalPreemptMinImprovementRatio = 0.1362
+farfieldOpenSurfaceTicksPerBlock = 8.5187
+farfieldVoidTicksPerBlock = 18.6983
+farfieldLavaTicksPerBlock = 22.594
+farfieldSolidTicksPerBlock = 175.7513
+farfieldUnknownTicksPerBlock = 23.657
+farfieldVerticalUpTicksPerBlock = 16.5353
+farfieldVerticalDownTicksPerBlock = 3.3581
+farfieldNetherUnknownLavaProbability = 0.0621
+farfieldNetherUnknownSolidProbability = 0.1758
+pedestrianLavaProximityPenalty = 8.3072
+
+[controller]
+cruise-segment-aim-distance = 3.4632
+physical-waypoint-reached-radius = 1.4705
+precision-segment-aim-distance = 0.5616
+stall-grace-ticks = 68
+stall-progress-epsilon = 0.154
+technical-waypoint-reached-radius = 0.4272
+terminal-reached-radius = 0.5534
+terminal-settled-speed = 0.0403
+waypoint-reached-radius = 0.8251
+
+[motion]
+low-max-forward = 0.1573
+precision-ride-final-speed = 0.0727
+precision-ride-speed = 0.1573
+precision-ride-taper-distance = 1.2597
+settled-speed = 0.0315
+
+[planner]
+damage-hazard-approach-margin = 0.8081
+diagonal-step-overrun-penalty-ticks = 6.0
+direct-cruise-pull-crawl-blocks = 8.4114
+direct-cruise-pull-span-large = 26.9281
+direct-cruise-pull-span-mid = 19.771
+direct-cruise-pull-span-small = 8.5052
+direct-cruise-pulling = true
+ground-first-timeout-ms = 0
+line-certification-samples-per-block = 5
+local-progress-cost-weight = 0.9758
+local-progress-heuristic-epsilon = 1.9207
+min-cruise-support-quadrants = 1
+min-local-progress-fallback-blocks = 6.1497
+min-vertical-local-progress-fallback-blocks = 3.2136
+poor-support-penalty-ticks = 0.0656
+route-leg-max-edges = 73
+route-leg-max-ticks = 140.7602
+water-wade-cost-multiplier = 7.991

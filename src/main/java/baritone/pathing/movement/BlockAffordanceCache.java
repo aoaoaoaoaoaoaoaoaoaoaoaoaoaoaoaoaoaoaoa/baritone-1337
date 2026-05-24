@@ -43,9 +43,9 @@ public final class BlockAffordanceCache {
   private final BlockState[] stateLookupKeys = new BlockState[STATE_LOOKUP_CACHE_SIZE];
   private final int[] stateLookupValues = new int[STATE_LOOKUP_CACHE_SIZE];
   private final Long2IntOpenHashMap positionAffordanceBits = new Long2IntOpenHashMap();
-  private final LongDoubleCache miningCost = new LongDoubleCache();
-  private final LongDoubleCache miningCostWithFalling = new LongDoubleCache();
-  private final LongDoubleCache placementCost = new LongDoubleCache();
+  private LongDoubleCache miningCost;
+  private LongDoubleCache miningCostWithFalling;
+  private LongDoubleCache placementCost;
 
   BlockAffordanceCache(CalculationContext context) {
     this.context = context;
@@ -211,7 +211,7 @@ public final class BlockAffordanceCache {
       return 0;
     }
     long key = BlockKey.pack(x, y, z);
-    LongDoubleCache cache = includeFalling ? miningCostWithFalling : miningCost;
+    LongDoubleCache cache = miningCostCache(includeFalling);
     double cached = cache.get(key);
     if (!Double.isNaN(cached)) return cached;
     double result = walkThroughKnownFromState ? MovementHelper.computeBlockedMiningDurationTicks(context, x, y, z, state, includeFalling)
@@ -226,11 +226,26 @@ public final class BlockAffordanceCache {
 
   public double placementCost(int x, int y, int z, BlockState state) {
     long key = BlockKey.pack(x, y, z);
-    double cached = placementCost.get(key);
+    LongDoubleCache cache = placementCostCache();
+    double cached = cache.get(key);
     if (!Double.isNaN(cached)) return cached;
     double result = context.uncachedCostOfPlacingAt(x, y, z, state);
-    placementCost.put(key, result);
+    cache.put(key, result);
     return result;
+  }
+
+  private LongDoubleCache miningCostCache(boolean includeFalling) {
+    if (includeFalling) {
+      LongDoubleCache cache = miningCostWithFalling;
+      return cache != null ? cache : (miningCostWithFalling = new LongDoubleCache());
+    }
+    LongDoubleCache cache = miningCost;
+    return cache != null ? cache : (miningCost = new LongDoubleCache());
+  }
+
+  private LongDoubleCache placementCostCache() {
+    LongDoubleCache cache = placementCost;
+    return cache != null ? cache : (placementCost = new LongDoubleCache());
   }
 
   private static final class LongDoubleCache {

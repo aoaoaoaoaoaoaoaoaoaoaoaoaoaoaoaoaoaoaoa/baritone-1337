@@ -10,6 +10,10 @@ public record MacroAgentState(int bits) {
   private static final int MODE_BOAT = 1;
   private static final int MODE_SWIM = 2;
   private static final int MODE_HORSE = 3;
+  private static final MacroAgentState PEDESTRIAN = new MacroAgentState(MODE_PEDESTRIAN);
+  private static final MacroAgentState BOAT = new MacroAgentState(MODE_BOAT);
+  private static final MacroAgentState SWIM = new MacroAgentState(MODE_SWIM);
+  private static final MacroAgentState HORSE = new MacroAgentState(MODE_HORSE);
 
   public MacroAgentState {
     if ((bits & ~MODE_MASK) != 0 || (bits & MODE_MASK) > MODE_HORSE) {
@@ -25,19 +29,19 @@ public record MacroAgentState(int bits) {
   }
 
   public static MacroAgentState pedestrian() {
-    return new MacroAgentState(MODE_PEDESTRIAN);
+    return PEDESTRIAN;
   }
 
   public static MacroAgentState boat() {
-    return new MacroAgentState(MODE_BOAT);
+    return BOAT;
   }
 
   public static MacroAgentState swim() {
-    return new MacroAgentState(MODE_SWIM);
+    return SWIM;
   }
 
   public static MacroAgentState horse() {
-    return new MacroAgentState(MODE_HORSE);
+    return HORSE;
   }
 
   public TransportMode mode() {

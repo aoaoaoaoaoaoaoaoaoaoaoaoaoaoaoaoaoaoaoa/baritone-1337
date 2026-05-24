@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.Test;
@@ -50,27 +51,31 @@ public class PlaytestScenarioCommandTest {
   }
 
   @Test
-  public void scenarioParsesMountedTuningSpec() throws Exception {
-    Path scenarioFile = Files.createTempFile("playtest-mounted-tuning-", ".json");
-    Files.writeString(scenarioFile, """
-      {
-        "mountTuning": {
-          "profile": "/tmp/mount-tuning.toml",
-          "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  public void scenarioParsesGoldenTuningSpec() throws Exception {
+    Path scenarioFile = Files.createTempFile("playtest-golden-tuning-", ".json");
+    try {
+      Files.writeString(scenarioFile, """
+        {
+          "goldenTuning": {
+            "profile": "/tmp/golden-tuning.toml",
+            "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          }
         }
-      }
-      """);
+        """);
 
-    PlaytestScenario scenario = PlaytestScenario.load(scenarioFile, "run");
+      PlaytestScenario scenario = PlaytestScenario.load(scenarioFile, "run");
 
-    assertEquals("/tmp/mount-tuning.toml", scenario.mountTuning().profile());
-    assertEquals("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", scenario.mountTuning().digest());
-    assertTrue(scenario.mountTuning().configured());
+      assertEquals("/tmp/golden-tuning.toml", scenario.goldenTuning().profile());
+      assertEquals("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", scenario.goldenTuning().digest());
+      assertTrue(scenario.goldenTuning().configured());
+    } finally {
+      deleteRecursively(scenarioFile);
+    }
   }
 
   @Test
   public void acceptanceEarlyFailureKillsOnlyMonotoneHorseInvalidations() throws Exception {
-    PlaytestScenario scenario = PlaytestScenario.load(minimalScenario("""
+    Path scenarioFile = minimalScenario("""
       {
         "acceptance": {
           "requireHorseEncountered": true,
@@ -78,21 +83,29 @@ public class PlaytestScenarioCommandTest {
           "maxJumpTicks": 0
         }
       }
-      """), "run");
-    PlaytestRun run = new PlaytestRun(scenario, Files.createTempDirectory("playtest-run-"), null, 0);
+      """);
+    Path runDir = null;
+    try {
+      runDir = Files.createTempDirectory("playtest-run-");
+      PlaytestScenario scenario = PlaytestScenario.load(scenarioFile, "run");
+      PlaytestRun run = new PlaytestRun(scenario, runDir, null, 0);
 
-    set(run, "sawHorse", true);
-    set(run, "lostHorseAfterEncounter", true);
-    assertSame(PlaytestRun.TerminalReason.ACCEPTANCE_DISMOUNT, scenario.acceptance().earlyFailure(null, run).orElseThrow());
+      set(run, "sawHorse", true);
+      set(run, "lostHorseAfterEncounter", true);
+      assertSame(PlaytestRun.TerminalReason.ACCEPTANCE_DISMOUNT, scenario.acceptance().earlyFailure(null, run).orElseThrow());
 
-    set(run, "lostHorseAfterEncounter", false);
-    set(run, "jumpTicks", 1);
-    assertSame(PlaytestRun.TerminalReason.ACCEPTANCE_JUMP_BUDGET, scenario.acceptance().earlyFailure(null, run).orElseThrow());
+      set(run, "lostHorseAfterEncounter", false);
+      set(run, "jumpTicks", 1);
+      assertSame(PlaytestRun.TerminalReason.ACCEPTANCE_JUMP_BUDGET, scenario.acceptance().earlyFailure(null, run).orElseThrow());
 
-    set(run, "jumpTicks", 0);
-    set(run, "initialHealth", 20F);
-    set(run, "minHealth", 19F);
-    assertSame(PlaytestRun.TerminalReason.ACCEPTANCE_DAMAGE, scenario.acceptance().earlyFailure(null, run).orElseThrow());
+      set(run, "jumpTicks", 0);
+      set(run, "initialHealth", 20F);
+      set(run, "minHealth", 19F);
+      assertSame(PlaytestRun.TerminalReason.ACCEPTANCE_DAMAGE, scenario.acceptance().earlyFailure(null, run).orElseThrow());
+    } finally {
+      deleteRecursively(runDir);
+      deleteRecursively(scenarioFile);
+    }
   }
 
   private static void inspect(Path path, String section, JsonObject scenario, ArrayList<String> failures) {
@@ -116,6 +129,17 @@ public class PlaytestScenarioCommandTest {
     Path path = Files.createTempFile("playtest-scenario-", ".json");
     Files.writeString(path, json);
     return path;
+  }
+
+  private static void deleteRecursively(Path path) throws Exception {
+    if (path == null || !Files.exists(path)) {
+      return;
+    }
+    try (var paths = Files.walk(path)) {
+      for (Path entry : paths.sorted(Comparator.reverseOrder()).toList()) {
+        Files.deleteIfExists(entry);
+      }
+    }
   }
 
   private static void set(Object target, String field, Object value) throws Exception {

@@ -1,11 +1,12 @@
 package baritone.playtest;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.event.events.PathEvent;
 import baritone.api.event.events.TickEvent;
 import baritone.api.event.events.WorldEvent;
 import baritone.behavior.Behavior;
-import baritone.pathing.movement.MovementHelper;
 import baritone.playtest.PlaytestRun.TerminalReason;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -185,7 +186,7 @@ public final class PlaytestHarnessBehavior extends Behavior {
         finish(TerminalReason.STALE_CLIENT, false);
         return;
       }
-      scenario.mountTuning().installIfConfigured();
+      scenario.goldenTuning().installIfConfigured();
       dead = false;
       commandIndex = 0;
       phaseTicks = 0;
@@ -423,8 +424,8 @@ public final class PlaytestHarnessBehavior extends Behavior {
     double dx = body.getX() - start.x();
     double dy = body.getY() - start.y();
     double dz = body.getZ() - start.z();
-    boolean physicallySettled =
-      body.onGround() || body.getDeltaMovement().lengthSqr() < 1.0E-5D || player.isInWater() || player.isUnderWater() || MovementHelper.isWater(ctx, pos) || MovementHelper.isWater(ctx, pos.below());
+    boolean physicallySettled = body.onGround() || body.getDeltaMovement().lengthSqr() < 1.0E-5D || player.isInWater() || player.isUnderWater() || MovementClientHelper.isWater(ctx, pos)
+      || MovementClientHelper.isWater(ctx, pos.below());
     return ctx.world().hasChunkAt(pos) && dx * dx + dy * dy + dz * dz <= 4D && physicallySettled && player.fallDistance <= 0.01F && player.getHealth() >= player.getMaxHealth() - 1.0E-4F;
   }
 

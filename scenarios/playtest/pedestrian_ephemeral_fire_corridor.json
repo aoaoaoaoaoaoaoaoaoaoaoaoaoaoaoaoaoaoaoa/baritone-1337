@@ -1,0 +1,47 @@
+{
+  "id": "pedestrian_ephemeral_fire_corridor",
+  "worldKey": "smoke_vd10",
+  "seed": "baritone-playtest-smoke",
+  "viewDistance": 10,
+  "dimension": "minecraft:overworld",
+  "start": {
+    "x": 20.5,
+    "y": 114.0,
+    "z": 0.5,
+    "yaw": -90.0,
+    "pitch": 0.0
+  },
+  "goal": {
+    "type": "block",
+    "x": 31,
+    "y": 114,
+    "z": 0
+  },
+  "setupCommands": [
+    "fill 18 112 -2 33 118 3 minecraft:air",
+    "fill 18 113 -1 33 113 2 minecraft:netherrack",
+    "fill 18 114 -1 33 116 -1 minecraft:bedrock",
+    "fill 18 114 2 33 116 2 minecraft:bedrock",
+    "setblock 20 113 0 minecraft:bedrock",
+    "setblock 25 114 0 minecraft:fire",
+    "setblock 25 114 1 minecraft:lava"
+  ],
+  "loadout": [],
+  "timeoutTicks": 1200,
+  "successRadius": 2.0,
+  "acceptance": {
+    "requirePathComplete": true,
+    "requireOnGround": true,
+    "requireNoVehicle": true,
+    "requirePathingSeen": true,
+    "requireNoDamage": true
+  },
+  "settings": {
+    "chunkCaching": false,
+    "allowSprint": true,
+    "allowBreak": true,
+    "allowEphemeralObstacleClearing": true,
+    "ephemeralObstacleClearPenalty": 2.0
+  },
+  "trace": true
+}

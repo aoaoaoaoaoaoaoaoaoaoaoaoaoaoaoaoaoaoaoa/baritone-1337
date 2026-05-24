@@ -1,9 +1,10 @@
 package baritone.pathing.calc;
 
+import baritone.api.BaritoneAPI;
+
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
-import baritone.api.utils.Helper;
 import baritone.api.utils.PathCalculationResult;
 import baritone.pathing.movement.CalculationContext;
 import java.util.Objects;
@@ -14,7 +15,7 @@ import java.util.Optional;
  *
  * @author leijurv
  */
-public abstract class AbstractNodeCostSearch implements ActivePathCalculation, Helper {
+public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
   protected final BetterBlockPos realStart;
   protected final int startX;
   protected final int startY;
@@ -75,7 +76,7 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
     this.goal = goal;
     this.context = context;
     this.incumbentPolicy = Objects.requireNonNull(incumbentPolicy);
-    this.nodes = new PathNodeArena(goal, NODE_MAP_DEFAULT_SIZE, NODE_MAP_LOAD_FACTOR);
+    this.nodes = new PathNodeArena(goal, NODE_MAP_DEFAULT_SIZE, NODE_MAP_LOAD_FACTOR, BaritoneAPI.getSettings().pathingMaxNodes.value);
   }
 
   public void cancel() {
@@ -109,7 +110,7 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
       result = materialize(rawPath, true, true);
       return result;
     } catch (Exception e) {
-      Helper.HELPER.logDirect("Pathing exception: " + e);
+      PathingLog.direct("Pathing exception: " + e);
       e.printStackTrace();
       result = new PathCalculationResult(PathCalculationResult.Type.EXCEPTION);
       return result;
@@ -148,10 +149,10 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
     }
     if (logPhases) {
       if (path.length() < previousLength) {
-        Helper.HELPER.logDebug("Cutting off path at edge of live chunks");
-        Helper.HELPER.logDebug("Length decreased by " + (previousLength - path.length()));
+        logDebug("Cutting off path at edge of live chunks");
+        logDebug("Length decreased by " + (previousLength - path.length()));
       } else {
-        Helper.HELPER.logDebug("Path ends within live chunks");
+        logDebug("Path ends within live chunks");
       }
     }
     previousLength = path.length();
@@ -162,7 +163,7 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
       profile.finishPathPhases(postProcessNanos, liveChunkCutoffNanos, staticCutoffNanos);
     }
     if (logPhases && path.length() < previousLength) {
-      Helper.HELPER.logDebug("Static cutoff " + previousLength + " to " + path.length());
+      logDebug("Static cutoff " + previousLength + " to " + path.length());
     }
     return new PathCalculationResult(goal.isInGoal(path.getDest()) ? PathCalculationResult.Type.SUCCESS_TO_GOAL : PathCalculationResult.Type.SUCCESS_SEGMENT, path);
   }
@@ -189,7 +190,7 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
         publicationSink.publish(result);
       }
     } catch (Exception e) {
-      Helper.HELPER.logDirect("Incumbent path publication failed: " + e);
+      PathingLog.direct("Incumbent path publication failed: " + e);
       e.printStackTrace();
     }
   }
@@ -208,6 +209,10 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
 
   protected int nodeMapSize() {
     return nodes.size();
+  }
+
+  protected boolean nodeMapFull() {
+    return nodes.full();
   }
 
   /**
@@ -305,5 +310,13 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation, H
 
   protected int mapSize() {
     return nodes.size();
+  }
+
+  protected void logDebug(String message) {
+    PathingLog.debug(message);
+  }
+
+  protected void logNotification(String message, boolean error) {
+    PathingLog.notification(message, error);
   }
 }

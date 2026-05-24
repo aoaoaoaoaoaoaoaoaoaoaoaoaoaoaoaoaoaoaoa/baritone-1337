@@ -59,6 +59,34 @@ public class BlockStateInterface {
     this.access = new BlockStateInterfaceAccessWrapper(this);
   }
 
+  private BlockStateInterface(BlockStateInterface source, boolean copyLoadedChunks) {
+    this.world = source.world;
+    this.worldBorder = source.worldBorder;
+    this.worldData = source.worldData;
+    this.provider = copyLoadedChunks ? ((IClientChunkProvider) world.getChunkSource()).createThreadSafeCopy() : source.provider;
+    this.useTheRealWorld = source.useTheRealWorld;
+    this.minY = source.minY;
+    this.height = source.height;
+    this.isPassableBlockPos = new BlockPos.MutableBlockPos();
+    this.access = new BlockStateInterfaceAccessWrapper(this);
+  }
+
+  protected BlockStateInterface(Level world, BetterWorldBorder worldBorder, int minY, int height) {
+    this.world = world;
+    this.worldBorder = worldBorder;
+    this.worldData = null;
+    this.provider = null;
+    this.useTheRealWorld = false;
+    this.minY = minY;
+    this.height = height;
+    this.isPassableBlockPos = new BlockPos.MutableBlockPos();
+    this.access = new BlockStateInterfaceAccessWrapper(this);
+  }
+
+  public BlockStateInterface forkThreadLocalCursor() {
+    return new BlockStateInterface(this, true);
+  }
+
   public ChunkFactState chunkFactState(int blockX, int blockZ) {
     if (livePathingChunk(blockX, blockZ) != null) {
       return ChunkFactState.LIVE;
@@ -127,11 +155,15 @@ public class BlockStateInterface {
   }
 
   private LevelChunk liveChunk(int x, int z) {
+    return liveChunkByChunk(x >> 4, z >> 4);
+  }
+
+  public LevelChunk liveChunkByChunk(int chunkX, int chunkZ) {
     LevelChunk cached = prev;
-    if (cached != null && cached.getPos().x() == x >> 4 && cached.getPos().z() == z >> 4) {
+    if (cached != null && cached.getPos().x() == chunkX && cached.getPos().z() == chunkZ) {
       return cached;
     }
-    LevelChunk chunk = provider.getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
+    LevelChunk chunk = provider.getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
     if (chunk == null || chunk.isEmpty()) {
       return null;
     }

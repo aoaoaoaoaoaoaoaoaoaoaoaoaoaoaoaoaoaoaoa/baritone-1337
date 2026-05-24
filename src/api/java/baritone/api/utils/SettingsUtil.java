@@ -95,6 +95,7 @@ public class SettingsUtil {
 
   public static List<Settings.Setting<?>> modifiedSettings(Settings settings) {
     List<Settings.Setting<?>> modified = new ArrayList<>();
+    Map<String, String> golden = GoldenTuning.current().settingsValues();
     for (Settings.Setting<?> setting : settings.allSettings) {
       if (setting.value == null) {
         System.out.println("NULL SETTING?" + setting.getName());
@@ -102,6 +103,10 @@ public class SettingsUtil {
       }
       if (setting.isJavaOnly()) {
         continue; // NO
+      }
+      String goldenValue = golden.get(setting.getName().toLowerCase(Locale.US));
+      if (goldenValue != null && Objects.equals(settingValueToString(setting), goldenValue)) {
+        continue;
       }
       if (setting.value == setting.defaultValue) {
         continue;

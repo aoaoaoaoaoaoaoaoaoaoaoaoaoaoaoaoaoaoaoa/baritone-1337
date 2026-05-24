@@ -1,12 +1,13 @@
 package baritone.pathing.transport;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.movement.IMovement;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.IPlayerContext;
 import baritone.pathing.movement.Movement;
-import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.RouteExecutor;
 import baritone.pathing.route.PlannedTransportState;
 import java.util.Locale;
@@ -36,7 +37,7 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
     if (ctx.player().getVehicle() instanceof AbstractHorse) {
       return TransportMode.HORSE;
     }
-    if (MovementHelper.isWater(ctx, ctx.playerFeet()) || ctx.player().isSwimming()) {
+    if (MovementClientHelper.isWater(ctx, ctx.playerFeet()) || ctx.player().isSwimming()) {
       return TransportMode.SWIM;
     }
     return TransportMode.PEDESTRIAN;
@@ -51,7 +52,7 @@ public record TransportSnapshot(TransportMode actual, TransportSnapshot.Executor
   }
 
   private static boolean legacyWater(IPlayerContext ctx, IMovement movement) {
-    return MovementHelper.isWater(ctx, movement.getSrc()) || MovementHelper.isWater(ctx, movement.getDest());
+    return MovementClientHelper.isWater(ctx, movement.getSrc()) || MovementClientHelper.isWater(ctx, movement.getDest());
   }
 
   public record Executor(int position, int size, int legIndex, Plan current, String sequence) {

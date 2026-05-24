@@ -59,6 +59,23 @@ public record MacroTraversalProfile(Kind kind, double horseTicksPerBlock) {
     return surfaceCostPerBlock(atlas, cellX, cellZ).times(distance);
   }
 
+  public double surfaceScore(MacroPolicy policy, MacroAtlas atlas, int cellX, int cellZ, double distance) {
+    if (!horse() && atlas.dimension() == Level.NETHER) {
+      return policy.timeWeight() * distance * Baritone.settings().macroNetherTicksPerBlock.value;
+    }
+    BiomeSurfaceCost prior = atlas.surfaceCost(cellX, cellZ);
+    if (!horse()) {
+      return distance * (policy.timeWeight() * prior.medianTicksPerBlock() + policy.jumpWeight() * prior.jumpTicksPerBlock() + policy.sprintWeight() * prior.sprintTicksPerBlock()
+        + policy.waterWeight() * prior.waterTicksPerBlock() + policy.damageHazardWeight() * hazard(prior.damageRate(), prior.totalBlocks())
+        + policy.failureHazardWeight() * hazard(prior.failureRate(), prior.totalBlocks()) + policy.uncertaintyWeight() * prior.uncertainty());
+    }
+    boolean water = atlas.surfaceWaterCostCell(cellX, cellZ);
+    double ticksPerBlock = water ? horseTicksPerBlock * HorseRoutePlanner.waterWadeCostMultiplier() : horseTicksPerBlock * Math.max(1D, prior.medianTicksPerBlock() / PEDESTRIAN_BASE_TICKS_PER_BLOCK);
+    double waterTicksPerBlock = water ? ticksPerBlock : prior.waterTicksPerBlock();
+    return distance * (policy.timeWeight() * ticksPerBlock + policy.waterWeight() * waterTicksPerBlock + policy.damageHazardWeight() * hazard(prior.damageRate(), prior.totalBlocks())
+      + policy.failureHazardWeight() * hazard(prior.failureRate(), prior.totalBlocks()) + policy.uncertaintyWeight() * prior.uncertainty());
+  }
+
   public MacroCostVector surfaceCostPerBlock(MacroAtlas atlas, int cellX, int cellZ) {
     if (!horse() && atlas.dimension() == Level.NETHER) {
       return MacroCostVector.fixedTime(Baritone.settings().macroNetherTicksPerBlock.value);

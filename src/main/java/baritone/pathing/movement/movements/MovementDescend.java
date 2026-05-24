@@ -1,6 +1,9 @@
 package baritone.pathing.movement.movements;
 
-import baritone.Baritone;
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -68,6 +71,11 @@ public class MovementDescend extends Movement {
   public static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
     res.blocked();
     double totalCost = 0;
+    boolean hasFacts = facts != null && facts.matches(x, y, z);
+    Block fromDown = hasFacts ? facts.srcDownBlock : context.get(x, y - 1, z).getBlock();
+    if (fromDown == Blocks.LADDER || fromDown == Blocks.VINE) {
+      return;
+    }
     BlockState destDown = context.get(destX, y - 1, destZ);
     totalCost += MovementHelper.getMiningDurationTicks(context, destX, y - 1, destZ, destDown, false);
     if (totalCost >= COST_INF) {
@@ -79,12 +87,6 @@ public class MovementDescend extends Movement {
     }
     totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, true); // only the top block in the 3 we need to mine needs to consider the falling blocks above
     if (totalCost >= COST_INF) {
-      return;
-    }
-
-    boolean hasFacts = facts != null && facts.matches(x, y, z);
-    Block fromDown = hasFacts ? facts.srcDownBlock : context.get(x, y - 1, z).getBlock();
-    if (fromDown == Blocks.LADDER || fromDown == Blocks.VINE) {
       return;
     }
 
@@ -187,8 +189,7 @@ public class MovementDescend extends Movement {
       if (MovementHelper.isBottomSlab(ontoBlock)) {
         return false; // falling onto a half slab is really glitchy, and can cause more fall damage than we'd expect
       }
-      if (reachedMinimum && unprotectedFallHeight <= context.fall.maxNoWater() + 1) {
-        // fallHeight = 4 means onto.up() is 3 blocks down, which is the max
+      if (reachedMinimum && context.fall.safeNoWaterLanding(unprotectedFallHeight, MovementHelper.landingTop16(context, destX, newY, destZ, ontoBlock))) {
         res.reachable(destX, newY + 1, destZ, tentativeCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, newY + 1, destZ), 0);
         return false;
       }
@@ -214,7 +215,7 @@ public class MovementDescend extends Movement {
 
     BlockPos playerFeet = ctx.playerFeet();
     BlockPos fakeDest = new BlockPos(dest.getX() * 2 - src.getX(), dest.getY(), dest.getZ() * 2 - src.getZ());
-    if ((playerFeet.equals(dest) || playerFeet.equals(fakeDest)) && (MovementHelper.isLiquid(ctx, dest) || ctx.player().position().y - dest.getY() < 0.5)) { // lilypads
+    if ((playerFeet.equals(dest) || playerFeet.equals(fakeDest)) && (MovementClientHelper.isLiquid(ctx, dest) || ctx.player().position().y - dest.getY() < 0.5)) { // lilypads
       // Wait until we're actually on the ground before saying we're done because sometimes we continue to fall if the next action starts immediately
       return state.setStatus(MovementStatus.SUCCESS);
     }
@@ -234,13 +235,13 @@ public class MovementDescend extends Movement {
     double z = ctx.player().position().z - (src.getZ() + 0.5);
     double fromStart = Math.sqrt(x * x + z * z);
 
-    state.setInput(Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && ctx.world().getBlockState(ctx.player().blockPosition().below()).is(Blocks.MAGMA_BLOCK));
+    state.setInput(Input.SNEAK, BaritoneAPI.getSettings().allowWalkOnMagmaBlocks.value && ctx.world().getBlockState(ctx.player().blockPosition().below()).is(Blocks.MAGMA_BLOCK));
 
     if (!playerFeet.equals(dest) || ab > 0.25) {
       if (numTicks++ < 20 && fromStart < 1.25) {
-        MovementHelper.moveTowards(ctx, state, fakeDest);
+        MovementClientHelper.moveTowards(ctx, state, fakeDest);
       } else {
-        MovementHelper.moveTowards(ctx, state, dest);
+        MovementClientHelper.moveTowards(ctx, state, dest);
       }
     }
     return state;
@@ -267,7 +268,7 @@ public class MovementDescend extends Movement {
 
   public boolean skipToAscend() {
     BlockPos into = dest.subtract(src.below()).offset(dest);
-    return !MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into)) && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into).above())
-      && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(into).above(2));
+    return !MovementClientHelper.canWalkThrough(ctx, new BetterBlockPos(into)) && MovementClientHelper.canWalkThrough(ctx, new BetterBlockPos(into).above())
+      && MovementClientHelper.canWalkThrough(ctx, new BetterBlockPos(into).above(2));
   }
 }

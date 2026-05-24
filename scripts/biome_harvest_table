@@ -92,7 +92,7 @@ def add_row(rows: dict[str, list[Row]], summary: dict[str, Any], scenario: dict[
 
 
 def print_table(rows: dict[str, list[Row]], target_ticks: int, min_samples: int, min_independent: int, details: bool) -> None:
-  headers = ("biome", "samples", "ind", "ticks", "median", "p25", "p75", "min", "max", "jump/b", "sprint/b", "water/b", "damage", "fail", "done")
+  headers = ("biome", "samples", "ind", "ticks", "median", "p25", "p75", "min", "max", "stall/b", "jump/b", "sprint/b", "water/b", "damage", "fail", "done")
   table: list[tuple[str, ...]] = [headers]
   detail_rows: list[tuple[str, list[Row]]] = []
   for biome, biome_rows in sorted(rows.items()):
@@ -112,6 +112,7 @@ def print_table(rows: dict[str, list[Row]], target_ticks: int, min_samples: int,
         fmt(percentile(tpb, 0.75)),
         fmt(min(tpb) if tpb else None),
         fmt(max(tpb) if tpb else None),
+        fmt(per_block(successes, "postActuationStalledTicks"), 4),
         fmt(per_block(successes, "jumpTicks"), 4),
         fmt(per_block(successes, "sprintTicks"), 4),
         fmt(water_per_block(successes), 4),
@@ -134,7 +135,8 @@ def print_table(rows: dict[str, list[Row]], target_ticks: int, min_samples: int,
         tpb = f"{row.ticks_per_block:.3f}" if row.success else "n/a"
         print(
           f"  {status} {row.summary.get('id')}: {row.distance:.1f}b {row.summary.get('elapsedTicks')}t {tpb} t/b "
-          f"ind {independent_sample(row)} y {start.get('y')}->{goal.get('y')} jump {row.summary.get('jumpTicks')} sprint {row.summary.get('sprintTicks')} damage {row.summary.get('tookDamage')}"
+          f"ind {independent_sample(row)} y {start.get('y')}->{goal.get('y')} stall {row.summary.get('postActuationStalledTicks', 0)} jump {row.summary.get('jumpTicks')} "
+          f"sprint {row.summary.get('sprintTicks')} damage {row.summary.get('tookDamage')}"
         )
 
 

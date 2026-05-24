@@ -1,5 +1,7 @@
 package baritone.process.elytra;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.utils.ElytraFireworkPolicy;
 import baritone.api.utils.BetterBlockPos;
@@ -70,7 +72,7 @@ public record ElytraFlightPolicy(ResourceKey<Level> dimension, int minY, int max
       Block block = state.getBlock();
       return block == Blocks.NETHERRACK || block == Blocks.GRAVEL || (block == Blocks.NETHER_BRICKS && Baritone.settings().elytraAllowLandOnNetherFortress.value);
     }
-    return MovementHelper.canWalkOn(ctx, new BetterBlockPos(pos)) && !MovementHelper.avoidWalkingInto(state);
+    return MovementClientHelper.canWalkOn(ctx, new BetterBlockPos(pos)) && !MovementHelper.avoidWalkingInto(state);
   }
 
   public boolean supportsTerrainPrediction() {

@@ -1,5 +1,7 @@
 package baritone.pathing.route;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
@@ -226,7 +228,7 @@ public final class SurfaceLineController implements MovementHelper {
       state.setStatus(MovementStatus.SUCCESS);
       return;
     }
-    MovementHelper.moveTowards(ctx, state, dest);
+    MovementClientHelper.moveTowards(ctx, state, dest);
     state.setInput(Input.JUMP, playerWet || ctx.playerFeet().getY() < dest.y);
     state.setInput(Input.SNEAK, false);
     state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value && playerWet);
@@ -431,12 +433,12 @@ public final class SurfaceLineController implements MovementHelper {
     if (boatPlaceCooldown > 0) {
       boatPlaceCooldown--;
     }
-    if (MovementHelper.isWater(ctx, ctx.playerFeet())) {
+    if (MovementClientHelper.isWater(ctx, ctx.playerFeet())) {
       placeBoatFromWater(state);
       return;
     }
     if (!boatLaunchReady()) {
-      MovementHelper.moveTowards(ctx, state, segment.src());
+      MovementClientHelper.moveTowards(ctx, state, segment.src());
       state.setInput(Input.SPRINT, false);
       state.setInput(Input.CLICK_RIGHT, false);
       return;
@@ -562,7 +564,7 @@ public final class SurfaceLineController implements MovementHelper {
     state.setTarget(new ControlFrame.MovementTarget(rotation, true));
     double distanceSq = horizontalDistanceSq(ctx.player().position(), target.position());
     state.setInput(Input.MOVE_FORWARD, distanceSq > BOAT_PICKUP_APPROACH_DISTANCE_SQ);
-    state.setInput(Input.JUMP, distanceSq > BOAT_PICKUP_APPROACH_DISTANCE_SQ && MovementHelper.isWater(ctx, ctx.playerFeet()));
+    state.setInput(Input.JUMP, distanceSq > BOAT_PICKUP_APPROACH_DISTANCE_SQ && MovementClientHelper.isWater(ctx, ctx.playerFeet()));
     state.setInput(Input.SPRINT, false);
     state.setInput(Input.SNEAK, false);
     if (distanceSq <= BOAT_PICKUP_APPROACH_DISTANCE_SQ && rotationClose(ctx.playerRotations(), rotation)) {
@@ -581,21 +583,21 @@ public final class SurfaceLineController implements MovementHelper {
     state.setTarget(new ControlFrame.MovementTarget(rotation, true));
     double distanceSq = horizontalDistanceSq(ctx.player().position(), target);
     state.setInput(Input.MOVE_FORWARD, distanceSq > BOAT_ITEM_PICKUP_DISTANCE_SQ);
-    state.setInput(Input.JUMP, distanceSq > BOAT_ITEM_PICKUP_DISTANCE_SQ && MovementHelper.isWater(ctx, ctx.playerFeet()));
+    state.setInput(Input.JUMP, distanceSq > BOAT_ITEM_PICKUP_DISTANCE_SQ && MovementClientHelper.isWater(ctx, ctx.playerFeet()));
     state.setInput(Input.SPRINT, false);
     state.setInput(Input.SNEAK, false);
   }
 
   private void finishAfterBoat(ControlFrame.Builder state) {
     BetterBlockPos dest = segment.dest();
-    boolean destWater = MovementHelper.isWater(ctx, dest);
-    boolean playerWet = MovementHelper.isWater(ctx, ctx.playerFeet());
+    boolean destWater = MovementClientHelper.isWater(ctx, dest);
+    boolean playerWet = MovementClientHelper.isWater(ctx, ctx.playerFeet());
     if ((destWater || !playerWet)
       && (horizontalDistanceSq(ctx.player().position(), VecUtils.getBlockPosCenter(dest)) <= SUCCESS_DISTANCE_SQ || segment.validPositions().contains(new BetterBlockPos(ctx.playerFeet())))) {
       state.setStatus(MovementStatus.SUCCESS);
       return;
     }
-    MovementHelper.moveTowards(ctx, state, dest);
+    MovementClientHelper.moveTowards(ctx, state, dest);
     state.setInput(Input.JUMP, playerWet || ctx.playerFeet().getY() < dest.y);
     state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value && playerWet);
     state.setInput(Input.SNEAK, false);
@@ -657,7 +659,7 @@ public final class SurfaceLineController implements MovementHelper {
   private double waterSurfaceY(BlockPos feet) {
     BlockPos.MutableBlockPos scan = new BlockPos.MutableBlockPos(feet.getX(), feet.getY(), feet.getZ());
     int maxY = ctx.world().getMaxY();
-    while (scan.getY() < maxY && MovementHelper.isWater(ctx, scan)) {
+    while (scan.getY() < maxY && MovementClientHelper.isWater(ctx, scan)) {
       scan.move(Direction.UP);
     }
     return scan.getY();
@@ -669,11 +671,11 @@ public final class SurfaceLineController implements MovementHelper {
 
   private Optional<BlockPos> waterProbe() {
     BlockPos feet = ctx.playerFeet();
-    if (MovementHelper.isWater(ctx, feet)) {
+    if (MovementClientHelper.isWater(ctx, feet)) {
       return Optional.of(feet);
     }
     BlockPos below = feet.below();
-    return MovementHelper.isWater(ctx, below) ? Optional.of(below) : Optional.empty();
+    return MovementClientHelper.isWater(ctx, below) ? Optional.of(below) : Optional.empty();
   }
 
   private Vec3 lookaheadTarget() {
@@ -733,8 +735,8 @@ public final class SurfaceLineController implements MovementHelper {
 
   private boolean boatLaunchReady() {
     BlockPos feet = ctx.playerFeet();
-    return horizontalDistanceSq(ctx.player().position(), VecUtils.getBlockPosCenter(segment.src())) <= BOAT_LAUNCH_CENTER_DISTANCE_SQ && !MovementHelper.isWater(ctx, feet)
-      && MovementHelper.canWalkOn(ctx, feet.below());
+    return horizontalDistanceSq(ctx.player().position(), VecUtils.getBlockPosCenter(segment.src())) <= BOAT_LAUNCH_CENTER_DISTANCE_SQ && !MovementClientHelper.isWater(ctx, feet)
+      && MovementClientHelper.canWalkOn(ctx, feet.below());
   }
 
   private Vec3 controlPosition() {

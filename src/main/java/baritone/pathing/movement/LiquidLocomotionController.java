@@ -1,6 +1,7 @@
 package baritone.pathing.movement;
 
-import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -73,14 +74,14 @@ public final class LiquidLocomotionController implements MovementHelper {
 
   public ControlFrame.Builder adjust(Movement movement, ControlFrame.Builder state, IPath path, int pathPosition) {
     BlockPos feet = ctx.playerFeet();
-    if (!MovementHelper.isLiquid(ctx, feet)) {
+    if (!MovementClientHelper.isLiquid(ctx, feet)) {
       mode = Mode.DRY;
       swimTicks = 0;
       surfaceBumpCooldown = 0;
       resetGovernors();
       return state;
     }
-    if (!MovementHelper.isWater(ctx, feet)) {
+    if (!MovementClientHelper.isWater(ctx, feet)) {
       mode = Mode.WADE;
       swimTicks = 0;
       surfaceBumpCooldown = 0;
@@ -90,7 +91,7 @@ public final class LiquidLocomotionController implements MovementHelper {
       }
       return state;
     }
-    boolean deepWater = MovementHelper.isDeepWater(ctx, feet);
+    boolean deepWater = MovementClientHelper.isDeepWater(ctx, feet);
     boolean verticalRise = verticalRise(movement);
     boolean waterEntry = mode == Mode.DRY || mode == Mode.WATER_EXIT;
     if (shoreExitCandidate(movement)) {
@@ -153,7 +154,7 @@ public final class LiquidLocomotionController implements MovementHelper {
     boolean jump = ctx.player().horizontalCollision || distanceSq <= SHORE_EXIT_JUMP_DISTANCE_SQ || ctx.player().isEyeInFluid(FluidTags.WATER);
     jump &= ctx.player().position().y < movement.getDest().y - SHORE_EXIT_JUMP_Y_MARGIN;
     state.setInput(Input.MOVE_FORWARD, true);
-    state.setInput(Input.SPRINT, Baritone.settings().sprintInWater.value);
+    state.setInput(Input.SPRINT, BaritoneAPI.getSettings().sprintInWater.value);
     state.setInput(Input.SNEAK, false);
     state.setInput(Input.JUMP, jump);
     state.setTarget(new ControlFrame.MovementTarget(new Rotation(governYaw(RotationUtils.calcRotationFromVec3d(ctx.playerHead(), target, ctx.playerRotations()).getYaw()), 0F), true));
@@ -196,7 +197,7 @@ public final class LiquidLocomotionController implements MovementHelper {
 
     SurfaceAction surface = surfaceAction(clearance, air, maxAir);
     state.setInput(Input.JUMP, surface.jump());
-    if (locomote && Baritone.settings().sprintInWater.value) {
+    if (locomote && BaritoneAPI.getSettings().sprintInWater.value) {
       state.setInput(Input.SPRINT, true);
     }
     state.setInput(Input.SNEAK, false);
@@ -284,8 +285,8 @@ public final class LiquidLocomotionController implements MovementHelper {
       return false;
     }
     BlockPos dest = movement.getDest();
-    return !MovementHelper.isWater(ctx, dest) && !MovementHelper.isWater(ctx, dest.above()) && MovementHelper.canWalkOn(ctx, dest.below()) && MovementHelper.canMoveThrough(ctx, dest)
-      && MovementHelper.canMoveThrough(ctx, dest.above());
+    return !MovementClientHelper.isWater(ctx, dest) && !MovementClientHelper.isWater(ctx, dest.above()) && MovementClientHelper.canWalkOn(ctx, dest.below())
+      && MovementClientHelper.canMoveThrough(ctx, dest) && MovementClientHelper.canMoveThrough(ctx, dest.above());
   }
 
   private Vec3 shoreExitTarget(Movement movement) {
@@ -300,7 +301,7 @@ public final class LiquidLocomotionController implements MovementHelper {
   }
 
   private boolean projectableWaterMovement(Movement movement) {
-    return MovementHelper.isWater(ctx, movement.getDest());
+    return MovementClientHelper.isWater(ctx, movement.getDest());
   }
 
   private float yawToPath(Movement movement, IPath path, int pathPosition) {
@@ -401,7 +402,7 @@ public final class LiquidLocomotionController implements MovementHelper {
   private boolean hasFastSwimRunway(IPath path, int pathPosition, Movement movement) {
     int count = 0;
     BlockPos last = null;
-    if (MovementHelper.surfaceSwimEnvelopeCell(ctx, ctx.playerFeet())) {
+    if (MovementClientHelper.surfaceSwimEnvelopeCell(ctx, ctx.playerFeet())) {
       count++;
       last = ctx.playerFeet();
     }
@@ -412,7 +413,7 @@ public final class LiquidLocomotionController implements MovementHelper {
         if (last != null && pos.getX() == last.getX() && pos.getZ() == last.getZ()) {
           continue;
         }
-        if (!MovementHelper.surfaceSwimEnvelopeCell(ctx, pos)) {
+        if (!MovementClientHelper.surfaceSwimEnvelopeCell(ctx, pos)) {
           if (count > 0) {
             break;
           }
@@ -422,7 +423,7 @@ public final class LiquidLocomotionController implements MovementHelper {
         last = pos;
       }
     }
-    if (count < MIN_FAST_SWIM_RUNWAY && MovementHelper.surfaceSwimEnvelopeCell(ctx, movement.getDest())
+    if (count < MIN_FAST_SWIM_RUNWAY && MovementClientHelper.surfaceSwimEnvelopeCell(ctx, movement.getDest())
       && (last == null || movement.getDest().x != last.getX() || movement.getDest().z != last.getZ())) {
       count++;
     }
@@ -433,7 +434,7 @@ public final class LiquidLocomotionController implements MovementHelper {
     if (movement.getDest().x != movement.getSrc().x || movement.getDest().z != movement.getSrc().z || movement.getDest().y <= movement.getSrc().y) {
       return false;
     }
-    if (!MovementHelper.isWater(ctx, movement.getSrc()) || !MovementHelper.isWater(ctx, movement.getDest())) {
+    if (!MovementClientHelper.isWater(ctx, movement.getSrc()) || !MovementClientHelper.isWater(ctx, movement.getDest())) {
       return false;
     }
     return ctx.playerFeet().getY() >= movement.getDest().y;
@@ -441,13 +442,13 @@ public final class LiquidLocomotionController implements MovementHelper {
 
   private boolean swimmingNow() {
     BlockPos feet = ctx.playerFeet();
-    return MovementHelper.isWater(ctx, feet) && MovementHelper.isDeepWater(ctx, feet) && mode.isSwimming();
+    return MovementClientHelper.isWater(ctx, feet) && MovementClientHelper.isDeepWater(ctx, feet) && mode.isSwimming();
   }
 
   private double waterSurfaceY(BlockPos feet) {
     BlockPos.MutableBlockPos scan = new BlockPos.MutableBlockPos(feet.getX(), feet.getY(), feet.getZ());
     int maxY = ctx.world().getMaxY();
-    while (scan.getY() < maxY && MovementHelper.isWater(ctx, scan)) {
+    while (scan.getY() < maxY && MovementClientHelper.isWater(ctx, scan)) {
       scan.move(Direction.UP);
     }
     return scan.getY();

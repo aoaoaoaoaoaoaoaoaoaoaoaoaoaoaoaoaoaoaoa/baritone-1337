@@ -1,5 +1,7 @@
 package baritone.process;
 
+import baritone.pathing.movement.MovementClientHelper;
+
 import baritone.Baritone;
 import baritone.api.BaritoneAPI;
 import baritone.api.pathing.goals.Goal;
@@ -11,7 +13,6 @@ import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.RayTraceUtils;
-import baritone.pathing.movement.MovementHelper;
 import baritone.utils.BaritoneProcessHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -221,7 +222,8 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
       }
       Optional<InteractionPlan.BlockClick> plan = InteractionPlan.reachable(ctx, pos, InteractionPlan.Click.LEFT);
       if (plan.isPresent() && isSafeToCancel) {
-        return plan.get().pause(baritone, () -> MovementHelper.bestToolSlot(ctx, ctx.world().getBlockState(pos)).ifPresent(ctx.player().getInventory()::setSelectedSlot), () -> ctx.isLookingAt(pos));
+        return plan.get().pause(baritone, () -> MovementClientHelper.bestToolSlot(ctx, ctx.world().getBlockState(pos)).ifPresent(ctx.player().getInventory()::setSelectedSlot),
+          () -> ctx.isLookingAt(pos));
       }
     }
     ArrayList<BlockPos> both = new ArrayList<>(openFarmland);

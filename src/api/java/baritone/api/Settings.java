@@ -123,6 +123,24 @@ public final class Settings {
   public final Setting<Double> blockBreakAdditionalPenalty = new Setting<>(2D);
 
   /**
+   * Clear zero-hardness ephemeral passage blockers by left-clicking them before walking through their vacated cells.
+   * <p>
+   * Minecraft only spends tool durability for blocks whose destroy speed is nonzero. This mode is intentionally whitelist-backed anyway: many zero-hardness blocks are user-built
+   * decorations or redstone devices, not pathing chaff.
+   */
+  public final Setting<Boolean> allowEphemeralObstacleClearing = new Setting<>(true);
+
+  /**
+   * Vanilla blocks treated as disposable zero-hardness passage blockers. Default is fire and soul fire.
+   */
+  public final Setting<List<Block>> ephemeralObstacleBlocks = new Setting<>(new ArrayList<>(List.of(Blocks.FIRE, Blocks.SOUL_FIRE)));
+
+  /**
+   * Movement cost for one ephemeral obstacle smack. This is independent of block-break economics because it consumes no tool durability and no inventory resource.
+   */
+  public final Setting<Double> ephemeralObstacleClearPenalty = new Setting<>(2D);
+
+  /**
    * Dynamically recost pedestrian block placement and breaking from a coarse snapshot of throwaway block supply and pick durability.
    * <p>
    * This is deliberately not node state: the economics are frozen into each CalculationContext and adopted only on coarse epochs.
@@ -528,6 +546,12 @@ public final class Settings {
   public final Setting<Integer> pathingMaxChunkBorderFetch = new Setting<>(50);
 
   /**
+   * Hard memory fuse for one legacy A* node arena. This is deliberately generous: hitting it means the current query has become a heap-eating search-space geyser and must return an incumbent or fail,
+   * not kill the client.
+   */
+  public final Setting<Integer> pathingMaxNodes = new Setting<>(2_000_000);
+
+  /**
    * Set to 1.0 to effectively disable this feature
    *
    * @see <a href="https://github.com/cabaletta/baritone/issues/18">Issue #18</a>
@@ -663,12 +687,12 @@ public final class Settings {
   /**
    * Resident node circuit breaker for one pedestrian hot local value field. This is a lazy-growth memory fuse, not a planning horizon or an eager allocation request.
    */
-  public final Setting<Integer> pedestrianHotLocalMaxNodes = new Setting<>(8_000_000);
+  public final Setting<Integer> pedestrianHotLocalMaxNodes = new Setting<>(2_000_000);
 
   /**
    * Evaluated edge record circuit breaker for one pedestrian hot local value field. Edge storage is sparse and chunked; this should stay generous without pretending edge rows are free.
    */
-  public final Setting<Integer> pedestrianHotLocalMaxEdges = new Setting<>(24_000_000);
+  public final Setting<Integer> pedestrianHotLocalMaxEdges = new Setting<>(6_000_000);
 
   /**
    * Maximum extracted hot-local movements before a prefix is published with local-value continuation.
@@ -704,9 +728,14 @@ public final class Settings {
   public final Setting<Boolean> transportDebugOverlay = new Setting<>(false);
 
   /**
-   * Enable certified route-level transports such as boats and portals. Rolling value-field local exits are core pathing, not a toggle.
+   * Enable scalar continuation values beyond exact pathing data. Farfield never chooses an interior waypoint; it only prices exact frontier exits.
    */
-  public final Setting<Boolean> macroPlanning = new Setting<>(true);
+  public final Setting<Boolean> farfieldPlanning = new Setting<>(true);
+
+  /**
+   * Enable explicit multimodal/meso-task route candidates such as portals and boat sessions. Stage-1 Farfield pathing does not require this.
+   */
+  public final Setting<Boolean> transitPlanning = new Setting<>(false);
 
   /**
    * Use empirical biome facts and priors in rolling local-exit value fields and transport plans. The local-exit field itself still exists when this is disabled; it falls back to uniform traversal
@@ -738,6 +767,21 @@ public final class Settings {
    * Distance to advance along the macro route before handing control back to local A*.
    */
   public final Setting<Integer> macroBiomeWaypointBlocks = new Setting<>(192);
+
+  /**
+   * Maximum radius for one Farfield column value solve.
+   */
+  public final Setting<Integer> farfieldHorizonBlocks = new Setting<>(2048);
+
+  /**
+   * Below this remaining horizontal distance, exact pathing goes straight to the terminal goal without a Farfield frontier objective.
+   */
+  public final Setting<Integer> farfieldWaypointBlocks = new Setting<>(192);
+
+  /**
+   * Extra lateral 16×16 column padding around the start-target corridor.
+   */
+  public final Setting<Integer> farfieldLateralCells = new Setting<>(16);
 
   /**
    * Extra uncertainty charged when a macro cell has no concrete biome fact and must use the empirical fallback prior.
@@ -812,6 +856,86 @@ public final class Settings {
   public final Setting<Double> macroNetherTicksPerBlock = new Setting<>(7.921195281711898D);
 
   /**
+   * Minimum tick-denominated physical prefix commitment before Farfield freshness may preempt an executing pedestrian route.
+   */
+  public final Setting<Double> farfieldMinCommittedPrefixTicks = new Setting<>(80D);
+
+  /**
+   * Allow a refreshed Farfield to launch a physical-anchor replan while an existing pedestrian route is executing.
+   */
+  public final Setting<Boolean> farfieldRefreshPhysicalReplan = new Setting<>(false);
+
+  /**
+   * Absolute objective improvement required before a Farfield-guided physical route may preempt another.
+   */
+  public final Setting<Double> farfieldPhysicalPreemptMinImprovementTicks = new Setting<>(80D);
+
+  /**
+   * Relative objective improvement required before a Farfield-guided physical route may preempt another.
+   */
+  public final Setting<Double> farfieldPhysicalPreemptMinImprovementRatio = new Setting<>(0.05D);
+
+  /**
+   * Expected Farfield cost for ordinary supported continuation.
+   */
+  public final Setting<Double> farfieldOpenSurfaceTicksPerBlock = new Setting<>(8D);
+
+  /**
+   * Expected Farfield cost for unsupported void or gap continuation.
+   */
+  public final Setting<Double> farfieldVoidTicksPerBlock = new Setting<>(48D);
+
+  /**
+   * Expected Farfield cost for lava continuation.
+   */
+  public final Setting<Double> farfieldLavaTicksPerBlock = new Setting<>(36D);
+
+  /**
+   * Expected Farfield cost for blind solid tunneling continuation.
+   */
+  public final Setting<Double> farfieldSolidTicksPerBlock = new Setting<>(96D);
+
+  /**
+   * Expected Farfield cost for dimension-generic unknown continuation.
+   */
+  public final Setting<Double> farfieldUnknownTicksPerBlock = new Setting<>(24D);
+
+  /**
+   * Expected cost per vertical block for climbing between coarse Farfield strata.
+   */
+  public final Setting<Double> farfieldVerticalUpTicksPerBlock = new Setting<>(12D);
+
+  /**
+   * Expected cost per vertical block for descending between coarse Farfield strata.
+   */
+  public final Setting<Double> farfieldVerticalDownTicksPerBlock = new Setting<>(6D);
+
+  /**
+   * Prior probability that unknown End columns are void/gap continuation.
+   */
+  public final Setting<Double> farfieldEndUnknownVoidProbability = new Setting<>(0.90D);
+
+  /**
+   * Prior probability that unknown middle Nether strata are lava continuation. Lower and upper Nether strata are intentionally fixed to blind-tunnel economics.
+   */
+  public final Setting<Double> farfieldNetherUnknownLavaProbability = new Setting<>(0.25D);
+
+  /**
+   * Prior probability that unknown middle Nether strata are solid tunneling continuation. Lower and upper Nether strata are intentionally fixed to blind-tunnel economics.
+   */
+  public final Setting<Double> farfieldNetherUnknownSolidProbability = new Setting<>(0.15D);
+
+  /**
+   * Absolute objective improvement required before a portal Transit candidate can beat same-dimension continuation.
+   */
+  public final Setting<Double> macroPortalMinImprovementTicks = new Setting<>(200D);
+
+  /**
+   * Relative objective improvement required before a portal Transit candidate can beat same-dimension continuation.
+   */
+  public final Setting<Double> macroPortalMinImprovementRatio = new Setting<>(0.10D);
+
+  /**
    * Fixed tick cost for waiting through a portal transition.
    */
   public final Setting<Double> macroNetherPortalUseCost = new Setting<>(120D);
@@ -820,6 +944,21 @@ public final class Settings {
    * Fixed tick/resource penalty for constructing and lighting one Nether portal.
    */
   public final Setting<Double> macroNetherPortalBuildCost = new Setting<>(2400D);
+
+  /**
+   * Portal emergence uncertainty as a multiple of portal-use cost.
+   */
+  public final Setting<Double> macroNetherPortalEmergenceRiskUseMultiplier = new Setting<>(0.5D);
+
+  /**
+   * Portal post-emergence setup uncertainty as a multiple of portal-use cost.
+   */
+  public final Setting<Double> macroNetherPortalSetupRiskUseMultiplier = new Setting<>(0.5D);
+
+  /**
+   * Return-portal use/setup multiplier added to a required paired portal build.
+   */
+  public final Setting<Double> macroNetherPortalReturnUseMultiplier = new Setting<>(1.5D);
 
   /**
    * Live/cached portal and obsidian-frame scan radius for macro portal sites.
@@ -977,6 +1116,16 @@ public final class Settings {
    * Render route-level macro leg plans instead of only legacy path positions.
    */
   public final Setting<Boolean> renderMacroPlan = new Setting<>(true);
+
+  /**
+   * Render Farfield continuation hints. Stage-1 Farfield is an oracle, not an executable route.
+   */
+  public final Setting<Boolean> renderFarfield = new Setting<>(true);
+
+  /**
+   * Render explicit Transit candidates and task anchors.
+   */
+  public final Setting<Boolean> renderTransit = new Setting<>(true);
 
   /**
    * Render volatile A* worker internals: best-so-far and most-recent-considered paths.

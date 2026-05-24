@@ -1,6 +1,9 @@
 package baritone.pathing.movement.movements;
 
-import baritone.Baritone;
+import baritone.pathing.movement.MovementClientHelper;
+
+import baritone.api.BaritoneAPI;
+
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -80,10 +83,10 @@ public final class MovementOblique extends Movement {
     if (!playerInValidPosition()) {
       return state.setStatus(MovementStatus.UNREACHABLE);
     }
-    if (Baritone.settings().allowSprint.value && (!MovementHelper.isLiquid(ctx, ctx.playerFeet()) || Baritone.settings().sprintInWater.value)) {
+    if (BaritoneAPI.getSettings().allowSprint.value && (!MovementClientHelper.isLiquid(ctx, ctx.playerFeet()) || BaritoneAPI.getSettings().sprintInWater.value)) {
       state.setInput(Input.SPRINT, true);
     }
-    MovementHelper.moveTowards(ctx, state, dest);
+    MovementClientHelper.moveTowards(ctx, state, dest);
     return state;
   }
 
