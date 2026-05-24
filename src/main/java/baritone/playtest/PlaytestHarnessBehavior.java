@@ -211,12 +211,12 @@ public final class PlaytestHarnessBehavior extends Behavior {
       player.connection.sendCommand(bindScenarioCommand(setupCommands.get(commandIndex++), player));
       return;
     }
-    if (phaseTicks > setupCommands.size() + SETUP_TIMEOUT_TICKS) {
+    if (phaseTicks > setupCommands.size() + SETUP_TIMEOUT_TICKS + runScenario().warmupTicks()) {
       finish(TerminalReason.SETUP_TIMEOUT, false);
       return;
     }
     retryRequiredMount(player);
-    if (phaseTicks < setupCommands.size() + SETUP_CONVERGENCE_TICKS || !readyToRun(player)) {
+    if (phaseTicks < setupCommands.size() + SETUP_CONVERGENCE_TICKS + runScenario().warmupTicks() || !readyToRun(player)) {
       return;
     }
     player.getInventory().setSelectedSlot(runScenario().selectedSlot());

@@ -16,10 +16,8 @@ import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.api.event.events.type.EventState;
 import baritone.pathing.calc.AStarPathFinder;
 import baritone.pathing.calc.ActivePathCalculation;
-import baritone.pathing.calc.FrontierValueObjective;
 import baritone.pathing.calc.LocalExitObjective;
 import baritone.pathing.calc.PathingIncumbentPolicy;
-import baritone.pathing.calc.PedestrianLocalHotPlanner;
 import baritone.pathing.calc.PlanningProbe;
 import baritone.pathing.control.ControlArbiter;
 import baritone.pathing.farfield.FarfieldNavigator;
@@ -114,7 +112,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private BetterBlockPos lastOpportunityPlanStart;
   private long deferredMacroFactEpoch = -1;
   private int deferredMacroTick = -1;
-  private volatile boolean farfieldRefreshReplanRequested;
   private final Object pathCalcLock = new Object();
 
   private final Object pathPlanLock = new Object();
@@ -126,7 +123,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   private final LinkedBlockingQueue<PathEvent> toDispatch = new LinkedBlockingQueue<>();
   private final ControlArbiter controlArbiter;
   private final FarfieldNavigator farfieldNavigator = new FarfieldNavigator();
-  private final PedestrianLocalHotPlanner pedestrianHotPlanner = new PedestrianLocalHotPlanner();
   private TailPlanTicket lastTailPlanTicket;
   private double replanWallTicksEWMA = INITIAL_REPLAN_WALL_TICKS;
 
@@ -240,9 +236,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         }
       }
       if (current == null) {
-        if (restartForMacroValueRefresh()) {
-          return;
-        }
         if (shouldRestartDeferredMacroPlan()) {
           synchronized (pathCalcLock) {
             if (!calculationActive()) {
@@ -374,9 +367,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
       if (preemptStaleCurrentRoute()) {
         return;
       }
-      if (restartForMacroValueRefresh()) {
-        return;
-      }
       synchronized (pathCalcLock) {
         if (calculationActive()) {
           // if we aren't calculating right now
@@ -400,30 +390,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
           findPathInNewThread(start, false, context, PlanningAnchor.CERTIFIED_FUTURE);
         }
       }
-    }
-  }
-
-  private boolean restartForMacroValueRefresh() {
-    if (!farfieldRefreshReplanRequested || goal == null) {
-      return false;
-    }
-    boolean duringExecution = current != null;
-    if (duringExecution && !Baritone.settings().farfieldRefreshPhysicalReplan.value) {
-      return false;
-    }
-    if (duringExecution && current.progress().ticks() < nonnegative(Baritone.settings().farfieldMinCommittedPrefixTicks.value)) {
-      return false;
-    }
-    synchronized (pathCalcLock) {
-      if (!calculationActive()) {
-        BetterBlockPos start = duringExecution ? physicalExecutionAnchor() : pathStart();
-        farfieldRefreshReplanRequested = false;
-        queuePathEvent(duringExecution ? PathEvent.NEXT_SEGMENT_CALC_STARTED : PathEvent.CALC_STARTED);
-        lastTailPlanTicket = null;
-        findPathInNewThread(start, false, context, PlanningAnchor.PHYSICAL);
-        return true;
-      }
-      return false;
     }
   }
 
@@ -1153,9 +1119,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                 }
               }
             }
-            if (!(pathfinder instanceof PedestrianLocalHotPlanner.HotLocalPathCalculation hot) || !acceptHotLocalCalculation(hot, start, talkAboutIt)) {
-              acceptCalculation(calcResult, start, talkAboutIt, true, calculationContext);
-            }
+            acceptCalculation(calcResult, start, talkAboutIt, true, calculationContext);
           }
           synchronized (pathCalcLock) {
             if (inProgress == pathfinder) {
@@ -1487,39 +1451,6 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
   }
 
-  private boolean acceptHotLocalCalculation(PedestrianLocalHotPlanner.HotLocalPathCalculation pathfinder, BlockPos requestedStart, boolean talkAboutIt) {
-    if (!Thread.holdsLock(pathPlanLock)) {
-      throw new IllegalStateException("Must hold pathPlanLock while accepting a hot local calculation");
-    }
-    Optional<RoutePlan> routePlan = pathfinder.routePlan();
-    if (routePlan.isEmpty()) {
-      return false;
-    }
-    RouteExecutor candidate = new RouteExecutor(PathingBehavior.this, routePlan.get(), pathfinder.terminalGoal());
-    CandidateDisposition disposition = acceptCandidate(candidate, pathfinder.terminalGoal());
-    if (disposition == CandidateDisposition.REJECTED) {
-      if (activePlanningAnchor == PlanningAnchor.PHYSICAL && current != null) {
-        logDebug("Ignoring non-improving physical hot local route segment from " + requestedStart + " to " + candidate.dest() + " while current=" + current.src() + "->" + current.dest());
-        return true;
-      }
-      if (activePlanningAnchor == PlanningAnchor.CERTIFIED_FUTURE) {
-        logDebug("Discarding stale speculative hot local route segment from " + requestedStart + " to " + candidate.dest());
-        return true;
-      }
-      logDebug("Discarding hot local route segment from " + requestedStart + " to " + candidate.dest());
-      acceptEmptyCalculation(new PathCalculationResult(PathCalculationResult.Type.FAILURE), requestedStart, true,
-        "discarded hot local route segment from " + requestedStart + " to " + candidate.dest());
-      return true;
-    }
-    if (disposition == CandidateDisposition.EXECUTING) {
-      commitMacroPlan(planningMacroPlan);
-    }
-    if (talkAboutIt && disposition == CandidateDisposition.EXECUTING && current != null) {
-      logDebug("Found hot local route segment from " + requestedStart + " towards " + goal + ". " + pathfinder.telemetry());
-    }
-    return true;
-  }
-
   private void acceptCalculation(PathCalculationResult result, BlockPos requestedStart, boolean talkAboutIt, boolean finalResult, CalculationContext calculationContext) {
     acceptCalculation(result, requestedStart, talkAboutIt, finalResult, calculationContext, "");
   }
@@ -1821,16 +1752,18 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
   }
 
   private double preemptionImprovementMargin(RouteExecutor candidate, RouteExecutor incumbent, double incumbentObjective) {
-    if (!macroAdvisoryRoute(candidate) && !macroAdvisoryRoute(incumbent)) {
-      return SUFFIX_REPLACEMENT_COST_EPSILON;
-    }
-    double absolute = nonnegative(Baritone.settings().farfieldPhysicalPreemptMinImprovementTicks.value);
-    double relative = Double.isFinite(incumbentObjective) ? Math.max(0D, incumbentObjective) * nonnegative(Baritone.settings().farfieldPhysicalPreemptMinImprovementRatio.value) : 0D;
-    return Math.max(absolute, relative);
+    return SUFFIX_REPLACEMENT_COST_EPSILON;
   }
 
   private static boolean macroAdvisoryRoute(RouteExecutor route) {
-    return route != null && Double.isFinite(route.estimatedContinuationTicks()) && route.route().startState().mode() != TransportMode.HORSE && route.route().endState().mode() != TransportMode.HORSE;
+    if (route == null || route.route().startState().mode() == TransportMode.HORSE || route.route().endState().mode() == TransportMode.HORSE) {
+      return false;
+    }
+    if (Double.isFinite(route.estimatedContinuationTicks())) {
+      return true;
+    }
+    IPath path = route.getPath();
+    return path != null && path.getGoal() instanceof FarfieldObjective;
   }
 
   private static double nonnegative(double value) {
@@ -1909,17 +1842,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     if (profile.horse()) {
       return new HorseCalculation(horseStart, transformed, terminalGoal, macroPlan, failureTimeoutMS);
     }
-    if (Baritone.settings().pedestrianHotLocalValueField.value && hotLocalValueFieldApplies(transformed, macroPlan)) {
-      return new CreatedPathfinder(pedestrianHotPlanner.query(context, realStart, start.getX(), start.getY(), start.getZ(), transformed, terminalGoal, macroPlan, favoring, worldFactEpoch),
-        terminalGoal, macroPlan, immediateRoute);
-    }
     return new CreatedPathfinder(new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context, PathingIncumbentPolicy.pedestrian()), terminalGoal, macroPlan,
       immediateRoute);
 
-  }
-
-  private static boolean hotLocalValueFieldApplies(Goal localGoal, MacroPlan macroPlan) {
-    return macroPlan != null || localGoal instanceof FrontierValueObjective || localGoal instanceof LocalExitObjective;
   }
 
   private static boolean transitPlanningEnabled() {

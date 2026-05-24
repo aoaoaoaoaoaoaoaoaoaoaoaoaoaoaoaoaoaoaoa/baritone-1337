@@ -30,7 +30,7 @@ import net.minecraft.world.phys.Vec3;
 
 public record PlaytestScenario(String id, String runId, String worldKey, String seed, String dimension, Start start, GoalSpec goal, List<LoadoutItem> loadout, List<String> setupCommands,
   List<String> postSetupCommands, List<String> baritoneCommands, RunAction action, int selectedSlot, int timeoutTicks, double successRadius, boolean plannerOnly, boolean saturationBoost,
-  Acceptance acceptance, Map<String, String> settings, boolean trace, GoldenTuningSpec goldenTuning, HarnessContract harness) {
+  int warmupTicks, Acceptance acceptance, Map<String, String> settings, boolean trace, GoldenTuningSpec goldenTuning, HarnessContract harness) {
   private static final int DEFAULT_TIMEOUT_TICKS = 20 * 120;
   private static final double DEFAULT_SUCCESS_RADIUS = 1.5D;
 
@@ -53,13 +53,14 @@ public record PlaytestScenario(String id, String runId, String worldKey, String 
       double successRadius = decimal(json, "successRadius", DEFAULT_SUCCESS_RADIUS);
       boolean plannerOnly = bool(json, "plannerOnly", false);
       boolean saturationBoost = bool(json, "saturationBoost", true);
+      int warmupTicks = integer(json, "warmupTicks", 0);
       Acceptance acceptance = Acceptance.parse(object(json, "acceptance"));
       Map<String, String> settings = settings(json.getAsJsonObject("settings"));
       boolean trace = bool(json, "trace", true);
       GoldenTuningSpec goldenTuning = GoldenTuningSpec.parse(object(json, "goldenTuning"));
       HarnessContract harness = HarnessContract.parse(object(json, "harness"));
       return new PlaytestScenario(id, runId, worldKey, seed, dimension, start, goal, List.copyOf(loadout), List.copyOf(setupCommands), List.copyOf(postSetupCommands), List.copyOf(baritoneCommands),
-        action, selectedSlot, timeoutTicks, successRadius, plannerOnly, saturationBoost, acceptance, Map.copyOf(settings), trace, goldenTuning, harness);
+        action, selectedSlot, timeoutTicks, successRadius, plannerOnly, saturationBoost, warmupTicks, acceptance, Map.copyOf(settings), trace, goldenTuning, harness);
     }
   }
 

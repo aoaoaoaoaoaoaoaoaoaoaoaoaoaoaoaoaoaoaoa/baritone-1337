@@ -203,43 +203,6 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
     };
   }
 
-  @Override
-  public void predecessorCandidates(int destX, int destY, int destZ, PredecessorSink out) {
-    if (variant == Variant.DESCEND_ONE_BLOCK) {
-      out.accept(destX - move.xOffset, destY + 1, destZ - move.zOffset);
-      return;
-    }
-    if (!move.dynamicXZ && !move.dynamicY) {
-      out.accept(destX - move.xOffset, destY - move.yOffset, destZ - move.zOffset);
-      return;
-    }
-    switch (move) {
-      case DESCEND_EAST, DESCEND_WEST, DESCEND_NORTH, DESCEND_SOUTH -> {
-        int srcX = destX - move.xOffset;
-        int srcZ = destZ - move.zOffset;
-        for (int y = destY + 1; y <= destY + 16; y++) {
-          out.accept(srcX, y, srcZ);
-        }
-      }
-      case DIAGONAL_NORTHEAST, DIAGONAL_NORTHWEST, DIAGONAL_SOUTHEAST, DIAGONAL_SOUTHWEST -> {
-        int srcX = destX - move.xOffset;
-        int srcZ = destZ - move.zOffset;
-        for (int y = destY - 1; y <= destY + 1; y++) {
-          out.accept(srcX, y, srcZ);
-        }
-      }
-      case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> {
-        int sx = Integer.signum(move.xOffset);
-        int sz = Integer.signum(move.zOffset);
-        for (int dist = 2; dist <= 4; dist++) {
-          out.accept(destX - sx * dist, destY, destZ - sz * dist);
-          out.accept(destX - sx * dist, destY - 1, destZ - sz * dist);
-        }
-      }
-      default -> MovementPrimitive.super.predecessorCandidates(destX, destY, destZ, out);
-    }
-  }
-
   private BetterBlockPos offset(BetterBlockPos src) {
     return new BetterBlockPos(src.x + move.xOffset, src.y + move.yOffset, src.z + move.zOffset);
   }

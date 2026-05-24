@@ -8,21 +8,21 @@
   "biomeProfile": {
     "biome": "minecraft:nether",
     "candidateIndex": 0,
-    "controllerProfile": "native-nether-pedestrian-200",
-    "distance": 200.0,
+    "controllerProfile": "native-nether-pedestrian-500",
+    "distance": 489.6365999391794,
     "headingOctant": 6,
     "headingRadians": -1.4890119461769007,
-    "independentSample": "synthetic:nether:nether_thisway_500_0:0:0:prefix200",
+    "independentSample": "synthetic:nether:nether_thisway_500_0:0:0",
     "schema": 1
   },
   "dimension": "minecraft:the_nether",
   "goal": {
     "type": "xz",
-    "x": 641,
+    "x": 664,
     "y": 71,
-    "z": 105
+    "z": -184
   },
-  "id": "nether_thisway_200_a",
+  "id": "nether_thisway_500_a_view32",
   "loadout": [
     {"slot": 0, "item": "minecraft:diamond_pickaxe", "count": 1},
     {"slot": 1, "item": "minecraft:netherrack", "count": 64},
@@ -44,8 +44,10 @@
     "z": 304.5
   },
   "successRadius": 8.0,
-  "timeoutTicks": 6500,
+  "timeoutTicks": 13552,
   "trace": false,
+  "viewDistance": 32,
+  "warmupTicks": 1000,
   "worldKey": "nether_thisway_500_0",
   "worldPreset": "minecraft:normal"
 }

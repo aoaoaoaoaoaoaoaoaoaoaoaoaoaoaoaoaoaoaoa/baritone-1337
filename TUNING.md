@@ -32,6 +32,8 @@ View distance changes the problem. A run at view distance 4 is not comparable to
 
 The playtest harness default is therefore `PLAYTEST_VIEW_DISTANCE=8`. Scenario JSON may use `viewDistance` only when the visibility radius is itself under test. Client render distance inherits the harness view distance unless `PLAYTEST_CLIENT_RENDER_DISTANCE` is explicitly set.
 
+The canonical large-loaded Nether probe is `scenarios/playtest/nether_thisway_500_a_view32.json`; it is intentionally separate from the default A/B/C manifest because 32 chunks tests loaded-truth scaling, not the Golden Default view-distance-8 contract.
+
 Simulation distance is a separate ticking/entity budget, not the pathing visibility contract. Do not treat it as a substitute for view distance.
 
 ## Long Grinds

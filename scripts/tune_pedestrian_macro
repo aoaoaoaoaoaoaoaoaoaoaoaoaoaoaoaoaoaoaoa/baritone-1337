@@ -20,10 +20,6 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO / "scenarios/playtest/nether_thisway_500_locked.txt"
 GOLDEN_TUNING = REPO / "config/baritone/golden-tuning.toml"
 TUNED_SETTINGS = (
-  "pathingEventCursorBatchSlackTicks",
-  "pedestrianHotLocalExtractionMaxMovements",
-  "pedestrianHotLocalTerminalTarget",
-  "pedestrianHotLocalPostTerminalExpansions",
   "pedestrianPathingIncumbentIntervalMS",
   "pedestrianPathingMinIncumbentLength",
   "pedestrianPathingIncumbentHeuristicMargin",
@@ -46,8 +42,6 @@ FIXED_SETTINGS: dict[str, Any] = {
   "allowBreak": True,
   "allowPlace": True,
   "allowSprint": True,
-  "pathingEventCursorAStar": True,
-  "pedestrianHotLocalValueField": True,
   "pedestrianPathingEarlyIncumbentExecution": True,
   "pedestrianCruiseRaysInNether": False,
   "farfieldPlanning": True,
@@ -64,13 +58,10 @@ FIXED_SETTINGS: dict[str, Any] = {
   "horsePathingIncumbentIntervalMS": 100,
   "horsePathingMinIncumbentLength": 12,
   "horsePathingIncumbentHeuristicMargin": 6.0,
-  "farfieldRefreshPhysicalReplan": False,
   "pedestrianLavaProximityPenalty": 8.3072,
 }
 
-DEFAULT_FALLBACKS: dict[str, Any] = {
-  "pathingEventCursorBatchSlackTicks": 2.0,
-}
+DEFAULT_FALLBACKS: dict[str, Any] = {}
 
 
 def git_head() -> str:
@@ -177,10 +168,6 @@ def trial_params(trial: optuna.Trial) -> dict[str, Any]:
   up_ratio = trial.suggest_float("farfieldVerticalUpOverOpen", 0.9, 3.0)
   down_ratio = trial.suggest_float("farfieldVerticalDownOverOpen", 0.20, 1.20)
   return {
-    "pathingEventCursorBatchSlackTicks": trial.suggest_categorical("pathingEventCursorBatchSlackTicks", [1.5, 2.0, 2.5, 3.0, 3.5, 4.0]),
-    "pedestrianHotLocalExtractionMaxMovements": trial.suggest_categorical("pedestrianHotLocalExtractionMaxMovements", [96, 128, 192, 256, 384]),
-    "pedestrianHotLocalTerminalTarget": trial.suggest_categorical("pedestrianHotLocalTerminalTarget", [1, 2, 3, 4]),
-    "pedestrianHotLocalPostTerminalExpansions": trial.suggest_categorical("pedestrianHotLocalPostTerminalExpansions", [0, 4, 8, 16, 32]),
     "pedestrianPathingIncumbentIntervalMS": trial.suggest_int("pedestrianPathingIncumbentIntervalMS", 25, 250, log=True),
     "pedestrianPathingMinIncumbentLength": trial.suggest_int("pedestrianPathingMinIncumbentLength", 24, 96),
     "pedestrianPathingIncumbentHeuristicMargin": trial.suggest_float("pedestrianPathingIncumbentHeuristicMargin", 0.0, 80.0),

@@ -1,0 +1,2 @@
+# Native Nether A under a 32-chunk loaded-truth radius.
+scenarios/playtest/nether_thisway_500_a_view32.json

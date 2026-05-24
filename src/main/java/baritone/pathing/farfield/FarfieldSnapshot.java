@@ -75,7 +75,7 @@ public final class FarfieldSnapshot {
   }
 
   public static Optional<FarfieldSnapshot> build(CalculationContext context, BetterBlockPos start, Goal goal) {
-    Optional<BlockPos> goalPos = goalPos(goal);
+    Optional<BlockPos> goalPos = goalPosition(goal);
     if (goalPos.isEmpty()) {
       return Optional.empty();
     }
@@ -303,7 +303,7 @@ public final class FarfieldSnapshot {
     return state % STRATA;
   }
 
-  private static Optional<BlockPos> goalPos(Goal goal) {
+  public static Optional<BlockPos> goalPosition(Goal goal) {
     return switch (goal) {
       case GoalBlock block -> Optional.of(block.getGoalPos());
       case GoalXZ xz -> Optional.of(new BlockPos(xz.getX(), 64, xz.getZ()));

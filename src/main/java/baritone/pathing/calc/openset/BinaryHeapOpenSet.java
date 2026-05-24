@@ -9,7 +9,7 @@ import java.util.Arrays;
  *
  * @author leijurv
  */
-public final class BinaryHeapOpenSet implements IOpenSet {
+public final class BinaryHeapOpenSet {
 
   /**
    * The initial capacity of the heap (2^10)
@@ -46,7 +46,6 @@ public final class BinaryHeapOpenSet implements IOpenSet {
     return array[1].combinedCost;
   }
 
-  @Override
   public final void insert(PathNode value) {
     if (size >= array.length - 1) {
       array = Arrays.copyOf(array, array.length << 1);
@@ -57,7 +56,6 @@ public final class BinaryHeapOpenSet implements IOpenSet {
     update(value);
   }
 
-  @Override
   public final void update(PathNode val) {
     int index = val.heapPosition;
     int parentInd = index >>> 1;
@@ -74,10 +72,8 @@ public final class BinaryHeapOpenSet implements IOpenSet {
     }
   }
 
-  @Override
   public final boolean isEmpty() { return size == 0; }
 
-  @Override
   public final PathNode removeLowest() {
     if (size == 0) {
       throw new IllegalStateException("Cannot remove from empty heap");

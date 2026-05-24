@@ -3,6 +3,7 @@ package baritone.pathing.path;
 import baritone.pathing.movement.MovementClientHelper;
 
 import baritone.Baritone;
+import baritone.api.BaritoneAPI;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.api.pathing.movement.IMovement;
@@ -413,7 +414,7 @@ final class PathRouteLegController implements RouteLegController, Helper {
     controlFrame = controlFrame.mutate().setInput(Input.SPRINT, false).build();
 
     // first and foremost, if allowSprint is off, or if we don't have enough hunger, don't try and sprint
-    if (!new CalculationContext(behavior.baritone, false).movement.canSprint()) {
+    if (!canSprintNow()) {
       return false;
     }
     IMovement current = path.movements().get(pathPosition);
@@ -540,7 +541,11 @@ final class PathRouteLegController implements RouteLegController, Helper {
   }
 
   private boolean surfaceLineSprintRequested() {
-    return controlFrame.input(Input.SPRINT) && new CalculationContext(behavior.baritone, false).movement.canSprint();
+    return controlFrame.input(Input.SPRINT) && canSprintNow();
+  }
+
+  private boolean canSprintNow() {
+    return BaritoneAPI.getSettings().allowSprint.value && ctx.player().getFoodData().getFoodLevel() > 6;
   }
 
   private Tuple<Vec3, BlockPos> overrideFall(MovementFall movement) {

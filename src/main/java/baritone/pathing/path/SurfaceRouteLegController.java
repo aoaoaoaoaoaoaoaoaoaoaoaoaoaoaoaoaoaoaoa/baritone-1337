@@ -1,6 +1,7 @@
 package baritone.pathing.path;
 
 import baritone.Baritone;
+import baritone.api.BaritoneAPI;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.Rotation;
@@ -61,8 +62,11 @@ final class SurfaceRouteLegController implements RouteLegController {
   }
 
   private boolean surfaceLineSprintRequested() {
-    return controlFrame.input(Input.SPRINT) && ((Baritone) behavior.baritone).getInventoryBehavior() != null
-      && new baritone.pathing.movement.CalculationContext(behavior.baritone, false).movement.canSprint();
+    return controlFrame.input(Input.SPRINT) && ((Baritone) behavior.baritone).getInventoryBehavior() != null && canSprintNow();
+  }
+
+  private boolean canSprintNow() {
+    return BaritoneAPI.getSettings().allowSprint.value && behavior.baritone.getPlayerContext().player().getFoodData().getFoodLevel() > 6;
   }
 
   private static TransportControl transportControl(String movement, MovementStatus status, ControlFrame frame) {

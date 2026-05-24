@@ -552,18 +552,6 @@ public final class Settings {
   public final Setting<Integer> pathingMaxNodes = new Setting<>(2_000_000);
 
   /**
-   * Use event-cursor A* for exact pedestrian pathing. The event engine schedules certified edge-evaluation opportunities rather than eagerly evaluating
-   * the entire movement catalog for every popped node.
-   */
-  public final Setting<Boolean> pathingEventCursorAStar = new Setting<>(false);
-
-  /**
-   * Evaluate additional source-local event heads whose proof key is this many ticks above the popped head. This intentionally trades some extra cheap
-   * movement evaluations for far fewer heap/scheduler trips; the event cursor's proof granularity is useful only while it avoids expensive families.
-   */
-  public final Setting<Double> pathingEventCursorBatchSlackTicks = new Setting<>(2D);
-
-  /**
    * Set to 1.0 to effectively disable this feature
    *
    * @see <a href="https://github.com/cabaletta/baritone/issues/18">Issue #18</a>
@@ -690,41 +678,6 @@ public final class Settings {
   public final Setting<Long> pedestrianPathingIncumbentIntervalMS = new Setting<>(100L);
   public final Setting<Integer> pedestrianPathingMinIncumbentLength = new Setting<>(12);
   public final Setting<Double> pedestrianPathingIncumbentHeuristicMargin = new Setting<>(6D);
-
-  /**
-   * Use the pedestrian-only hot local value field for macro/local-exit walking segments.
-   */
-  public final Setting<Boolean> pedestrianHotLocalValueField = new Setting<>(true);
-
-  /**
-   * Resident node circuit breaker for one pedestrian hot local value field. This is a lazy-growth memory fuse, not a planning horizon or an eager allocation request.
-   */
-  public final Setting<Integer> pedestrianHotLocalMaxNodes = new Setting<>(2_000_000);
-
-  /**
-   * Evaluated edge record circuit breaker for one pedestrian hot local value field. Edge storage is sparse and chunked; this should stay generous without pretending edge rows are free.
-   */
-  public final Setting<Integer> pedestrianHotLocalMaxEdges = new Setting<>(6_000_000);
-
-  /**
-   * Maximum extracted hot-local movements before a prefix is published with local-value continuation.
-   */
-  public final Setting<Integer> pedestrianHotLocalExtractionMaxMovements = new Setting<>(384);
-
-  /**
-   * Minimum number of discovered terminal candidates a pedestrian hot-local query tries to seed before reverse repair chooses a Bellman action.
-   */
-  public final Setting<Integer> pedestrianHotLocalTerminalTarget = new Setting<>(1);
-
-  /**
-   * Maximum extra forward-discovery node expansions after the first pedestrian hot-local terminal is found. This keeps terminal broadening finite while avoiding first-exit myopia.
-   */
-  public final Setting<Integer> pedestrianHotLocalPostTerminalExpansions = new Setting<>(0);
-
-  /**
-   * Emergency legacy A* fallback for unsupported or budget-exhausted hot-local queries.
-   */
-  public final Setting<Boolean> pedestrianHotLocalFallbackEnabled = new Setting<>(true);
 
   /**
    * Horse incumbent policy. Keep these locked to the accepted mounted baseline unless explicitly retuning mounted navigation.
@@ -871,21 +824,6 @@ public final class Settings {
    * Minimum tick-denominated physical prefix commitment before Farfield freshness may preempt an executing pedestrian route.
    */
   public final Setting<Double> farfieldMinCommittedPrefixTicks = new Setting<>(80D);
-
-  /**
-   * Allow a refreshed Farfield to launch a physical-anchor replan while an existing pedestrian route is executing.
-   */
-  public final Setting<Boolean> farfieldRefreshPhysicalReplan = new Setting<>(false);
-
-  /**
-   * Absolute objective improvement required before a Farfield-guided physical route may preempt another.
-   */
-  public final Setting<Double> farfieldPhysicalPreemptMinImprovementTicks = new Setting<>(80D);
-
-  /**
-   * Relative objective improvement required before a Farfield-guided physical route may preempt another.
-   */
-  public final Setting<Double> farfieldPhysicalPreemptMinImprovementRatio = new Setting<>(0.05D);
 
   /**
    * Expected Farfield cost for ordinary supported continuation.
