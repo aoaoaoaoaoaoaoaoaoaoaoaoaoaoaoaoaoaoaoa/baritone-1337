@@ -34,6 +34,42 @@ The playtest harness default is therefore `PLAYTEST_VIEW_DISTANCE=8`. Scenario J
 
 Simulation distance is a separate ticking/entity budget, not the pathing visibility contract. Do not treat it as a substitute for view distance.
 
+## Long Grinds
+
+Multi-hour tuning and live-fire cooks run under **user systemd units**. `tmux`, ad-hoc `nohup`, and naked background jobs are not the canonical substrate; they are too easy to strand, double-launch, or accidentally kill while the playtest harness rotates server/client processes.
+
+Use `systemd-run --user` with explicit working directory, explicit venv Python, and append-only log sinks:
+
+```sh
+study=nether-a-event-core-$(date -u +%Y%m%dT%H%M%SZ)
+root=/home/main/programming/contrib/baritone
+log=$root/run/tune/logs/$study.log
+unit=baritone-$study
+mkdir -p "$root/run/tune/logs"
+systemd-run --user --unit="$unit" --collect --working-directory="$root" \
+  --setenv=GRADLE_USER_HOME=/home/main/.cache/gradle \
+  --setenv=PYTHONUNBUFFERED=1 \
+  --setenv=VIRTUAL_ENV=$root/.venv \
+  --setenv=PLAYTEST_PORT=25665 \
+  --setenv=PLAYTEST_RCON_PORT=25675 \
+  --setenv=PATH=$root/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/home/main/.local/bin:/home/main/bin \
+  --property=StandardOutput=append:$log \
+  --property=StandardError=append:$log \
+  "$root/.venv/bin/python3" "$root/scripts/tune_pedestrian_macro" \
+    --scenario "$root/scenarios/playtest/nether_thisway_500_a.json" \
+    --trials 160 \
+    --timeout-hours 8 \
+    --study-name "$study" \
+    --root "$root/run/tune/pedestrian_event_core" \
+    --playtest-root "$root/run/playtest-pedestrian-event-core"
+```
+
+The log is the primary observability surface: `tail -f "$log"`. `journalctl --user -u "$unit" --no-pager` is useful when the user bus is healthy, but the run must remain diagnosable from files alone.
+
+Long grinds should use a dedicated port pair unless port occupancy itself is being tested. The server launch stamp includes both ports; changing them forces a clean server restart instead of reusing a stale daemon.
+
+The playtest process reaper protects its current ancestor chain. That is deliberate: long-running tuners often mention the playtest root in their command line, and the child harness must never cull the parent study while cleaning stale Minecraft processes.
+
 ## Operator Config
 
 Ordinary `#config` is an operator override layer, not a tuning database. A live instance may override taste, UI, build/mine preferences, geofences, and deliberate emergency switches, but it must not accidentally shadow the Golden Default with stale empirical constants.

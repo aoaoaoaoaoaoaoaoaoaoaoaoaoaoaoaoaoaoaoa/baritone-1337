@@ -394,6 +394,7 @@ class Playtest:
     oracle = f"{self.c.oracle_inbox.resolve()}:{self.c.oracle_results.resolve()}"
     return (
       f"{code_stamp}\nworld={world.key}\nseed={world.seed}\nlevel_type={world.level_type}\n"
+      f"port={self.c.port}\nrcon_port={self.c.rcon_port}\n"
       f"view_distance={self.c.view_distance}\nsimulation_distance={self.c.simulation_distance}\n"
       f"max_tick_time={self.c.max_tick_time}\nphysics={physics}\noracle={oracle}\nserver_heap={self.c.server_heap}"
     )
@@ -491,14 +492,34 @@ class Playtest:
     path.unlink(missing_ok=True)
 
   @staticmethod
+  def protected_processes() -> set[int]:
+    pids = {os.getpid()}
+    pid = os.getppid()
+    while pid > 1 and pid not in pids:
+      pids.add(pid)
+      try:
+        status = (Path("/proc") / str(pid) / "status").read_text(encoding="utf-8", errors="replace")
+      except (FileNotFoundError, ProcessLookupError, PermissionError):
+        break
+      parent = 0
+      for line in status.splitlines():
+        if line.startswith("PPid:"):
+          parent = int(line.split()[1])
+          break
+      if parent <= 1:
+        break
+      pid = parent
+    return pids
+
+  @staticmethod
   def process_roots(root: Path) -> set[int]:
     pids: set[int] = set()
-    self_pid = os.getpid()
+    protected = Playtest.protected_processes()
     for proc in Path("/proc").iterdir():
       if not proc.name.isdecimal():
         continue
       pid = int(proc.name)
-      if pid == self_pid:
+      if pid in protected:
         continue
       if Playtest.process_matches_root(pid, root):
         pids.add(pid)
@@ -507,12 +528,12 @@ class Playtest:
   def client_processes(self) -> set[int]:
     client = str(self.client_dir().resolve())
     pids: set[int] = set()
-    self_pid = os.getpid()
+    protected = Playtest.protected_processes()
     for proc in Path("/proc").iterdir():
       if not proc.name.isdecimal():
         continue
       pid = int(proc.name)
-      if pid == self_pid:
+      if pid in protected:
         continue
       try:
         cmdline = [raw.decode("utf-8", "replace") for raw in (proc / "cmdline").read_bytes().split(b"\0") if raw]
