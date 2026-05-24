@@ -46,16 +46,17 @@ root=/home/main/programming/contrib/baritone
 log=$root/run/tune/logs/$study.log
 unit=baritone-$study
 mkdir -p "$root/run/tune/logs"
-systemd-run --user --unit="$unit" --collect --working-directory="$root" \
-  --setenv=GRADLE_USER_HOME=/home/main/.cache/gradle \
-  --setenv=PYTHONUNBUFFERED=1 \
-  --setenv=VIRTUAL_ENV=$root/.venv \
-  --setenv=PLAYTEST_PORT=25665 \
-  --setenv=PLAYTEST_RCON_PORT=25675 \
-  --setenv=PATH=$root/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/home/main/.local/bin:/home/main/bin \
-  --property=StandardOutput=append:$log \
-  --property=StandardError=append:$log \
-  "$root/.venv/bin/python3" "$root/scripts/tune_pedestrian_macro" \
+systemd-run --user --unit="$unit-launcher" --collect --pipe \
+  /usr/bin/systemd-run --user --unit="$unit" --collect --working-directory="$root" \
+    --setenv=GRADLE_USER_HOME=/home/main/.cache/gradle \
+    --setenv=PYTHONUNBUFFERED=1 \
+    --setenv=VIRTUAL_ENV=$root/.venv \
+    --setenv=PLAYTEST_PORT=25665 \
+    --setenv=PLAYTEST_RCON_PORT=25675 \
+    --setenv=PATH=$root/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/home/main/.local/bin:/home/main/bin \
+    --property=StandardOutput=append:$log \
+    --property=StandardError=append:$log \
+    "$root/.venv/bin/python3" "$root/scripts/tune_pedestrian_macro" \
     --scenario "$root/scenarios/playtest/nether_thisway_500_a.json" \
     --trials 160 \
     --timeout-hours 8 \
@@ -65,6 +66,8 @@ systemd-run --user --unit="$unit" --collect --working-directory="$root" \
 ```
 
 The log is the primary observability surface: `tail -f "$log"`. `journalctl --user -u "$unit" --no-pager` is useful when the user bus is healthy, but the run must remain diagnosable from files alone.
+
+The nested `systemd-run --pipe /usr/bin/systemd-run ...` is intentional. Some sandboxed shells fail to connect to the user manager through systemd's private local transport; `--pipe` forces a healthy D-Bus launch of a tiny launcher unit, and that launcher starts the real detached unit from inside the user manager.
 
 Long grinds should use a dedicated port pair unless port occupancy itself is being tested. The server launch stamp includes both ports; changing them forces a clean server restart instead of reusing a stale daemon.
 
