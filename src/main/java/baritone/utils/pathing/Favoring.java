@@ -10,12 +10,14 @@ import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
 public final class Favoring {
 
   private final Long2DoubleOpenHashMap favorings;
+  private double minimumCoefficient = 1D;
 
   public Favoring(IPlayerContext ctx, IPath previous, CalculationContext context) {
     this(previous, context);
     for (Avoidance avoid : Avoidance.create(ctx)) {
       avoid.applySpherical(favorings);
     }
+    recomputeMinimumCoefficient();
     Helper.HELPER.logDebug("Favoring size: " + favorings.size());
   }
 
@@ -26,11 +28,26 @@ public final class Favoring {
     if (coeff != 1D && previous != null) {
       previous.positions().forEach(pos -> favorings.put(BlockKey.pack(pos.getX(), pos.getY(), pos.getZ()), coeff));
     }
+    recomputeMinimumCoefficient();
   }
 
   public boolean isEmpty() { return favorings.isEmpty(); }
 
   public double calculate(long hash) {
     return favorings.get(hash);
+  }
+
+  public double minimumCoefficient() {
+    return minimumCoefficient;
+  }
+
+  private void recomputeMinimumCoefficient() {
+    double min = 1D;
+    for (double value : favorings.values()) {
+      if (Double.isFinite(value)) {
+        min = Math.min(min, value);
+      }
+    }
+    minimumCoefficient = min;
   }
 }

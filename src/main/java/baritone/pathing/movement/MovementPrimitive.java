@@ -29,9 +29,7 @@ public interface MovementPrimitive {
     }
   }
 
-  default double minimumCost(CalculationContext ctx) {
-    return 0;
-  }
+  double minimumCost(CalculationContext ctx);
 
   default boolean revalidatesDestinationDuringAssembly() {
     return false;

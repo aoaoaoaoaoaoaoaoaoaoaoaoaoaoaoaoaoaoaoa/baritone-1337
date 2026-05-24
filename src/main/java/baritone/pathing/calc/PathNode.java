@@ -4,6 +4,7 @@ import baritone.api.pathing.goals.Goal;
 import baritone.api.pathing.movement.ActionCosts;
 import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.SettingsUtil;
+import java.util.Arrays;
 
 /**
  * A node in the path, containing the cost and steps to get to it.
@@ -52,6 +53,12 @@ public final class PathNode {
    */
   public int heapPosition;
 
+  public int expansionGeneration;
+
+  public int expansionSerial;
+
+  private long[] consumedExpansionWords;
+
   public PathNode(int x, int y, int z, Goal goal) {
     this.previous = null;
     this.previousPrimitiveIndex = -1;
@@ -68,6 +75,25 @@ public final class PathNode {
   }
 
   public boolean isOpen() { return heapPosition != -1; }
+
+  public void resetExpansion(int primitiveCount) {
+    expansionGeneration++;
+    expansionSerial++;
+    int words = primitiveCount + 63 >>> 6;
+    if (consumedExpansionWords == null || consumedExpansionWords.length < words) {
+      consumedExpansionWords = new long[words];
+    } else {
+      Arrays.fill(consumedExpansionWords, 0, words, 0L);
+    }
+  }
+
+  public boolean expansionConsumed(int primitiveIndex) {
+    return consumedExpansionWords != null && (consumedExpansionWords[primitiveIndex >>> 6] & 1L << (primitiveIndex & 63)) != 0;
+  }
+
+  public void consumeExpansion(int primitiveIndex) {
+    consumedExpansionWords[primitiveIndex >>> 6] |= 1L << (primitiveIndex & 63);
+  }
 
   /**
    * TODO: Possibly reimplement hashCode and equals. They are necessary for this class to function but they could be done better

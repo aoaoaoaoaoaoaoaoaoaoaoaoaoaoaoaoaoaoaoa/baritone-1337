@@ -13,6 +13,8 @@ import baritone.pathing.movement.movements.MovementTraverse;
 import net.minecraft.core.Direction;
 
 public final class LegacyMovesPrimitive implements MovementPrimitive {
+  private static final double SQRT_2 = Math.sqrt(2);
+
   private final Moves move;
   private final DestinationSpec destinationSpec;
 
@@ -61,15 +63,69 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public double minimumCost(CalculationContext ctx) {
-    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0) {
+    return switch (move) {
+      case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST -> traverseLowerBound(ctx);
+      case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> ascendLowerBound(ctx);
+      case DIAGONAL_NORTHEAST, DIAGONAL_NORTHWEST, DIAGONAL_SOUTHEAST, DIAGONAL_SOUTHWEST -> diagonalLowerBound(ctx);
+      case DESCEND_NORTH, DESCEND_SOUTH, DESCEND_EAST, DESCEND_WEST -> descendLowerBound(ctx);
+      case DOWNWARD -> downwardLowerBound(ctx);
+      case PILLAR -> pillarLowerBound(ctx);
+      case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> parkourLowerBound(ctx);
+    };
+  }
+
+  private static double traverseLowerBound(CalculationContext ctx) {
+    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0 || ctx.costs.walkOnWaterOnePenalty() < 0) {
       return 0;
     }
-    return switch (move) {
-      case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST ->
-        ctx.costs.walkOnWaterOnePenalty() < 0 ? 0 : Math.min(ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST, ctx.costs.waterMoveCost());
-      case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> ctx.costs.jumpPenalty() < 0 ? 0 : ActionCosts.WALK_ONE_BLOCK_COST;
-      default -> 0;
-    };
+    return Math.min(flatStepLowerBound(ctx), ctx.costs.waterMoveCost());
+  }
+
+  private static double ascendLowerBound(CalculationContext ctx) {
+    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0 || ctx.costs.jumpPenalty() < 0) {
+      return 0;
+    }
+    return ActionCosts.WALK_ONE_BLOCK_COST;
+  }
+
+  private static double diagonalLowerBound(CalculationContext ctx) {
+    if (ctx.costs.walkOnWaterOnePenalty() < 0) {
+      return 0;
+    }
+    return SQRT_2 * Math.min(flatStepLowerBound(ctx), ctx.costs.waterMoveCost());
+  }
+
+  private static double descendLowerBound(CalculationContext ctx) {
+    if (ctx.costs.breakBlockAdditional() < 0) {
+      return 0;
+    }
+    return ActionCosts.WALK_OFF_BLOCK_COST + Math.max(ActionCosts.FALL_N_BLOCKS_COST[1], ActionCosts.CENTER_AFTER_FALL_COST);
+  }
+
+  private static double downwardLowerBound(CalculationContext ctx) {
+    if (ctx.costs.breakBlockAdditional() < 0) {
+      return 0;
+    }
+    return Math.min(ActionCosts.LADDER_DOWN_ONE_COST, ActionCosts.FALL_N_BLOCKS_COST[1]);
+  }
+
+  private static double pillarLowerBound(CalculationContext ctx) {
+    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0 || ctx.costs.jumpPenalty() < 0) {
+      return 0;
+    }
+    return Math.min(Math.min(ActionCosts.LADDER_UP_ONE_COST, ctx.costs.waterWalkCost()), ActionCosts.JUMP_ONE_BLOCK_COST + ctx.costs.jumpPenalty());
+  }
+
+  private static double parkourLowerBound(CalculationContext ctx) {
+    if (ctx.costs.jumpPenalty() < 0 || ctx.placement.blockCost() < 0) {
+      return 0;
+    }
+    double step = ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST;
+    return 2 * step + ctx.costs.jumpPenalty();
+  }
+
+  private static double flatStepLowerBound(CalculationContext ctx) {
+    return ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST;
   }
 
   @Override

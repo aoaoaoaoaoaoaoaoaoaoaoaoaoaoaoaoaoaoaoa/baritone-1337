@@ -552,6 +552,12 @@ public final class Settings {
   public final Setting<Integer> pathingMaxNodes = new Setting<>(2_000_000);
 
   /**
+   * Use event-cursor A* for exact pedestrian pathing. The event engine schedules certified edge-evaluation opportunities rather than eagerly evaluating
+   * the entire movement catalog for every popped node.
+   */
+  public final Setting<Boolean> pathingEventCursorAStar = new Setting<>(false);
+
+  /**
    * Set to 1.0 to effectively disable this feature
    *
    * @see <a href="https://github.com/cabaletta/baritone/issues/18">Issue #18</a>
