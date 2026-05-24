@@ -22,6 +22,7 @@ public final class FarfieldSnapshot {
   private static final int[] NETHER_STRATUM_CUTS = {32, 64, 96};
   private static final int[] OVERWORLD_STRATUM_CUTS = {40, 68, 100};
   private static final int MAX_RENDER_VERTICES = 256;
+  private static final float MAX_CENTER_DISCOUNT_BLOCKS = (float) (Math.sqrt(2D) * (FarfieldColumnKey.CELL_BLOCKS >>> 1) * 0.5D);
 
   private final CalculationContext context;
   private final FarfieldCosts costs;
@@ -39,6 +40,7 @@ public final class FarfieldSnapshot {
   private final FarfieldColumnProfile[] profiles;
   private final float[] expectedValue;
   private final float[] floorValue;
+  private final float[] floorQueryLowerValue;
   private final int[] bestSucc;
   private final long signature;
   private final int liveStates;
@@ -64,6 +66,7 @@ public final class FarfieldSnapshot {
     this.profiles = profiles;
     this.expectedValue = expectedValue;
     this.floorValue = floorValue;
+    this.floorQueryLowerValue = queryLowerValues(costs, profiles, floorValue);
     this.bestSucc = bestSucc;
     this.signature = signature;
     this.liveStates = liveStates;
@@ -145,6 +148,37 @@ public final class FarfieldSnapshot {
     return value(floorValue, x, z, y);
   }
 
+  public double floorLowerBoundAt(int x, int y, int z) {
+    int index = stateIndexOfBlock(x, y, z);
+    if (index < 0) {
+      return Double.POSITIVE_INFINITY;
+    }
+    float value = floorQueryLowerValue[index];
+    return Float.isFinite(value) ? value : Double.POSITIVE_INFINITY;
+  }
+
+  public double floorLowerBoundOverYRange(int x, int z, int yMin, int yMax) {
+    if (yMax < yMin) {
+      return 0D;
+    }
+    int cx = Math.floorDiv(x, FarfieldColumnKey.CELL_BLOCKS);
+    int cz = Math.floorDiv(z, FarfieldColumnKey.CELL_BLOCKS);
+    if (!contains(cx, cz)) {
+      return Double.POSITIVE_INFINITY;
+    }
+    int cell = cellIndex(cx, cz);
+    double best = Double.POSITIVE_INFINITY;
+    for (int band = 0; band < STRATA; band++) {
+      if (stratumIntersects(context, band, yMin, yMax)) {
+        float value = floorQueryLowerValue[stateIndex(cell, band)];
+        if (Float.isFinite(value)) {
+          best = Math.min(best, value);
+        }
+      }
+    }
+    return Double.isFinite(best) ? best : Double.POSITIVE_INFINITY;
+  }
+
   public long signature() {
     return signature;
   }
@@ -214,6 +248,21 @@ public final class FarfieldSnapshot {
     BetterBlockPos center = center(cellX(cell), cellZ(cell), representativeY(context, stratumIndex(index)));
     double discount = Math.hypot(blockX - center.x, blockZ - center.z) * profileCost.expectedTicksPerBlock() * 0.5D;
     return Math.max(0D, value - discount);
+  }
+
+  private static float[] queryLowerValues(FarfieldCosts costs, FarfieldColumnProfile[] profiles, float[] values) {
+    // Scheduler kernel: pay the in-cell discount once, keep per-event queries to cell×stratum reads.
+    float[] lower = new float[values.length];
+    for (int i = 0; i < values.length; i++) {
+      float value = values[i];
+      if (!Float.isFinite(value)) {
+        lower[i] = Float.POSITIVE_INFINITY;
+        continue;
+      }
+      FarfieldCosts.FarfieldCost profileCost = costs.cost(profiles[i]);
+      lower[i] = Math.max(0F, value - MAX_CENTER_DISCOUNT_BLOCKS * profileCost.expectedTicksPerBlock());
+    }
+    return lower;
   }
 
   private int stateIndexOfBlock(int x, int y, int z) {
@@ -505,6 +554,27 @@ public final class FarfieldSnapshot {
   private static int stratum(CalculationContext context, int y) {
     int[] cuts = context.world.dimension() == Level.NETHER ? NETHER_STRATUM_CUTS : OVERWORLD_STRATUM_CUTS;
     return y < cuts[0] ? 0 : y < cuts[1] ? 1 : y < cuts[2] ? 2 : 3;
+  }
+
+  private static boolean stratumIntersects(CalculationContext context, int stratum, int yMin, int yMax) {
+    int minY = context.world.getMinY();
+    int maxY = context.world.getMaxY() - 1;
+    int[] cuts = context.world.dimension() == Level.NETHER ? NETHER_STRATUM_CUTS : OVERWORLD_STRATUM_CUTS;
+    int lo = switch (stratum) {
+      case 0 -> minY;
+      case 1 -> cuts[0];
+      case 2 -> cuts[1];
+      case 3 -> cuts[2];
+      default -> throw new IllegalArgumentException("bad Farfield stratum: " + stratum);
+    };
+    int hi = switch (stratum) {
+      case 0 -> cuts[0] - 1;
+      case 1 -> cuts[1] - 1;
+      case 2 -> cuts[2] - 1;
+      case 3 -> maxY;
+      default -> throw new IllegalArgumentException("bad Farfield stratum: " + stratum);
+    };
+    return Math.max(lo, yMin) <= Math.min(hi, yMax);
   }
 
   private static int representativeY(CalculationContext context, int stratum) {

@@ -57,6 +57,8 @@ public final class PathNode {
 
   public int expansionSerial;
 
+  private long consumedExpansionMask;
+
   private long[] consumedExpansionWords;
 
   public PathNode(int x, int y, int z, Goal goal) {
@@ -79,7 +81,12 @@ public final class PathNode {
   public void resetExpansion(int primitiveCount) {
     expansionGeneration++;
     expansionSerial++;
-    int words = primitiveCount + 63 >>> 6;
+    consumedExpansionMask = 0L;
+    if (primitiveCount <= Long.SIZE) {
+      consumedExpansionWords = null;
+      return;
+    }
+    int words = primitiveCount + Long.SIZE - 1 >>> 6;
     if (consumedExpansionWords == null || consumedExpansionWords.length < words) {
       consumedExpansionWords = new long[words];
     } else {
@@ -88,11 +95,18 @@ public final class PathNode {
   }
 
   public boolean expansionConsumed(int primitiveIndex) {
-    return consumedExpansionWords != null && (consumedExpansionWords[primitiveIndex >>> 6] & 1L << (primitiveIndex & 63)) != 0;
+    if (consumedExpansionWords != null) {
+      return (consumedExpansionWords[primitiveIndex >>> 6] & 1L << (primitiveIndex & 63)) != 0;
+    }
+    return (consumedExpansionMask & 1L << primitiveIndex) != 0;
   }
 
   public void consumeExpansion(int primitiveIndex) {
-    consumedExpansionWords[primitiveIndex >>> 6] |= 1L << (primitiveIndex & 63);
+    if (consumedExpansionWords != null) {
+      consumedExpansionWords[primitiveIndex >>> 6] |= 1L << (primitiveIndex & 63);
+      return;
+    }
+    consumedExpansionMask |= 1L << primitiveIndex;
   }
 
   /**

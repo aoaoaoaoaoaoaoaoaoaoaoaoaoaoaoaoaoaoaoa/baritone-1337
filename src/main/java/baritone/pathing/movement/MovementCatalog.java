@@ -21,7 +21,16 @@ public final class MovementCatalog {
       new ArrayList<>(Moves.values().length + (context.movement.allowObliqueWalk() ? ObliqueMovementPrimitive.STRIDES.length : 0) + cruiseRayCount(cruiseRayMax, context.movement.allowObliqueWalk()));
     for (Moves move : Moves.values()) {
       if (enabled(context, move)) {
-        primitives.add(new LegacyMovesPrimitive(move));
+        if (traverse(move)) {
+          primitives.add(LegacyMovesPrimitive.traverseClean(move));
+          primitives.add(LegacyMovesPrimitive.traverseComplex(move));
+        } else if (descend(move)) {
+          // Dynamic falls are expensive and materially later than one-block ledge descents; separate proof heads keep the cheap case honest.
+          primitives.add(LegacyMovesPrimitive.descendOneBlock(move));
+          primitives.add(LegacyMovesPrimitive.descendFall(move));
+        } else {
+          primitives.add(new LegacyMovesPrimitive(move));
+        }
       }
     }
     if (context.movement.allowObliqueWalk()) {
@@ -52,6 +61,20 @@ public final class MovementCatalog {
       case DOWNWARD -> context.movement.allowDownward();
       case PARKOUR_NORTH, PARKOUR_SOUTH, PARKOUR_EAST, PARKOUR_WEST -> context.movement.allowParkour();
       default -> true;
+    };
+  }
+
+  private static boolean traverse(Moves move) {
+    return switch (move) {
+      case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean descend(Moves move) {
+    return switch (move) {
+      case DESCEND_EAST, DESCEND_WEST, DESCEND_NORTH, DESCEND_SOUTH -> true;
+      default -> false;
     };
   }
 

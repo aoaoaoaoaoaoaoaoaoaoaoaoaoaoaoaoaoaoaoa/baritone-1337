@@ -40,6 +40,10 @@ import net.minecraft.world.phys.Vec3;
 public class MovementTraverse extends Movement {
   private static final double SLAB_BRIDGE_SNEAK_ARM_DISTANCE = 1.05D;
 
+  private enum TraverseRegime {
+    ANY, CLEAN, COMPLEX
+  }
+
   /**
    * Did we have to place a bridge block or was it always there
    */
@@ -70,6 +74,18 @@ public class MovementTraverse extends Movement {
   }
 
   public static double cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
+    return cost(context, facts, x, y, z, destX, destZ, TraverseRegime.ANY);
+  }
+
+  public static double cleanCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
+    return cost(context, facts, x, y, z, destX, destZ, TraverseRegime.CLEAN);
+  }
+
+  public static double complexCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
+    return cost(context, facts, x, y, z, destX, destZ, TraverseRegime.COMPLEX);
+  }
+
+  private static double cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, TraverseRegime regime) {
     BlockState pb0 = context.get(destX, y + 1, destZ);
     BlockState pb1 = context.get(destX, y, destZ);
     boolean hasFacts = facts != null && facts.matches(x, y, z);
@@ -111,6 +127,9 @@ public class MovementTraverse extends Movement {
       double hardness2 = MovementHelper.movementPassageCost(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
       double lavaProximityPenalty = PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y, destZ);
       if (hardness1 == 0 && hardness2 == 0) {
+        if (regime == TraverseRegime.COMPLEX) {
+          return COST_INF;
+        }
         if (!water && !sneaking && context.movement.canSprint()) {
           // If there's nothing in the way, and this isn't water, and we aren't sneak placing
           // We can sprint =D
@@ -119,12 +138,18 @@ public class MovementTraverse extends Movement {
         }
         return WC + lavaProximityPenalty;
       }
+      if (regime == TraverseRegime.CLEAN) {
+        return COST_INF;
+      }
       if (srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE) {
         hardness1 *= 5;
         hardness2 *= 5;
       }
       return WC + hardness1 + hardness2 + lavaProximityPenalty;
     } else { // this is a bridge, so we need to place a block
+      if (regime == TraverseRegime.CLEAN) {
+        return COST_INF;
+      }
       if (srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE) {
         return COST_INF;
       }

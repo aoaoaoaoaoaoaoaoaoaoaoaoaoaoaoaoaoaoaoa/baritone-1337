@@ -558,6 +558,12 @@ public final class Settings {
   public final Setting<Boolean> pathingEventCursorAStar = new Setting<>(false);
 
   /**
+   * Evaluate additional source-local event heads whose proof key is this many ticks above the popped head. This intentionally trades some extra cheap
+   * movement evaluations for far fewer heap/scheduler trips; the event cursor's proof granularity is useful only while it avoids expensive families.
+   */
+  public final Setting<Double> pathingEventCursorBatchSlackTicks = new Setting<>(2D);
+
+  /**
    * Set to 1.0 to effectively disable this feature
    *
    * @see <a href="https://github.com/cabaletta/baritone/issues/18">Issue #18</a>

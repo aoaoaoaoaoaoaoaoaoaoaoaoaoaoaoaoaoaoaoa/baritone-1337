@@ -17,6 +17,7 @@ import baritone.pathing.movement.MovementCatalog;
 import baritone.pathing.movement.MovementPrimitive;
 import baritone.pathing.movement.Moves;
 import baritone.pathing.movement.NodeTerrainFacts;
+import baritone.pathing.farfield.FarfieldObjective;
 import baritone.utils.pathing.BetterWorldBorder;
 import baritone.utils.pathing.Favoring;
 import java.util.List;
@@ -35,6 +36,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
   private int lastMovementsConsidered;
   private int lastEmptyChunkFetches;
   private int lastNodeMapSize;
+  private final ExpansionEventHeap.Event scheduleScratch = new ExpansionEventHeap.Event();
 
   public AStarPathFinder(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, Favoring favoring, CalculationContext context, PathingIncumbentPolicy incumbentPolicy) {
     this(realStart, startX, startY, startZ, goal, favoring, context, incumbentPolicy, Double.POSITIVE_INFINITY);
@@ -98,6 +100,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
+    double[] minimumCosts = minimumCosts(allMoves);
     FrontierValueObjective frontier = goal instanceof FrontierValueObjective value ? value : null;
     LocalExitObjective localExit = frontier == null && goal instanceof LocalExitObjective exit ? exit : null;
     boolean scoredExitSearch = frontier != null || localExit != null;
@@ -198,7 +201,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         if (!spec.dynamicXZ() && !spec.dynamicY()) {
           blockKey = BlockKey.pack(newX, newY, newZ);
           hasStaticBlockKey = true;
-          double minimumCost = primitive.minimumCost(calcContext);
+          double minimumCost = minimumCosts[primitiveIndex];
           if (minimumCost > 0) {
             nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
             staticIncumbent = peekNodeAtPosition(blockKey);
@@ -402,9 +405,11 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     double favoringFloor = isFavoring ? Math.max(0D, favoring.minimumCoefficient()) : 1D;
     int timeCheckInterval = 1 << 6;
     int pathingMaxChunkBorderFetch = BaritoneAPI.getSettings().pathingMaxChunkBorderFetch.value;
+    double eventBatchSlackTicks = Math.max(0D, BaritoneAPI.getSettings().pathingEventCursorBatchSlackTicks.value);
     double minimumImprovement = MIN_IMPROVEMENT;
     MovementCatalog catalog = calcContext.movementCatalog;
     MovementPrimitive[] allMoves = catalog.primitives();
+    double[] minimumCosts = minimumCosts(allMoves);
     FrontierValueObjective frontier = goal instanceof FrontierValueObjective value ? value : null;
     LocalExitObjective localExit = frontier == null && goal instanceof LocalExitObjective exit ? exit : null;
     boolean scoredExitSearch = frontier != null || localExit != null;
@@ -418,7 +423,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     boolean upperBoundExhausted = false;
     ExpansionEventHeap eventHeap = new ExpansionEventHeap();
     ExpansionEventHeap.Event event = new ExpansionEventHeap.Event();
-    resetAndSchedule(startNode, eventHeap, allMoves, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+    resetAndSchedule(startNode, eventHeap, allMoves, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
 
     search : while (!eventHeap.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested && !nodeMapFull()) {
       if (bestExit != null && eventHeap.lowestKey() + minimumImprovement >= bestExitScore) {
@@ -449,182 +454,205 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       if (activeProfile != null) {
         heapNanos += System.nanoTime() - heapStart;
       }
-      if (event.stale()) {
-        continue;
-      }
-      if (event.key - oracleUpperBoundTicks > minimumImprovement) {
-        upperBoundExhausted = true;
-        break;
-      }
-      PathNode currentNode = event.source;
-      mostRecentConsidered = currentNode;
-      numEvents++;
-      terrainFacts.load(calcContext, currentNode.x, currentNode.y, currentNode.z);
-      MovementPrimitive primitive = allMoves[event.primitiveIndex];
-      DestinationSpec spec = primitive.destinationSpec();
-      BlockOffset probe = spec.precheckOffset();
-      int newX = currentNode.x + probe.dx();
-      int newY = currentNode.y + probe.dy();
-      int newZ = currentNode.z + probe.dz();
-      currentNode.consumeExpansion(event.primitiveIndex);
+      double batchCeiling = event.key + eventBatchSlackTicks;
+      boolean heapEvent = true;
+      sourceBatch : while (true) {
+        if (event.stale()) {
+          break sourceBatch;
+        }
+        if (heapEvent && event.key - oracleUpperBoundTicks > minimumImprovement) {
+          upperBoundExhausted = true;
+          break search;
+        }
+        heapEvent = false;
+        PathNode currentNode = event.source;
+        mostRecentConsidered = currentNode;
+        numEvents++;
+        terrainFacts.load(calcContext, currentNode.x, currentNode.y, currentNode.z);
+        MovementPrimitive primitive = allMoves[event.primitiveIndex];
+        DestinationSpec spec = primitive.destinationSpec();
+        BlockOffset probe = spec.precheckOffset();
+        int newX = currentNode.x + probe.dx();
+        int newY = currentNode.y + probe.dy();
+        int newZ = currentNode.z + probe.dz();
+        currentNode.consumeExpansion(event.primitiveIndex);
 
-      if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
-        double boundaryValue = boundaryValue(scoredExitSearch, frontier, localExit, currentNode, newX, newY, newZ);
-        if (Double.isFinite(boundaryValue)) {
-          double score = currentNode.cost + boundaryValue;
-          if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
-            bestExit = currentNode;
-            bestExitScore = score;
-          }
-        }
-        if (!scoredExitSearch && !spec.dynamicXZ()) {
-          numEmptyChunk++;
-        }
-      } else if ((!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) || newY < minY || newY >= maxYExclusive) {
-        // statically impossible; consumed above
-      } else {
-        long blockKey = 0;
-        boolean hasStaticBlockKey = false;
-        boolean staticIncumbentKnown = false;
-        PathNode staticIncumbent = null;
-        if (!spec.dynamicXZ() && !spec.dynamicY()) {
-          blockKey = BlockKey.pack(newX, newY, newZ);
-          hasStaticBlockKey = true;
-          nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
-          staticIncumbent = peekNodeAtPosition(blockKey);
-          staticIncumbentKnown = true;
-          if (activeProfile != null) {
-            nodeMapNanos += System.nanoTime() - nodeMapStart;
-          }
-          if (staticIncumbent != null) {
-            double exactFavoring = isFavoring ? favoring.calculate(blockKey) : 1D;
-            double lowerBoundActionCost = primitive.minimumCost(calcContext) * exactFavoring;
-            if (staticIncumbent.cost - (currentNode.cost + lowerBoundActionCost) <= minimumImprovement) {
-              if (activeProfile != null && primitive instanceof LegacyMovesPrimitive legacy) {
-                activeProfile.recordLowerBoundPrune(legacy.move());
-              } else if (activeProfile != null) {
-                activeProfile.recordLowerBoundPrune(primitive.debugName());
-              }
-              scheduleNextEvent(currentNode, eventHeap, allMoves, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
-              continue;
+        if ((newX >> 4 != currentNode.x >> 4 || newZ >> 4 != currentNode.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
+          double boundaryValue = boundaryValue(scoredExitSearch, frontier, localExit, currentNode, newX, newY, newZ);
+          if (Double.isFinite(boundaryValue)) {
+            double score = currentNode.cost + boundaryValue;
+            if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
+              bestExit = currentNode;
+              bestExitScore = score;
             }
           }
-        }
-        eval.blocked();
-        if (activeProfile == null) {
-          primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
+          if (!scoredExitSearch && !spec.dynamicXZ()) {
+            numEmptyChunk++;
+          }
+        } else if ((!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) || newY < minY || newY >= maxYExclusive) {
+          // statically impossible; consumed above
         } else {
-          long moveStart = System.nanoTime();
-          primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
-          if (primitive instanceof LegacyMovesPrimitive legacy) {
-            activeProfile.recordMove(legacy.move(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
-          } else {
-            activeProfile.recordMove(primitive.debugName(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
-          }
-        }
-        numMovementsConsidered++;
-        if (eval.status == EdgeEvalStatus.REACHABLE) {
-          double actionCost = eval.cost;
-          if (actionCost <= 0 || Double.isNaN(actionCost)) {
-            throw new IllegalStateException(String.format("%s from %s %s %s calculated implausible cost %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
-              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), actionCost));
-          }
-          if (spec.dynamicXZ() && !worldBorder.entirelyContains(eval.x, eval.z)) {
-            scheduleNextEvent(currentNode, eventHeap, allMoves, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
-            continue;
-          }
-          if (!spec.dynamicXZ() && (eval.x != newX || eval.z != newZ)) {
-            throw new IllegalStateException(
-              String.format("%s from %s %s %s ended at x z %s %s instead of %s %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x), SettingsUtil.maybeCensor(currentNode.y),
-                SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.x), SettingsUtil.maybeCensor(eval.z), SettingsUtil.maybeCensor(newX), SettingsUtil.maybeCensor(newZ)));
-          }
-          if (!spec.dynamicY() && eval.y != newY) {
-            throw new IllegalStateException(String.format("%s from %s %s %s ended at y %s instead of %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
-              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(newY)));
-          }
-          long favoringHash = BlockKey.pack(eval.x, eval.y, eval.z);
-          if (isFavoring) {
-            actionCost *= favoring.calculate(favoringHash);
-          }
-          if (event.actionLowerBound - actionCost > minimumImprovement) {
-            throw new IllegalStateException(String.format("%s from %s %s %s violated event lower bound: declared %s actual %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
-              SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), event.actionLowerBound, actionCost));
-          }
-          if (!hasStaticBlockKey) {
-            blockKey = BlockKey.pack(eval.x, eval.y, eval.z);
-          }
-          PathNode neighbor;
-          if (hasStaticBlockKey && staticIncumbentKnown) {
-            if (staticIncumbent == null) {
-              if (nodeMapFull()) {
-                nodeCapReached = true;
-                break search;
-              }
-              nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
-              neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
-              if (activeProfile != null) {
-                nodeMapNanos += System.nanoTime() - nodeMapStart;
-              }
-            } else {
-              neighbor = staticIncumbent;
-            }
-          } else {
+          long blockKey = 0;
+          boolean hasStaticBlockKey = false;
+          boolean staticIncumbentKnown = false;
+          PathNode staticIncumbent = null;
+          if (!spec.dynamicXZ() && !spec.dynamicY()) {
+            blockKey = BlockKey.pack(newX, newY, newZ);
+            hasStaticBlockKey = true;
             nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
-            neighbor = peekNodeAtPosition(blockKey);
-            if (neighbor == null) {
-              if (nodeMapFull()) {
-                nodeCapReached = true;
-                if (activeProfile != null) {
-                  nodeMapNanos += System.nanoTime() - nodeMapStart;
-                }
-                break search;
-              }
-              neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
-            }
+            staticIncumbent = peekNodeAtPosition(blockKey);
+            staticIncumbentKnown = true;
             if (activeProfile != null) {
               nodeMapNanos += System.nanoTime() - nodeMapStart;
             }
+            if (staticIncumbent != null) {
+              double exactFavoring = isFavoring ? favoring.calculate(blockKey) : 1D;
+              double lowerBoundActionCost = minimumCosts[event.primitiveIndex] * exactFavoring;
+              if (staticIncumbent.cost - (currentNode.cost + lowerBoundActionCost) <= minimumImprovement) {
+                if (activeProfile != null && primitive instanceof LegacyMovesPrimitive legacy) {
+                  activeProfile.recordLowerBoundPrune(legacy.move());
+                } else if (activeProfile != null) {
+                  activeProfile.recordLowerBoundPrune(primitive.debugName());
+                }
+                if (advanceEventOrSchedule(currentNode, eventHeap, event, batchCeiling, allMoves, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring,
+                  favoringFloor)) {
+                  continue sourceBatch;
+                }
+                break sourceBatch;
+              }
+            }
           }
-          double tentativeCost = currentNode.cost + actionCost;
-          if (neighbor.cost - tentativeCost > minimumImprovement) {
-            double combinedCost = tentativeCost + neighbor.estimatedCostToGoal;
-            neighbor.previous = currentNode;
-            neighbor.previousPrimitiveIndex = (short) event.primitiveIndex;
-            neighbor.previousEdgePayload = eval.payload;
-            neighbor.previousEdgeCost = actionCost;
-            neighbor.cost = tentativeCost;
-            neighbor.combinedCost = combinedCost;
-            resetAndSchedule(neighbor, eventHeap, allMoves, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
-            if (goal.isInGoal(neighbor.x, neighbor.y, neighbor.z)) {
-              double score =
-                scoredExitSearch ? frontier == null ? localExit.terminalExitValue(neighbor.x, neighbor.y, neighbor.z) : frontier.terminalExitValue(neighbor.x, neighbor.y, neighbor.z) : neighbor.cost;
-              if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
-                bestExit = neighbor;
-                bestExitScore = scoredExitSearch ? neighbor.cost + score : score;
+          eval.blocked();
+          if (activeProfile == null) {
+            primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
+          } else {
+            long moveStart = System.nanoTime();
+            primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
+            if (primitive instanceof LegacyMovesPrimitive legacy) {
+              activeProfile.recordMove(legacy.move(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
+            } else {
+              activeProfile.recordMove(primitive.debugName(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
+            }
+          }
+          numMovementsConsidered++;
+          if (eval.status == EdgeEvalStatus.REACHABLE) {
+            double actionCost = eval.cost;
+            if (actionCost <= 0 || Double.isNaN(actionCost)) {
+              throw new IllegalStateException(String.format("%s from %s %s %s calculated implausible cost %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
+                SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), actionCost));
+            }
+            if (spec.dynamicXZ() && !worldBorder.entirelyContains(eval.x, eval.z)) {
+              if (advanceEventOrSchedule(currentNode, eventHeap, event, batchCeiling, allMoves, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring,
+                favoringFloor)) {
+                continue sourceBatch;
+              }
+              break sourceBatch;
+            }
+            if (!spec.dynamicXZ() && (eval.x != newX || eval.z != newZ)) {
+              throw new IllegalStateException(
+                String.format("%s from %s %s %s ended at x z %s %s instead of %s %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x), SettingsUtil.maybeCensor(currentNode.y),
+                  SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.x), SettingsUtil.maybeCensor(eval.z), SettingsUtil.maybeCensor(newX), SettingsUtil.maybeCensor(newZ)));
+            }
+            if (!spec.dynamicY() && eval.y != newY) {
+              throw new IllegalStateException(String.format("%s from %s %s %s ended at y %s instead of %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
+                SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), SettingsUtil.maybeCensor(eval.y), SettingsUtil.maybeCensor(newY)));
+            }
+            long favoringHash = BlockKey.pack(eval.x, eval.y, eval.z);
+            if (isFavoring) {
+              actionCost *= favoring.calculate(favoringHash);
+            }
+            if (event.actionLowerBound - actionCost > minimumImprovement) {
+              throw new IllegalStateException(String.format("%s from %s %s %s violated event lower bound: declared %s actual %s", primitive.debugName(), SettingsUtil.maybeCensor(currentNode.x),
+                SettingsUtil.maybeCensor(currentNode.y), SettingsUtil.maybeCensor(currentNode.z), event.actionLowerBound, actionCost));
+            }
+            if (!hasStaticBlockKey) {
+              blockKey = BlockKey.pack(eval.x, eval.y, eval.z);
+            }
+            PathNode neighbor;
+            if (hasStaticBlockKey && staticIncumbentKnown) {
+              if (staticIncumbent == null) {
+                if (nodeMapFull()) {
+                  nodeCapReached = true;
+                  break search;
+                }
+                nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
+                neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
+                if (activeProfile != null) {
+                  nodeMapNanos += System.nanoTime() - nodeMapStart;
+                }
+              } else {
+                neighbor = staticIncumbent;
+              }
+            } else {
+              nodeMapStart = activeProfile == null ? 0 : System.nanoTime();
+              neighbor = peekNodeAtPosition(blockKey);
+              if (neighbor == null) {
+                if (nodeMapFull()) {
+                  nodeCapReached = true;
+                  if (activeProfile != null) {
+                    nodeMapNanos += System.nanoTime() - nodeMapStart;
+                  }
+                  break search;
+                }
+                neighbor = createNodeAtKnownAbsentPosition(eval.x, eval.y, eval.z, blockKey);
+              }
+              if (activeProfile != null) {
+                nodeMapNanos += System.nanoTime() - nodeMapStart;
               }
             }
-            if (localExit != null && neighbor.previous != null && localExit.isExactLocalExit(neighbor.x, neighbor.y, neighbor.z)) {
-              double score = neighbor.cost + localExit.localExitValue(neighbor.x, neighbor.y, neighbor.z);
-              if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
-                bestExit = neighbor;
-                bestExitScore = score;
+            double tentativeCost = currentNode.cost + actionCost;
+            if (neighbor.cost - tentativeCost > minimumImprovement) {
+              double combinedCost = tentativeCost + neighbor.estimatedCostToGoal;
+              if (combinedCost - oracleUpperBoundTicks > minimumImprovement) {
+                if (currentNode.expansionGeneration == event.generation && currentNode.expansionSerial == event.serial && advanceEventOrSchedule(currentNode, eventHeap, event, batchCeiling, allMoves,
+                  minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor)) {
+                  continue sourceBatch;
+                }
+                break sourceBatch;
               }
-            }
-            for (int i = 0; i < COEFFICIENTS.length; i++) {
-              double heuristic = neighbor.estimatedCostToGoal + neighbor.cost / COEFFICIENTS[i];
-              if (bestHeuristicSoFar[i] - heuristic > minimumImprovement) {
-                bestHeuristicSoFar[i] = heuristic;
-                bestSoFar[i] = neighbor;
-                if (failing && getDistFromStartSq(neighbor) > MIN_DIST_PATH * MIN_DIST_PATH) {
-                  failing = false;
+              neighbor.previous = currentNode;
+              neighbor.previousPrimitiveIndex = (short) event.primitiveIndex;
+              neighbor.previousEdgePayload = eval.payload;
+              neighbor.previousEdgeCost = actionCost;
+              neighbor.cost = tentativeCost;
+              neighbor.combinedCost = combinedCost;
+              resetAndSchedule(neighbor, eventHeap, allMoves, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+              if (goal.isInGoal(neighbor.x, neighbor.y, neighbor.z)) {
+                double score = scoredExitSearch
+                  ? neighbor.cost + (frontier == null ? localExit.terminalExitValue(neighbor.x, neighbor.y, neighbor.z) : frontier.terminalExitValue(neighbor.x, neighbor.y, neighbor.z))
+                  : neighbor.cost;
+                if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
+                  bestExit = neighbor;
+                  bestExitScore = score;
+                }
+              }
+              if (localExit != null && neighbor.previous != null && localExit.isExactLocalExit(neighbor.x, neighbor.y, neighbor.z)) {
+                double score = neighbor.cost + localExit.localExitValue(neighbor.x, neighbor.y, neighbor.z);
+                if (Double.isFinite(score) && bestExitScore - score > minimumImprovement) {
+                  bestExit = neighbor;
+                  bestExitScore = score;
+                }
+              }
+              for (int i = 0; i < COEFFICIENTS.length; i++) {
+                double heuristic = neighbor.estimatedCostToGoal + neighbor.cost / COEFFICIENTS[i];
+                if (bestHeuristicSoFar[i] - heuristic > minimumImprovement) {
+                  bestHeuristicSoFar[i] = heuristic;
+                  bestSoFar[i] = neighbor;
+                  if (failing && getDistFromStartSq(neighbor) > MIN_DIST_PATH * MIN_DIST_PATH) {
+                    failing = false;
+                  }
                 }
               }
             }
           }
         }
-      }
-      if (currentNode.expansionGeneration == event.generation && currentNode.expansionSerial == event.serial) {
-        scheduleNextEvent(currentNode, eventHeap, allMoves, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+        if (currentNode.expansionGeneration == event.generation && currentNode.expansionSerial == event.serial) {
+          if (advanceEventOrSchedule(currentNode, eventHeap, event, batchCeiling, allMoves, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring,
+            favoringFloor)) {
+            continue sourceBatch;
+          }
+        }
+        break sourceBatch;
       }
     }
     if (activeProfile != null) {
@@ -652,14 +680,44 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     return result;
   }
 
-  private void resetAndSchedule(PathNode node, ExpansionEventHeap heap, MovementPrimitive[] primitives, boolean scoredExitSearch, FrontierValueObjective frontier, LocalExitObjective localExit,
-    BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
-    node.resetExpansion(primitives.length);
-    scheduleNextEvent(node, heap, primitives, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+  private double[] minimumCosts(MovementPrimitive[] primitives) {
+    double[] result = new double[primitives.length];
+    for (int i = 0; i < primitives.length; i++) {
+      result[i] = Math.max(0D, primitives[i].minimumCost(calcContext));
+    }
+    return result;
   }
 
-  private void scheduleNextEvent(PathNode node, ExpansionEventHeap heap, MovementPrimitive[] primitives, boolean scoredExitSearch, FrontierValueObjective frontier, LocalExitObjective localExit,
-    BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
+  private void resetAndSchedule(PathNode node, ExpansionEventHeap heap, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier,
+    LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
+    node.resetExpansion(primitives.length);
+    scheduleNextEvent(node, heap, primitives, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+  }
+
+  private void scheduleNextEvent(PathNode node, ExpansionEventHeap heap, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier,
+    LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
+    if (selectNextEvent(node, scheduleScratch, primitives, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor)) {
+      heap.insert(node, scheduleScratch.primitiveIndex, scheduleScratch.actionLowerBound, scheduleScratch.key, scheduleScratch.tie);
+    }
+  }
+
+  private boolean advanceEventOrSchedule(PathNode node, ExpansionEventHeap heap, ExpansionEventHeap.Event event, double batchCeiling, MovementPrimitive[] primitives, double[] minimumCosts,
+    boolean scoredExitSearch, FrontierValueObjective frontier, LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
+    if (node.expansionGeneration != event.generation || node.expansionSerial != event.serial) {
+      return false;
+    }
+    if (!selectNextEvent(node, event, primitives, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor)) {
+      return false;
+    }
+    if (event.key <= batchCeiling) {
+      return true;
+    }
+    heap.insert(node, event.primitiveIndex, event.actionLowerBound, event.key, event.tie);
+    return false;
+  }
+
+  private boolean selectNextEvent(PathNode node, ExpansionEventHeap.Event out, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier,
+    LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
     int bestPrimitive = -1;
     double bestKey = Double.POSITIVE_INFINITY;
     double bestLower = 0;
@@ -674,30 +732,13 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       int newX = node.x + probe.dx();
       int newY = node.y + probe.dy();
       int newZ = node.z + probe.dz();
-      if ((!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) || newY < minY || newY >= maxYExclusive) {
+      double lower = minimumCosts[i];
+      double key = expansionEventKey(node, primitive, spec, newX, newY, newZ, lower, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+      if (!Double.isFinite(key)) {
         node.consumeExpansion(i);
         continue;
       }
-      double lower = Math.max(0D, primitive.minimumCost(calcContext));
-      double key;
-      if ((newX >> 4 != node.x >> 4 || newZ >> 4 != node.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
-        double boundaryValue = boundaryValue(scoredExitSearch, frontier, localExit, node, newX, newY, newZ);
-        key = Double.isFinite(boundaryValue) ? node.cost + boundaryValue : node.cost + lower * favoringFloor;
-      } else {
-        double actionMultiplier = 1D;
-        double heuristicMultiplier = 1D;
-        if (isFavoring) {
-          heuristicMultiplier = favoringFloor;
-          if (!spec.dynamicXZ() && !spec.dynamicY()) {
-            actionMultiplier = favoring.calculate(BlockKey.pack(newX, newY, newZ));
-          } else {
-            actionMultiplier = favoringFloor;
-          }
-        }
-        lower *= actionMultiplier;
-        double heuristic = destinationHeuristicLowerBound(primitive, spec, node, newX, newY, newZ, minY, maxYExclusive) * heuristicMultiplier;
-        key = node.cost + lower + heuristic;
-      }
+      lower = expansionActionLowerBound(node, spec, newX, newY, newZ, lower, isFavoring, favoringFloor);
       int tie = eventTie(i, primitive);
       if (key < bestKey || key == bestKey && tie < bestTie) {
         bestPrimitive = i;
@@ -707,8 +748,42 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
       }
     }
     if (bestPrimitive >= 0 && Double.isFinite(bestKey)) {
-      heap.insert(node, bestPrimitive, bestLower, bestKey, bestTie);
+      out.source = node;
+      out.generation = node.expansionGeneration;
+      out.serial = node.expansionSerial;
+      out.primitiveIndex = bestPrimitive;
+      out.actionLowerBound = bestLower;
+      out.key = bestKey;
+      out.tie = bestTie;
+      return true;
     }
+    return false;
+  }
+
+  private double expansionEventKey(PathNode node, MovementPrimitive primitive, DestinationSpec spec, int newX, int newY, int newZ, double lower, boolean scoredExitSearch,
+    FrontierValueObjective frontier, LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
+    if ((!spec.dynamicXZ() && !worldBorder.entirelyContains(newX, newZ)) || newY < minY || newY >= maxYExclusive) {
+      return Double.POSITIVE_INFINITY;
+    }
+    if ((newX >> 4 != node.x >> 4 || newZ >> 4 != node.z >> 4) && !calcContext.hasPathingData(newX, newZ)) {
+      double boundaryValue = boundaryValue(scoredExitSearch, frontier, localExit, node, newX, newY, newZ);
+      return Double.isFinite(boundaryValue) ? node.cost + boundaryValue : node.cost + lower * favoringFloor;
+    }
+    double adjustedLower = expansionActionLowerBound(node, spec, newX, newY, newZ, lower, isFavoring, favoringFloor);
+    double heuristicMultiplier = isFavoring ? favoringFloor : 1D;
+    double heuristic = destinationEventEstimate(primitive, spec, node, newX, newY, newZ, minY, maxYExclusive) * heuristicMultiplier;
+    // Under frontier timeouts, the floor heuristic is a proof tool but a terrible scheduler: it over-explores "cheap" bad strata.
+    return Math.max(node.combinedCost, node.cost + adjustedLower + heuristic);
+  }
+
+  private double expansionActionLowerBound(PathNode node, DestinationSpec spec, int newX, int newY, int newZ, double lower, boolean isFavoring, double favoringFloor) {
+    if (!isFavoring) {
+      return lower;
+    }
+    if (!spec.dynamicXZ() && !spec.dynamicY()) {
+      return lower * favoring.calculate(BlockKey.pack(newX, newY, newZ));
+    }
+    return lower * favoringFloor;
   }
 
   private double boundaryValue(boolean scoredExitSearch, FrontierValueObjective frontier, LocalExitObjective localExit, PathNode node, int newX, int newY, int newZ) {
@@ -751,9 +826,22 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
     return Double.isFinite(best) ? best : 0D;
   }
 
+  private double destinationEventEstimate(MovementPrimitive primitive, DestinationSpec spec, PathNode node, int precheckX, int precheckY, int precheckZ, int minY, int maxYExclusive) {
+    if (goal instanceof FarfieldObjective farfield && !spec.dynamicXZ() && !spec.dynamicY()) {
+      return Math.max(0D, farfield.expectedObjective(precheckX, precheckY, precheckZ));
+    }
+    return destinationHeuristicLowerBound(primitive, spec, node, precheckX, precheckY, precheckZ, minY, maxYExclusive);
+  }
+
   private double finiteVerticalHeuristic(int x, int z, int yMin, int yMax) {
     if (yMax < yMin) {
       return 0D;
+    }
+    if (goal instanceof FarfieldObjective farfield) {
+      return farfield.verticalRangeLowerBound(x, z, yMin, yMax);
+    }
+    if (goal instanceof baritone.api.pathing.goals.GoalXZ) {
+      return nonnegativeHeuristic(x, yMin, z);
     }
     double best = Double.POSITIVE_INFINITY;
     for (int y = yMin; y <= yMax; y++) {

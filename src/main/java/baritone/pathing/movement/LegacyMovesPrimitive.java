@@ -16,12 +16,35 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   private static final double SQRT_2 = Math.sqrt(2);
 
   private final Moves move;
+  private final Variant variant;
   private final DestinationSpec destinationSpec;
 
   LegacyMovesPrimitive(Moves move) {
+    this(move, Variant.ANY);
+  }
+
+  private LegacyMovesPrimitive(Moves move, Variant variant) {
     this.move = move;
+    this.variant = variant;
     BlockOffset offset = new BlockOffset(move.xOffset, move.yOffset, move.zOffset);
-    this.destinationSpec = move.dynamicXZ || move.dynamicY ? new DestinationSpec.Dynamic(offset, move.dynamicXZ, move.dynamicY) : new DestinationSpec.Static(offset);
+    this.destinationSpec = variant == Variant.DESCEND_ONE_BLOCK ? new DestinationSpec.Static(offset)
+      : move.dynamicXZ || move.dynamicY ? new DestinationSpec.Dynamic(offset, move.dynamicXZ, move.dynamicY) : new DestinationSpec.Static(offset);
+  }
+
+  static LegacyMovesPrimitive descendOneBlock(Moves move) {
+    return new LegacyMovesPrimitive(move, Variant.DESCEND_ONE_BLOCK);
+  }
+
+  static LegacyMovesPrimitive descendFall(Moves move) {
+    return new LegacyMovesPrimitive(move, Variant.DESCEND_FALL);
+  }
+
+  static LegacyMovesPrimitive traverseClean(Moves move) {
+    return new LegacyMovesPrimitive(move, Variant.TRAVERSE_CLEAN);
+  }
+
+  static LegacyMovesPrimitive traverseComplex(Moves move) {
+    return new LegacyMovesPrimitive(move, Variant.TRAVERSE_COMPLEX);
   }
 
   public Moves move() {
@@ -30,7 +53,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public String debugName() {
-    return move.name();
+    return variant == Variant.ANY ? move.name() : move.name() + variant.suffix;
   }
 
   @Override
@@ -41,6 +64,14 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   @Override
   public void evaluate(CalculationContext ctx, int x, int y, int z, EdgeEvalScratch out) {
     out.blocked();
+    if (variant == Variant.DESCEND_ONE_BLOCK || variant == Variant.DESCEND_FALL) {
+      evaluateDescendVariant(ctx, x, y, z, out);
+      return;
+    }
+    if (variant == Variant.TRAVERSE_CLEAN || variant == Variant.TRAVERSE_COMPLEX) {
+      evaluateTraverseVariant(ctx, x, y, z, out);
+      return;
+    }
     if (!move.dynamicXZ && !move.dynamicY) {
       double cost = staticCost(ctx, x, y, z, out.nodeFacts);
       cost = ctx.reversibility.recost(reversibilityFor(x, y, z, x + move.xOffset, y + move.yOffset, z + move.zOffset), cost);
@@ -63,6 +94,18 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public double minimumCost(CalculationContext ctx) {
+    if (variant == Variant.DESCEND_ONE_BLOCK) {
+      return descendLowerBound(ctx);
+    }
+    if (variant == Variant.DESCEND_FALL) {
+      return fallLowerBound(ctx);
+    }
+    if (variant == Variant.TRAVERSE_CLEAN) {
+      return traverseLowerBound(ctx);
+    }
+    if (variant == Variant.TRAVERSE_COMPLEX) {
+      return traverseComplexLowerBound(ctx);
+    }
     return switch (move) {
       case TRAVERSE_NORTH, TRAVERSE_SOUTH, TRAVERSE_EAST, TRAVERSE_WEST -> traverseLowerBound(ctx);
       case ASCEND_NORTH, ASCEND_SOUTH, ASCEND_EAST, ASCEND_WEST -> ascendLowerBound(ctx);
@@ -75,62 +118,67 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   }
 
   private static double traverseLowerBound(CalculationContext ctx) {
-    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0 || ctx.costs.walkOnWaterOnePenalty() < 0) {
-      return 0;
+    // Certificates, not preferences: each value must undercut the cheapest concrete regime the primitive can legally emit.
+    double walkOnWater = ActionCosts.WALK_ONE_BLOCK_COST + Math.min(0D, ctx.costs.walkOnWaterOnePenalty());
+    if (ctx.movement.canSprint()) {
+      walkOnWater *= ActionCosts.SPRINT_MULTIPLIER;
     }
-    return Math.min(flatStepLowerBound(ctx), ctx.costs.waterMoveCost());
+    return nonnegative(Math.min(Math.min(flatStepLowerBound(ctx), ctx.costs.waterMoveCost()), walkOnWater));
+  }
+
+  private static double traverseComplexLowerBound(CalculationContext ctx) {
+    double passage = Math.min(Math.max(0D, ctx.costs.breakBlockAdditional()), ctx.ephemeralObstacles.enabled() ? ctx.ephemeralObstacles.clearCostTicks() : ActionCosts.COST_INF);
+    double bridge = ctx.placement.hasThrowaway() ? Math.max(0D, ctx.placement.blockCost()) : ActionCosts.COST_INF;
+    return nonnegative(traverseLowerBound(ctx) + Math.min(passage, bridge));
   }
 
   private static double ascendLowerBound(CalculationContext ctx) {
-    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0 || ctx.costs.jumpPenalty() < 0) {
-      return 0;
-    }
     return ActionCosts.WALK_ONE_BLOCK_COST;
   }
 
   private static double diagonalLowerBound(CalculationContext ctx) {
-    if (ctx.costs.walkOnWaterOnePenalty() < 0) {
-      return 0;
+    double walkOnWater = ActionCosts.WALK_ONE_BLOCK_COST + Math.min(0D, ctx.costs.walkOnWaterOnePenalty()) * SQRT_2;
+    if (ctx.movement.canSprint()) {
+      walkOnWater *= ActionCosts.SPRINT_MULTIPLIER;
     }
-    return SQRT_2 * Math.min(flatStepLowerBound(ctx), ctx.costs.waterMoveCost());
+    return nonnegative(SQRT_2 * Math.min(Math.min(flatStepLowerBound(ctx), ctx.costs.waterMoveCost()), walkOnWater));
   }
 
   private static double descendLowerBound(CalculationContext ctx) {
-    if (ctx.costs.breakBlockAdditional() < 0) {
-      return 0;
-    }
     return ActionCosts.WALK_OFF_BLOCK_COST + Math.max(ActionCosts.FALL_N_BLOCKS_COST[1], ActionCosts.CENTER_AFTER_FALL_COST);
   }
 
+  private static double fallLowerBound(CalculationContext ctx) {
+    int directLandingHeight = Math.max(3, ctx.fall.minHeight());
+    double directLanding = ActionCosts.FALL_N_BLOCKS_COST[directLandingHeight];
+    double ladderReset = ActionCosts.FALL_N_BLOCKS_COST[2] + ActionCosts.LADDER_DOWN_ONE_COST;
+    return ActionCosts.WALK_OFF_BLOCK_COST + Math.min(directLanding, ladderReset);
+  }
+
   private static double downwardLowerBound(CalculationContext ctx) {
-    if (ctx.costs.breakBlockAdditional() < 0) {
-      return 0;
-    }
     return Math.min(ActionCosts.LADDER_DOWN_ONE_COST, ActionCosts.FALL_N_BLOCKS_COST[1]);
   }
 
   private static double pillarLowerBound(CalculationContext ctx) {
-    if (ctx.costs.breakBlockAdditional() < 0 || ctx.placement.blockCost() < 0 || ctx.costs.jumpPenalty() < 0) {
-      return 0;
-    }
-    return Math.min(Math.min(ActionCosts.LADDER_UP_ONE_COST, ctx.costs.waterWalkCost()), ActionCosts.JUMP_ONE_BLOCK_COST + ctx.costs.jumpPenalty());
+    return nonnegative(Math.min(Math.min(ActionCosts.LADDER_UP_ONE_COST, ctx.costs.waterWalkCost()), ActionCosts.JUMP_ONE_BLOCK_COST + Math.min(0D, ctx.costs.jumpPenalty())));
   }
 
   private static double parkourLowerBound(CalculationContext ctx) {
-    if (ctx.costs.jumpPenalty() < 0 || ctx.placement.blockCost() < 0) {
-      return 0;
-    }
-    double step = ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST;
-    return 2 * step + ctx.costs.jumpPenalty();
+    double base = ctx.movement.canSprint() && ctx.movement.allowParkourAscend() ? 2 * ActionCosts.SPRINT_ONE_BLOCK_COST : 2 * ActionCosts.WALK_ONE_BLOCK_COST;
+    return nonnegative(base + Math.min(0D, ctx.costs.jumpPenalty()));
   }
 
   private static double flatStepLowerBound(CalculationContext ctx) {
     return ctx.movement.canSprint() ? ActionCosts.SPRINT_ONE_BLOCK_COST : ActionCosts.WALK_ONE_BLOCK_COST;
   }
 
+  private static double nonnegative(double value) {
+    return Math.max(0D, value);
+  }
+
   @Override
   public Movement instantiate(CalculationContext ctx, BetterBlockPos src, BetterBlockPos dest, int payload) {
-    if (move.dynamicXZ || move.dynamicY) {
+    if (variant == Variant.DESCEND_FALL || variant == Variant.ANY && (move.dynamicXZ || move.dynamicY)) {
       EdgeEvalScratch eval = new EdgeEvalScratch();
       evaluate(ctx, src.x, src.y, src.z, eval);
       if (eval.status != EdgeEvalStatus.REACHABLE) {
@@ -157,6 +205,10 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public void predecessorCandidates(int destX, int destY, int destZ, PredecessorSink out) {
+    if (variant == Variant.DESCEND_ONE_BLOCK) {
+      out.accept(destX - move.xOffset, destY + 1, destZ - move.zOffset);
+      return;
+    }
     if (!move.dynamicXZ && !move.dynamicY) {
       out.accept(destX - move.xOffset, destY - move.yOffset, destZ - move.zOffset);
       return;
@@ -204,22 +256,30 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public boolean revalidatesDestinationDuringAssembly() {
-    return move.dynamicXZ || move.dynamicY;
+    return variant == Variant.DESCEND_FALL || variant == Variant.ANY && (move.dynamicXZ || move.dynamicY);
   }
 
   private double staticCost(CalculationContext ctx, int x, int y, int z, NodeTerrainFacts facts) {
     return switch (move) {
       case DOWNWARD -> MovementDownward.cost(ctx, x, y, z);
       case PILLAR -> MovementPillar.cost(ctx, x, y, z);
-      case TRAVERSE_NORTH -> MovementTraverse.cost(ctx, facts, x, y, z, x, z - 1);
-      case TRAVERSE_SOUTH -> MovementTraverse.cost(ctx, facts, x, y, z, x, z + 1);
-      case TRAVERSE_EAST -> MovementTraverse.cost(ctx, facts, x, y, z, x + 1, z);
-      case TRAVERSE_WEST -> MovementTraverse.cost(ctx, facts, x, y, z, x - 1, z);
+      case TRAVERSE_NORTH -> traverseCost(ctx, facts, x, y, z, x, z - 1);
+      case TRAVERSE_SOUTH -> traverseCost(ctx, facts, x, y, z, x, z + 1);
+      case TRAVERSE_EAST -> traverseCost(ctx, facts, x, y, z, x + 1, z);
+      case TRAVERSE_WEST -> traverseCost(ctx, facts, x, y, z, x - 1, z);
       case ASCEND_NORTH -> MovementAscend.cost(ctx, facts, x, y, z, x, z - 1);
       case ASCEND_SOUTH -> MovementAscend.cost(ctx, facts, x, y, z, x, z + 1);
       case ASCEND_EAST -> MovementAscend.cost(ctx, facts, x, y, z, x + 1, z);
       case ASCEND_WEST -> MovementAscend.cost(ctx, facts, x, y, z, x - 1, z);
       default -> throw new UnsupportedOperationException(move + " is not a static primitive");
+    };
+  }
+
+  private double traverseCost(CalculationContext ctx, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ) {
+    return switch (variant) {
+      case TRAVERSE_CLEAN -> MovementTraverse.cleanCost(ctx, facts, x, y, z, destX, destZ);
+      case TRAVERSE_COMPLEX -> MovementTraverse.complexCost(ctx, facts, x, y, z, destX, destZ);
+      default -> MovementTraverse.cost(ctx, facts, x, y, z, destX, destZ);
     };
   }
 
@@ -238,6 +298,43 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
       case PARKOUR_EAST -> MovementParkour.cost(ctx, x, y, z, Direction.EAST, result);
       case PARKOUR_WEST -> MovementParkour.cost(ctx, x, y, z, Direction.WEST, result);
       default -> throw new UnsupportedOperationException(move + " is not a dynamic primitive");
+    }
+  }
+
+  private void evaluateDescendVariant(CalculationContext ctx, int x, int y, int z, EdgeEvalScratch out) {
+    int destX = x + move.xOffset;
+    int destZ = z + move.zOffset;
+    if (variant == Variant.DESCEND_ONE_BLOCK) {
+      MovementDescend.oneBlockCost(ctx, out.nodeFacts, x, y, z, destX, destZ, out);
+    } else {
+      MovementDescend.fallCost(ctx, out.nodeFacts, x, y, z, destX, destZ, out);
+    }
+    if (out.status == EdgeEvalStatus.REACHABLE) {
+      double cost = ctx.reversibility.recost(variant == Variant.DESCEND_ONE_BLOCK ? TrailReversibility.INTRINSIC : TrailReversibility.IRREVERSIBLE, out.cost);
+      if (cost >= ActionCosts.COST_INF) {
+        out.blocked();
+      } else {
+        out.cost = cost;
+      }
+    }
+  }
+
+  private void evaluateTraverseVariant(CalculationContext ctx, int x, int y, int z, EdgeEvalScratch out) {
+    double cost = staticCost(ctx, x, y, z, out.nodeFacts);
+    cost = ctx.reversibility.recost(TrailReversibility.INTRINSIC, cost);
+    if (cost >= ActionCosts.COST_INF) {
+      return;
+    }
+    out.reachable(x + move.xOffset, y, z + move.zOffset, cost, 0);
+  }
+
+  private enum Variant {
+    ANY(""), TRAVERSE_CLEAN("_CLEAN"), TRAVERSE_COMPLEX("_COMPLEX"), DESCEND_ONE_BLOCK("_ONE"), DESCEND_FALL("_FALL");
+
+    final String suffix;
+
+    Variant(String suffix) {
+      this.suffix = suffix;
     }
   }
 }

@@ -31,6 +31,10 @@ public class MovementDescend extends Movement {
   private int numTicks = 0;
   public boolean forceSafeMode = false;
 
+  private enum DescentRegime {
+    ANY, ONE_BLOCK, FALL
+  }
+
   public MovementDescend(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
     super(baritone, start, end, new BetterBlockPos[]{end.above(2), end.above(), end}, end.below());
   }
@@ -69,6 +73,18 @@ public class MovementDescend extends Movement {
   }
 
   public static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
+    cost(context, facts, x, y, z, destX, destZ, DescentRegime.ANY, res);
+  }
+
+  public static void oneBlockCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
+    cost(context, facts, x, y, z, destX, destZ, DescentRegime.ONE_BLOCK, res);
+  }
+
+  public static void fallCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
+    cost(context, facts, x, y, z, destX, destZ, DescentRegime.FALL, res);
+  }
+
+  private static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, DescentRegime regime, EdgeEvalScratch res) {
     res.blocked();
     double totalCost = 0;
     boolean hasFacts = facts != null && facts.matches(x, y, z);
@@ -102,7 +118,12 @@ public class MovementDescend extends Movement {
 
     BlockState below = context.get(destX, y - 2, destZ);
     if (!MovementHelper.canWalkOn(context, destX, y - 2, destZ, below)) {
-      dynamicFallCost(context, x, y, z, destX, destZ, totalCost, below, res);
+      if (regime != DescentRegime.ONE_BLOCK) {
+        dynamicFallCost(context, x, y, z, destX, destZ, totalCost, below, res);
+      }
+      return;
+    }
+    if (regime == DescentRegime.FALL) {
       return;
     }
     if (MovementHelper.isWater(destDown) && !MovementHelper.canHorizontalWaterMoveThrough(context, destX, y - 1, destZ, destDown, context.get(destX, y, destZ))) {

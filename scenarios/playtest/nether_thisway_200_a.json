@@ -1,0 +1,54 @@
+{
+  "acceptance": {
+    "requireNoDamage": true,
+    "requireNoVehicle": true,
+    "requireOnGround": true,
+    "requirePathingSeen": true
+  },
+  "biomeProfile": {
+    "biome": "minecraft:nether",
+    "candidateIndex": 0,
+    "controllerProfile": "native-nether-pedestrian-200",
+    "distance": 200.0,
+    "headingOctant": 6,
+    "headingRadians": -1.4890119461769007,
+    "independentSample": "synthetic:nether:nether_thisway_500_0:0:0:prefix200",
+    "schema": 1
+  },
+  "dimension": "minecraft:the_nether",
+  "goal": {
+    "type": "xz",
+    "x": 641,
+    "y": 71,
+    "z": 105
+  },
+  "id": "nether_thisway_200_a",
+  "loadout": [
+    {"slot": 0, "item": "minecraft:diamond_pickaxe", "count": 1},
+    {"slot": 1, "item": "minecraft:netherrack", "count": 64},
+    {"slot": 2, "item": "minecraft:netherrack", "count": 64},
+    {"slot": 3, "item": "minecraft:netherrack", "count": 64}
+  ],
+  "resetWorld": true,
+  "saturationBoost": true,
+  "seed": "baritone-nether-thisway-500-0",
+  "selectedSlot": 0,
+  "setupCommands": [
+    "difficulty peaceful"
+  ],
+  "start": {
+    "pitch": 0.0,
+    "x": 624.5,
+    "y": 75.0,
+    "yaw": 0.0,
+    "z": 304.5
+  },
+  "successRadius": 8.0,
+  "timeoutTicks": 6500,
+  "trace": false,
+  "settings": {
+    "pathingEventCursorAStar": true
+  },
+  "worldKey": "nether_thisway_500_0",
+  "worldPreset": "minecraft:normal"
+}
