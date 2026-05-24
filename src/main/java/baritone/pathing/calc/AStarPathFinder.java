@@ -37,6 +37,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
   private int lastEmptyChunkFetches;
   private int lastNodeMapSize;
   private final ExpansionEventHeap.Event scheduleScratch = new ExpansionEventHeap.Event();
+  private int[] expansionOrderScratch = new int[64];
+  private double[] expansionKeyScratch = new double[64];
 
   public AStarPathFinder(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, Favoring favoring, CalculationContext context, PathingIncumbentPolicy incumbentPolicy) {
     this(realStart, startX, startY, startZ, goal, favoring, context, incumbentPolicy, Double.POSITIVE_INFINITY);
@@ -691,7 +693,43 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
   private void resetAndSchedule(PathNode node, ExpansionEventHeap heap, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier,
     LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
     node.resetExpansion(primitives.length);
+    prepareExpansionOrder(node, primitives, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
     scheduleNextEvent(node, heap, primitives, minimumCosts, scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+  }
+
+  private void prepareExpansionOrder(PathNode node, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier, LocalExitObjective localExit,
+    BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
+    if (expansionOrderScratch.length < primitives.length) {
+      expansionOrderScratch = new int[primitives.length];
+      expansionKeyScratch = new double[primitives.length];
+    }
+    int count = 0;
+    for (int i = 0; i < primitives.length; i++) {
+      MovementPrimitive primitive = primitives[i];
+      DestinationSpec spec = primitive.destinationSpec();
+      BlockOffset probe = spec.precheckOffset();
+      int newX = node.x + probe.dx();
+      int newY = node.y + probe.dy();
+      int newZ = node.z + probe.dz();
+      double key = expansionEventKey(node, primitive, spec, newX, newY, newZ, minimumCosts[i], scoredExitSearch, frontier, localExit, worldBorder, minY, maxYExclusive, isFavoring, favoringFloor);
+      if (!Double.isFinite(key)) {
+        node.consumeExpansion(i);
+        continue;
+      }
+      int tie = eventTie(i, primitive);
+      int at = count;
+      while (at > 0 && (key < expansionKeyScratch[at - 1] || key == expansionKeyScratch[at - 1] && tie < eventTie(expansionOrderScratch[at - 1], primitives[expansionOrderScratch[at - 1]]))) {
+        expansionKeyScratch[at] = expansionKeyScratch[at - 1];
+        expansionOrderScratch[at] = expansionOrderScratch[at - 1];
+        at--;
+      }
+      expansionKeyScratch[at] = key;
+      expansionOrderScratch[at] = i;
+      count++;
+    }
+    for (int i = 0; i < count; i++) {
+      node.appendExpansionPrimitive(expansionOrderScratch[i]);
+    }
   }
 
   private void scheduleNextEvent(PathNode node, ExpansionEventHeap heap, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier,
@@ -718,11 +756,8 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
 
   private boolean selectNextEvent(PathNode node, ExpansionEventHeap.Event out, MovementPrimitive[] primitives, double[] minimumCosts, boolean scoredExitSearch, FrontierValueObjective frontier,
     LocalExitObjective localExit, BetterWorldBorder worldBorder, int minY, int maxYExclusive, boolean isFavoring, double favoringFloor) {
-    int bestPrimitive = -1;
-    double bestKey = Double.POSITIVE_INFINITY;
-    double bestLower = 0;
-    int bestTie = 0;
-    for (int i = 0; i < primitives.length; i++) {
+    while (node.expansionCursor < node.expansionCount) {
+      int i = node.nextExpansionPrimitive();
       if (node.expansionConsumed(i)) {
         continue;
       }
@@ -739,22 +774,13 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
         continue;
       }
       lower = expansionActionLowerBound(node, spec, newX, newY, newZ, lower, isFavoring, favoringFloor);
-      int tie = eventTie(i, primitive);
-      if (key < bestKey || key == bestKey && tie < bestTie) {
-        bestPrimitive = i;
-        bestKey = key;
-        bestLower = lower;
-        bestTie = tie;
-      }
-    }
-    if (bestPrimitive >= 0 && Double.isFinite(bestKey)) {
       out.source = node;
       out.generation = node.expansionGeneration;
       out.serial = node.expansionSerial;
-      out.primitiveIndex = bestPrimitive;
-      out.actionLowerBound = bestLower;
-      out.key = bestKey;
-      out.tie = bestTie;
+      out.primitiveIndex = i;
+      out.actionLowerBound = lower;
+      out.key = key;
+      out.tie = eventTie(i, primitive);
       return true;
     }
     return false;

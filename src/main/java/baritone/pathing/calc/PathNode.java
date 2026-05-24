@@ -57,9 +57,23 @@ public final class PathNode {
 
   public int expansionSerial;
 
+  public int expansionCursor;
+
+  public int expansionCount;
+
   private long consumedExpansionMask;
 
   private long[] consumedExpansionWords;
+
+  private long expansionOrder0;
+
+  private long expansionOrder1;
+
+  private long expansionOrder2;
+
+  private long expansionOrder3;
+
+  private short[] expansionOrder;
 
   public PathNode(int x, int y, int z, Goal goal) {
     this.previous = null;
@@ -81,16 +95,27 @@ public final class PathNode {
   public void resetExpansion(int primitiveCount) {
     expansionGeneration++;
     expansionSerial++;
+    expansionCursor = 0;
+    expansionCount = 0;
     consumedExpansionMask = 0L;
     if (primitiveCount <= Long.SIZE) {
       consumedExpansionWords = null;
-      return;
-    }
-    int words = primitiveCount + Long.SIZE - 1 >>> 6;
-    if (consumedExpansionWords == null || consumedExpansionWords.length < words) {
-      consumedExpansionWords = new long[words];
     } else {
-      Arrays.fill(consumedExpansionWords, 0, words, 0L);
+      int words = primitiveCount + Long.SIZE - 1 >>> 6;
+      if (consumedExpansionWords == null || consumedExpansionWords.length < words) {
+        consumedExpansionWords = new long[words];
+      } else {
+        Arrays.fill(consumedExpansionWords, 0, words, 0L);
+      }
+    }
+    if (primitiveCount <= 40) {
+      expansionOrder = null;
+      expansionOrder0 = 0L;
+      expansionOrder1 = 0L;
+      expansionOrder2 = 0L;
+      expansionOrder3 = 0L;
+    } else if (expansionOrder == null || expansionOrder.length < primitiveCount) {
+      expansionOrder = new short[primitiveCount];
     }
   }
 
@@ -107,6 +132,37 @@ public final class PathNode {
       return;
     }
     consumedExpansionMask |= 1L << primitiveIndex;
+  }
+
+  public void appendExpansionPrimitive(int primitiveIndex) {
+    int slot = expansionCount++;
+    if (expansionOrder != null) {
+      expansionOrder[slot] = (short) primitiveIndex;
+      return;
+    }
+    long encoded = (long) primitiveIndex << (slot % 10 * 6);
+    switch (slot / 10) {
+      case 0 -> expansionOrder0 |= encoded;
+      case 1 -> expansionOrder1 |= encoded;
+      case 2 -> expansionOrder2 |= encoded;
+      case 3 -> expansionOrder3 |= encoded;
+      default -> throw new IllegalStateException("Packed expansion order overflow");
+    }
+  }
+
+  public int nextExpansionPrimitive() {
+    int slot = expansionCursor++;
+    if (expansionOrder != null) {
+      return expansionOrder[slot] & 0xFFFF;
+    }
+    int shift = slot % 10 * 6;
+    return (int) ((switch (slot / 10) {
+      case 0 -> expansionOrder0;
+      case 1 -> expansionOrder1;
+      case 2 -> expansionOrder2;
+      case 3 -> expansionOrder3;
+      default -> throw new IllegalStateException("Packed expansion order overflow");
+    } >>> shift) & 0x3FL);
   }
 
   /**
