@@ -1,5 +1,7 @@
 package baritone.pathing.calc;
 
+import baritone.api.BaritoneAPI;
+
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
 import baritone.api.utils.BetterBlockPos;
@@ -21,8 +23,16 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
 
   protected final Goal goal;
 
-  protected final CalculationContext context;
+  private final CalculationContext context;
   private final PathingIncumbentPolicy incumbentPolicy;
+
+  private final PathNodeArena nodes;
+
+  protected PathNode startNode;
+
+  protected PathNode mostRecentConsidered;
+
+  protected final PathNode[] bestSoFar = new PathNode[COEFFICIENTS.length];
 
   protected PathingProfiler.Active profile;
 
@@ -31,6 +41,8 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
   protected boolean cancelRequested;
 
   private PathPublicationSink publicationSink = PathPublicationSink.IGNORE;
+
+  private PathNode lastPublishedNode;
 
   /**
    * This is really complicated and hard to explain. I wrote a comment in the old version of MineBot but it was so
@@ -53,6 +65,8 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
    * who cares about a hundredth of a tick? that's half a millisecond for crying out loud!
    */
   protected static final double MIN_IMPROVEMENT = 0.01;
+  private static final int NODE_MAP_DEFAULT_SIZE = 1024;
+  private static final float NODE_MAP_LOAD_FACTOR = 0.75f;
 
   AbstractNodeCostSearch(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, CalculationContext context, PathingIncumbentPolicy incumbentPolicy) {
     this.realStart = realStart;
@@ -62,6 +76,7 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
     this.goal = goal;
     this.context = context;
     this.incumbentPolicy = Objects.requireNonNull(incumbentPolicy);
+    this.nodes = new PathNodeArena(goal, NODE_MAP_DEFAULT_SIZE, NODE_MAP_LOAD_FACTOR, BaritoneAPI.getSettings().pathingMaxNodes.value);
   }
 
   public void cancel() {
@@ -111,7 +126,7 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
 
   protected abstract Optional<IPath> calculate0(long primaryTimeout, long failureTimeout);
 
-  protected PathCalculationResult materialize(Optional<IPath> rawPath, boolean profilePhases, boolean logPhases) {
+  private PathCalculationResult materialize(Optional<IPath> rawPath, boolean profilePhases, boolean logPhases) {
     long postProcessNanos = 0;
     long liveChunkCutoffNanos = 0;
     long staticCutoffNanos = 0;
@@ -153,13 +168,25 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
     return new PathCalculationResult(goal.isInGoal(path.getDest()) ? PathCalculationResult.Type.SUCCESS_TO_GOAL : PathCalculationResult.Type.SUCCESS_SEGMENT, path);
   }
 
-  protected void publishPath(IPath rawPath) {
-    if (!hasPublicationSink() || cancelRequested || rawPath == null) {
+  protected void publishBestSoFar(int numNodes) {
+    if (!hasPublicationSink() || cancelRequested) {
+      return;
+    }
+    PathNode node = bestPublishableNode();
+    publishPathToNode(node, numNodes);
+  }
+
+  protected void publishPathToNode(PathNode node, int numNodes) {
+    if (!hasPublicationSink() || cancelRequested) {
+      return;
+    }
+    if (node == null || node == lastPublishedNode) {
       return;
     }
     try {
-      PathCalculationResult result = materialize(Optional.of(rawPath), false, false);
+      PathCalculationResult result = materialize(Optional.of(new Path(realStart, startNode, node, numNodes, goal, context)), false, false);
       if (result.getPath().isPresent()) {
+        lastPublishedNode = node;
         publicationSink.publish(result);
       }
     } catch (Exception e) {
@@ -168,13 +195,108 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
     }
   }
 
+  private PathNode bestPublishableNode() {
+    if (startNode == null) {
+      return null;
+    }
+    for (PathNode candidate : bestSoFar) {
+      if (candidate != null && getDistFromStartSq(candidate) > MIN_DIST_PATH * MIN_DIST_PATH) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  protected int nodeMapSize() {
+    return nodes.size();
+  }
+
+  protected boolean nodeMapFull() {
+    return nodes.full();
+  }
+
+  /**
+   * Determines the distance squared from the specified node to the start
+   * node. Intended for use in distance comparison, rather than anything that
+   * considers the real distance value, hence the "sq".
+   *
+   * @param n A node
+   * @return The distance, squared
+   */
+  protected double getDistFromStartSq(PathNode n) {
+    int xDiff = n.x - startX;
+    int yDiff = n.y - startY;
+    int zDiff = n.z - startZ;
+    return xDiff * xDiff + yDiff * yDiff + zDiff * zDiff;
+  }
+
+  /**
+   * Attempts to search the exact block-key arena for the node mapped to the specified pos.
+   * If no node is found, a new node is created.
+   *
+   * @param x        The x position of the node
+   * @param y        The y position of the node
+   * @param z        The z position of the node
+   * @param blockKey The exact packed coordinate key of the node.
+   * @return The associated node
+   * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue #107</a>
+   */
+
+  protected PathNode getNodeAtPosition(int x, int y, int z, long blockKey) {
+    return nodes.getOrCreate(x, y, z, blockKey);
+  }
+
+  protected PathNode createNodeAtKnownAbsentPosition(int x, int y, int z, long blockKey) {
+    return nodes.createAbsent(x, y, z, blockKey);
+  }
+
+  protected PathNode peekNodeAtPosition(long blockKey) {
+    return nodes.peek(blockKey);
+  }
+
   @Override
   public Optional<IPath> pathToMostRecentNodeConsidered() {
-    return Optional.empty();
+    return Optional.ofNullable(mostRecentConsidered).map(node -> new Path(realStart, startNode, node, 0, goal, context));
   }
 
   @Override
   public Optional<IPath> bestPathSoFar() {
+    return bestSoFar(false, 0);
+  }
+
+  protected Optional<IPath> bestSoFar(boolean logInfo, int numNodes) {
+    if (startNode == null) {
+      return Optional.empty();
+    }
+    double bestDist = 0;
+    for (int i = 0; i < COEFFICIENTS.length; i++) {
+      if (bestSoFar[i] == null) {
+        continue;
+      }
+      double dist = getDistFromStartSq(bestSoFar[i]);
+      if (dist > bestDist) {
+        bestDist = dist;
+      }
+      if (dist > MIN_DIST_PATH * MIN_DIST_PATH) { // square the comparison since distFromStartSq is squared
+        if (logInfo) {
+          if (COEFFICIENTS[i] >= 3) {
+            logDebug("Warning: cost coefficient is greater than three! Probably means that");
+            logDebug("the path I found is pretty terrible (like sneak-bridging for dozens of blocks)");
+            logDebug("Executing the best available partial path.");
+          }
+          logDebug("Path goes for " + Math.sqrt(dist) + " blocks");
+          logDebug("A* cost coefficient " + COEFFICIENTS[i]);
+        }
+        return Optional.of(new Path(realStart, startNode, bestSoFar[i], numNodes, goal, context));
+      }
+    }
+    // instead of returning bestSoFar[0], be less misleading
+    // if it actually won't find any path, don't make them think it will by rendering a dark blue that will never actually happen
+    if (logInfo) {
+      logDebug("Even with a cost coefficient of " + COEFFICIENTS[COEFFICIENTS.length - 1] + ", I couldn't get more than " + Math.sqrt(bestDist) + " blocks");
+      logDebug("No path found =(");
+      logNotification("No path found =(", true);
+    }
     return Optional.empty();
   }
 
@@ -185,6 +307,10 @@ public abstract class AbstractNodeCostSearch implements ActivePathCalculation {
   public final Goal getGoal() { return goal; }
 
   public BetterBlockPos getStart() { return new BetterBlockPos(startX, startY, startZ); }
+
+  protected int mapSize() {
+    return nodes.size();
+  }
 
   protected void logDebug(String message) {
     PathingLog.debug(message);

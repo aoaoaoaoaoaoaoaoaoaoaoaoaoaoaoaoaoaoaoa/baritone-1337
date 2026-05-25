@@ -6,6 +6,7 @@ import baritone.api.pathing.movement.IMovement;
 import baritone.api.utils.BetterBlockPos;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
+import baritone.pathing.movement.MovementCatalog;
 import baritone.pathing.movement.MovementPrimitive;
 import baritone.pathing.path.CutoffPath;
 import baritone.utils.pathing.PathBase;
@@ -38,7 +39,7 @@ class Path extends PathBase {
 
   private final List<Movement> movements;
 
-  private final List<NodeStep> nodes;
+  private final List<PathNode> nodes;
 
   private final Goal goal;
 
@@ -46,32 +47,37 @@ class Path extends PathBase {
 
   private final CalculationContext context;
 
+  private final MovementCatalog movementCatalog;
+
   private volatile boolean verified;
 
-  Path(BetterBlockPos realStart, DensePathNodeArena arena, int start, int end, int numNodes, Goal goal, CalculationContext context) {
-    this.end = new BetterBlockPos(arena.x(end), arena.y(end), arena.z(end));
+  Path(BetterBlockPos realStart, PathNode start, PathNode end, int numNodes, Goal goal, CalculationContext context) {
+    this.end = new BetterBlockPos(end.x, end.y, end.z);
     this.numNodes = numNodes;
     this.movements = new ArrayList<>();
     this.goal = goal;
     this.context = context;
+    this.movementCatalog = context.movementCatalog;
 
-    int current = end;
+    PathNode current = end;
     List<BetterBlockPos> tempPath = new ArrayList<>();
-    List<NodeStep> tempNodes = new ArrayList<>();
-    while (current != 0) {
-      tempNodes.add(step(arena, current));
-      tempPath.add(pos(arena, current));
-      current = arena.previous(current);
+    List<PathNode> tempNodes = new ArrayList<>();
+    while (current != null) {
+      tempNodes.add(current);
+      tempPath.add(new BetterBlockPos(current.x, current.y, current.z));
+      current = current.previous;
     }
 
     // If the position the player is at is different from the position we told A* to start from,
     // and A* gave us no movements, then add a fake node that will allow a movement to be created
     // that gets us to the single position in the path.
     // See PathingBehavior#createPathfinder and https://github.com/cabaletta/baritone/pull/4519
-    var startNodePos = new BetterBlockPos(arena.x(start), arena.y(start), arena.z(start));
-    if (!realStart.equals(startNodePos) && start == end) {
+    var startNodePos = new BetterBlockPos(start.x, start.y, start.z);
+    if (!realStart.equals(startNodePos) && start.equals(end)) {
       this.start = realStart;
-      tempNodes.add(new NodeStep(0D, true, (short) 0, 0, 0D));
+      PathNode fakeNode = new PathNode(realStart.x, realStart.y, realStart.z, goal);
+      fakeNode.cost = 0;
+      tempNodes.add(fakeNode);
       tempPath.add(realStart);
     } else {
       this.start = startNodePos;
@@ -80,16 +86,6 @@ class Path extends PathBase {
     // Nodes are traversed last to first so we need to reverse the list
     this.path = new ArrayList<>(Lists.reverse(tempPath));
     this.nodes = new ArrayList<>(Lists.reverse(tempNodes));
-  }
-
-  private static NodeStep step(DensePathNodeArena arena, int node) {
-    int previous = arena.previous(node);
-    double edgeCost = previous == 0 ? 0D : arena.cost(node) - arena.cost(previous);
-    return new NodeStep(arena.cost(node), previous == 0, arena.previousPrimitiveIndex(node), arena.previousEdgePayload(node), edgeCost);
-  }
-
-  private static BetterBlockPos pos(DensePathNodeArena arena, int node) {
-    return new BetterBlockPos(arena.x(node), arena.y(node), arena.z(node));
   }
 
   @Override
@@ -113,12 +109,12 @@ class Path extends PathBase {
   private Movement instantiateEdge(int pathIndex) {
     BetterBlockPos src = path.get(pathIndex);
     BetterBlockPos dest = path.get(pathIndex + 1);
-    NodeStep next = nodes.get(pathIndex + 1);
-    if (next.syntheticStartEdge) {
+    PathNode next = nodes.get(pathIndex + 1);
+    if (next.previousPrimitiveIndex < 0) {
       return resolveSyntheticStartEdge(src, dest, next.cost - nodes.get(pathIndex).cost);
     }
 
-    MovementPrimitive primitive = context.movementCatalog.primitive(next.previousPrimitiveIndex);
+    MovementPrimitive primitive = movementCatalog.primitive(next.previousPrimitiveIndex);
     Movement move = primitive.instantiate(context, src, dest, next.previousEdgePayload);
     if (move == null) {
       PathingLog.debug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
@@ -136,7 +132,7 @@ class Path extends PathBase {
   }
 
   private Movement resolveSyntheticStartEdge(BetterBlockPos src, BetterBlockPos dest, double cost) {
-    for (MovementPrimitive primitive : context.movementCatalog.primitives()) {
+    for (MovementPrimitive primitive : movementCatalog.primitives()) {
       Movement move = primitive.instantiate(context, src, dest, 0);
       if (move != null && move.getDest().equals(dest)) {
         overrideCost(move, cost);
@@ -198,8 +194,5 @@ class Path extends PathBase {
 
   double totalCost() {
     return nodes.isEmpty() ? 0D : nodes.get(nodes.size() - 1).cost;
-  }
-
-  private record NodeStep(double cost, boolean syntheticStartEdge, int previousPrimitiveIndex, int previousEdgePayload, double previousEdgeCost) {
   }
 }
