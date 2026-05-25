@@ -18,6 +18,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   private final Moves move;
   private final Variant variant;
   private final DestinationSpec destinationSpec;
+  private final String debugName;
 
   LegacyMovesPrimitive(Moves move) {
     this(move, Variant.ANY);
@@ -26,8 +27,9 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   private LegacyMovesPrimitive(Moves move, Variant variant) {
     this.move = move;
     this.variant = variant;
-    BlockOffset offset = new BlockOffset(move.xOffset, move.yOffset, move.zOffset);
-    this.destinationSpec = variant == Variant.DESCEND_ONE_BLOCK ? new DestinationSpec.Static(offset)
+    this.debugName = variant == Variant.ANY ? move.name() : move.name() + variant.suffix;
+    BlockOffset offset = variant.descendFeetDrop > 0 ? new BlockOffset(move.xOffset, -variant.descendFeetDrop, move.zOffset) : new BlockOffset(move.xOffset, move.yOffset, move.zOffset);
+    this.destinationSpec = variant.staticDestination ? new DestinationSpec.Static(offset)
       : move.dynamicXZ || move.dynamicY ? new DestinationSpec.Dynamic(offset, move.dynamicXZ, move.dynamicY) : new DestinationSpec.Static(offset);
   }
 
@@ -37,6 +39,14 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   static LegacyMovesPrimitive descendFall(Moves move) {
     return new LegacyMovesPrimitive(move, Variant.DESCEND_FALL);
+  }
+
+  static LegacyMovesPrimitive descendExactFall(Moves move, int feetDrop) {
+    return new LegacyMovesPrimitive(move, switch (feetDrop) {
+      case 2 -> Variant.DESCEND_FALL_TWO;
+      case 3 -> Variant.DESCEND_FALL_THREE;
+      default -> throw new IllegalArgumentException("unsupported exact fall feetDrop " + feetDrop);
+    });
   }
 
   static LegacyMovesPrimitive traverseClean(Moves move) {
@@ -53,7 +63,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
 
   @Override
   public String debugName() {
-    return variant == Variant.ANY ? move.name() : move.name() + variant.suffix;
+    return debugName;
   }
 
   @Override
@@ -64,7 +74,7 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   @Override
   public void evaluate(CalculationContext ctx, int x, int y, int z, EdgeEvalScratch out) {
     out.blocked();
-    if (variant == Variant.DESCEND_ONE_BLOCK || variant == Variant.DESCEND_FALL) {
+    if (variant.descendFeetDrop > 0 || variant == Variant.DESCEND_FALL) {
       evaluateDescendVariant(ctx, x, y, z, out);
       return;
     }
@@ -96,6 +106,9 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   public double minimumCost(CalculationContext ctx) {
     if (variant == Variant.DESCEND_ONE_BLOCK) {
       return descendLowerBound(ctx);
+    }
+    if (variant == Variant.DESCEND_FALL_TWO || variant == Variant.DESCEND_FALL_THREE) {
+      return exactFallLowerBound(variant.descendFeetDrop);
     }
     if (variant == Variant.DESCEND_FALL) {
       return fallLowerBound(ctx);
@@ -153,6 +166,10 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
     double directLanding = ActionCosts.FALL_N_BLOCKS_COST[directLandingHeight];
     double ladderReset = ActionCosts.FALL_N_BLOCKS_COST[2] + ActionCosts.LADDER_DOWN_ONE_COST;
     return ActionCosts.WALK_OFF_BLOCK_COST + Math.min(directLanding, ladderReset);
+  }
+
+  private static double exactFallLowerBound(int feetDrop) {
+    return ActionCosts.WALK_OFF_BLOCK_COST + ActionCosts.FALL_N_BLOCKS_COST[feetDrop + 1];
   }
 
   private static double downwardLowerBound(CalculationContext ctx) {
@@ -269,6 +286,8 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
     int destZ = z + move.zOffset;
     if (variant == Variant.DESCEND_ONE_BLOCK) {
       MovementDescend.oneBlockCost(ctx, out.nodeFacts, x, y, z, destX, destZ, out);
+    } else if (variant == Variant.DESCEND_FALL_TWO || variant == Variant.DESCEND_FALL_THREE) {
+      MovementDescend.exactNoWaterFallCost(ctx, out.nodeFacts, x, y, z, destX, destZ, variant.descendFeetDrop, out);
     } else {
       MovementDescend.fallCost(ctx, out.nodeFacts, x, y, z, destX, destZ, out);
     }
@@ -292,12 +311,17 @@ public final class LegacyMovesPrimitive implements MovementPrimitive {
   }
 
   private enum Variant {
-    ANY(""), TRAVERSE_CLEAN("_CLEAN"), TRAVERSE_COMPLEX("_COMPLEX"), DESCEND_ONE_BLOCK("_ONE"), DESCEND_FALL("_FALL");
+    ANY("", false, 0), TRAVERSE_CLEAN("_CLEAN", false, 0), TRAVERSE_COMPLEX("_COMPLEX", false, 0), DESCEND_ONE_BLOCK("_ONE", true, 1), DESCEND_FALL_TWO("_FALL2", true, 2), DESCEND_FALL_THREE("_FALL3",
+      true, 3), DESCEND_FALL("_FALL", false, 0);
 
     final String suffix;
+    final boolean staticDestination;
+    final int descendFeetDrop;
 
-    Variant(String suffix) {
+    Variant(String suffix, boolean staticDestination, int descendFeetDrop) {
       this.suffix = suffix;
+      this.staticDestination = staticDestination;
+      this.descendFeetDrop = descendFeetDrop;
     }
   }
 }

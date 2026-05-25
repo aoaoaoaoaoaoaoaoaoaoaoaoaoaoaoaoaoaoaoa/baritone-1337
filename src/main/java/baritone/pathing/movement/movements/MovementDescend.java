@@ -32,7 +32,7 @@ public class MovementDescend extends Movement {
   public boolean forceSafeMode = false;
 
   private enum DescentRegime {
-    ANY, ONE_BLOCK, FALL
+    ANY, FALL
   }
 
   public MovementDescend(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
@@ -77,11 +77,112 @@ public class MovementDescend extends Movement {
   }
 
   public static void oneBlockCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
-    cost(context, facts, x, y, z, destX, destZ, DescentRegime.ONE_BLOCK, res);
+    res.blocked();
+    boolean hasFacts = facts != null && facts.matches(x, y, z);
+    Block fromDown = hasFacts ? facts.srcDownBlock : context.get(x, y - 1, z).getBlock();
+    if (fromDown == Blocks.LADDER || fromDown == Blocks.VINE) {
+      return;
+    }
+    BlockState below = hasFacts ? facts.descendAir2(context, destX, destZ) : context.get(destX, y - 2, destZ);
+    if (!MovementHelper.canWalkOn(context, destX, y - 2, destZ, below)) {
+      return;
+    }
+
+    BlockState destDown = hasFacts ? facts.descendDestDown(context, destX, destZ) : context.get(destX, y - 1, destZ);
+    if (MovementHelper.isWater(destDown)) {
+      BlockState destFeet = hasFacts ? facts.descendDestFeet(context, destX, destZ) : context.get(destX, y, destZ);
+      if (!MovementHelper.canHorizontalWaterMoveThrough(context, destX, y - 1, destZ, destDown, destFeet)) {
+        return;
+      }
+    }
+    if (destDown.getBlock() == Blocks.LADDER || destDown.getBlock() == Blocks.VINE || MovementHelper.canUseFrostWalker(context, destDown)) {
+      return;
+    }
+
+    // The landing geometry is the common rejection point. Only surviving ledges deserve mining/tool quotes.
+    double totalCost = MovementHelper.getMiningDurationTicks(context, destX, y - 1, destZ, destDown, false);
+    if (totalCost >= COST_INF) {
+      return;
+    }
+    totalCost += MovementHelper.getMiningDurationTicks(context, destX, y, destZ, hasFacts ? facts.descendDestFeet(context, destX, destZ) : context.get(destX, y, destZ), false);
+    if (totalCost >= COST_INF) {
+      return;
+    }
+    totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, hasFacts ? facts.descendDestHead(context, destX, destZ) : context.get(destX, y + 1, destZ), true);
+    if (totalCost >= COST_INF) {
+      return;
+    }
+
+    double walk = WALK_OFF_BLOCK_COST;
+    if (fromDown == Blocks.SOUL_SAND) {
+      walk *= WALK_ONE_OVER_SOUL_SAND_COST / WALK_ONE_BLOCK_COST;
+    }
+    totalCost += walk + Math.max(FALL_N_BLOCKS_COST[1], CENTER_AFTER_FALL_COST);
+    res.reachable(destX, y - 1, destZ, totalCost + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, y - 1, destZ), 0);
   }
 
   public static void fallCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, EdgeEvalScratch res) {
     cost(context, facts, x, y, z, destX, destZ, DescentRegime.FALL, res);
+  }
+
+  public static void exactNoWaterFallCost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, int feetDrop, EdgeEvalScratch res) {
+    res.blocked();
+    int fallHeight = feetDrop + 1;
+    if (feetDrop < 2 || fallHeight < context.fall.minHeight()) {
+      return;
+    }
+    int destY = y - feetDrop;
+    int supportY = destY - 1;
+    if (supportY < context.world.getMinY()) {
+      return;
+    }
+    boolean hasFacts = facts != null && facts.matches(x, y, z);
+    Block fromDown = hasFacts ? facts.srcDownBlock : context.get(x, y - 1, z).getBlock();
+    if (fromDown == Blocks.LADDER || fromDown == Blocks.VINE) {
+      return;
+    }
+
+    BlockState air2 = hasFacts ? facts.descendAir2(context, destX, destZ) : context.get(destX, y - 2, destZ);
+    if (!MovementHelper.canMoveThrough(context, destX, y - 2, destZ, air2)) {
+      return;
+    }
+    if (feetDrop == 3) {
+      BlockState air3 = hasFacts ? facts.descendLanding2(context, destX, destZ) : context.get(destX, y - 3, destZ);
+      if (!MovementHelper.canMoveThrough(context, destX, y - 3, destZ, air3)) {
+        return;
+      }
+    }
+    BlockState support = feetDrop == 2 ? (hasFacts ? facts.descendLanding2(context, destX, destZ) : context.get(destX, supportY, destZ))
+      : (hasFacts ? facts.descendLanding3(context, destX, destZ) : context.get(destX, supportY, destZ));
+    if (MovementHelper.isWater(support) || MovementHelper.isLava(support) || MovementHelper.isBottomSlab(support) || !MovementHelper.canWalkOn(context, destX, supportY, destZ, support)
+      || MovementHelper.canMoveThrough(context, destX, supportY, destZ, support)) {
+      return;
+    }
+    if (!context.fall.safeNoWaterLanding(fallHeight, MovementHelper.landingTop16(context, destX, supportY, destZ, support))) {
+      return;
+    }
+
+    // Prove the sparse landing before pricing the breakable front column. Most candidate shallow falls die above.
+    BlockState destDown = hasFacts ? facts.descendDestDown(context, destX, destZ) : context.get(destX, y - 1, destZ);
+    double frontBreak = MovementHelper.getMiningDurationTicks(context, destX, y - 1, destZ, destDown, false);
+    if (frontBreak >= COST_INF) {
+      return;
+    }
+    BlockState destFeet = hasFacts ? facts.descendDestFeet(context, destX, destZ) : context.get(destX, y, destZ);
+    frontBreak += MovementHelper.getMiningDurationTicks(context, destX, y, destZ, destFeet, false);
+    if (frontBreak >= COST_INF) {
+      return;
+    }
+    BlockState destHead = hasFacts ? facts.descendDestHead(context, destX, destZ) : context.get(destX, y + 1, destZ);
+    frontBreak += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, destHead, true);
+    if (frontBreak >= COST_INF) {
+      return;
+    }
+    if (frontBreak != 0 && context.get(destX, y + 2, destZ).getBlock() instanceof FallingBlock) {
+      return;
+    }
+
+    res.reachable(destX, destY, destZ, WALK_OFF_BLOCK_COST + FALL_N_BLOCKS_COST[fallHeight] + frontBreak + PedestrianLavaProximity.arrivalPenalty(context, x, y, z, destX, destY, destZ), 0);
   }
 
   private static void cost(CalculationContext context, NodeTerrainFacts facts, int x, int y, int z, int destX, int destZ, DescentRegime regime, EdgeEvalScratch res) {
@@ -118,9 +219,7 @@ public class MovementDescend extends Movement {
 
     BlockState below = context.get(destX, y - 2, destZ);
     if (!MovementHelper.canWalkOn(context, destX, y - 2, destZ, below)) {
-      if (regime != DescentRegime.ONE_BLOCK) {
-        dynamicFallCost(context, x, y, z, destX, destZ, totalCost, below, res);
-      }
+      dynamicFallCost(context, x, y, z, destX, destZ, totalCost, below, res);
       return;
     }
     if (regime == DescentRegime.FALL) {

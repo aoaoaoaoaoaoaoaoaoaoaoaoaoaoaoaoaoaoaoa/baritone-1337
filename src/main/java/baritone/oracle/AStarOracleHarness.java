@@ -129,7 +129,7 @@ public final class AStarOracleHarness {
     OracleBlockStateInterface bsi = new OracleBlockStateInterface(level);
     List<ItemStack> hotbar = hotbar(scenario);
     ResourcePricing.Prices prices = resourcePrices(hotbar);
-    CalculationContext context = new CalculationContext(level, bsi, hotbar, hasThrowaway(hotbar), prices, hasWaterBucket(hotbar), 0, results.resolve(runId + "-profiles"));
+    CalculationContext context = new CalculationContext(level, bsi, hotbar, hasThrowaway(hotbar), prices, hasWaterBucket(hotbar), results.resolve(runId + "-profiles"));
     BetterBlockPos start = new BetterBlockPos(Mth.floor(scenario.start().x()), Mth.floor(scenario.start().y()), Mth.floor(scenario.start().z()));
     Goal goal = scenario.baritoneGoal();
     double upperBoundTicks = doubleValue(overrides, "oracleUpperBoundTicks", Double.POSITIVE_INFINITY);

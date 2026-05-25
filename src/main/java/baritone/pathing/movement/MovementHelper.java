@@ -288,11 +288,6 @@ public interface MovementHelper extends ActionCosts {
     return isBlockNormalCube(state) || isGlassLike(state);
   }
 
-  @Deprecated
-  static boolean isReplacable(int x, int y, int z, BlockState state, BlockStateInterface bsi) {
-    return isReplaceable(x, y, z, state, bsi);
-  }
-
   static boolean isHorizontalBlockPassable(BlockPos blockPos, BlockState blockState, BlockPos playerPos, BooleanProperty propertyOpen) {
     if (playerPos.equals(blockPos)) {
       return false;

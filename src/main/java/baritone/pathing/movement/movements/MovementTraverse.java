@@ -409,13 +409,10 @@ public class MovementTraverse extends Movement {
 
   private double distanceToDestCenterOnTraverseAxis() {
     BlockPos direction = getDirection();
-    double length = Math.hypot(direction.getX(), direction.getZ());
-    if (length == 0D) {
-      return 0D;
-    }
     double dx = dest.getX() + 0.5D - ctx.player().position().x;
     double dz = dest.getZ() + 0.5D - ctx.player().position().z;
-    return (dx * direction.getX() + dz * direction.getZ()) / length;
+    // MovementTraverse is a cardinal unit edge; don't pay sqrt in bridge actuation.
+    return dx * direction.getX() + dz * direction.getZ();
   }
 
   private boolean lookingAtBackplaceFace(BlockPos placeAgainst) {

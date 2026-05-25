@@ -8,7 +8,7 @@ public record WaterLineProfile(SurfaceWaterMode mode, double halfWidth, int mini
     return new WaterLineProfile(new SurfaceWaterMode.Swim(), SWIM_HALF_WIDTH, 6, 0D, 0D, costPerBlock);
   }
 
-  public static WaterLineProfile macroSwim(double costPerBlock) {
+  public static WaterLineProfile overlaySwim(double costPerBlock) {
     return new WaterLineProfile(new SurfaceWaterMode.Swim(), SWIM_HALF_WIDTH, 1, 0D, 0D, costPerBlock);
   }
 
@@ -28,11 +28,11 @@ public record WaterLineProfile(SurfaceWaterMode mode, double halfWidth, int mini
     return new WaterLineProfile(new SurfaceWaterMode.Boat(), BOAT_HALF_WIDTH, 1, 0D, terminal ? policy.boatPickupCost() : 0D, policy.boatCostPerBlock());
   }
 
-  public static WaterLineProfile macroBoatLaunch(WaterTransportPolicy policy, boolean terminal) {
+  public static WaterLineProfile overlayBoatLaunch(WaterTransportPolicy policy, boolean terminal) {
     return new WaterLineProfile(new SurfaceWaterMode.Boat(), BOAT_HALF_WIDTH, 1, policy.boatSetupCost(), terminal ? policy.boatPickupCost() : 0D, policy.boatCostPerBlock());
   }
 
-  public static WaterLineProfile macroMountedBoat(WaterTransportPolicy policy, boolean terminal) {
+  public static WaterLineProfile overlayMountedBoat(WaterTransportPolicy policy, boolean terminal) {
     return new WaterLineProfile(new SurfaceWaterMode.Boat(), BOAT_HALF_WIDTH, 1, 0D, terminal ? policy.boatPickupCost() : 0D, policy.boatCostPerBlock());
   }
 

@@ -33,10 +33,8 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
-import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -71,7 +69,7 @@ public final class MovementClientHelper {
     if (!(state.getBlock() instanceof DoorBlock)) {
       return true;
     }
-    return isHorizontalBlockPassable(doorPos, state, playerPos, DoorBlock.OPEN);
+    return MovementHelper.isHorizontalBlockPassable(doorPos, state, playerPos, DoorBlock.OPEN);
   }
 
   public static boolean isGatePassable(IPlayerContext ctx, BlockPos gatePos, BlockPos playerPos) {
@@ -83,23 +81,6 @@ public final class MovementClientHelper {
       return true;
     }
     return state.getValue(FenceGateBlock.OPEN);
-  }
-
-  private static boolean isHorizontalBlockPassable(BlockPos blockPos, BlockState blockState, BlockPos playerPos, BooleanProperty propertyOpen) {
-    if (playerPos.equals(blockPos)) {
-      return false;
-    }
-    Direction.Axis facing = blockState.getValue(HorizontalDirectionalBlock.FACING).getAxis();
-    boolean open = blockState.getValue(propertyOpen);
-    Direction.Axis playerFacing;
-    if (playerPos.north().equals(blockPos) || playerPos.south().equals(blockPos)) {
-      playerFacing = Direction.Axis.Z;
-    } else if (playerPos.east().equals(blockPos) || playerPos.west().equals(blockPos)) {
-      playerFacing = Direction.Axis.X;
-    } else {
-      return true;
-    }
-    return (facing == playerFacing) == open;
   }
 
   public static boolean canWalkOn(IPlayerContext ctx, BetterBlockPos pos, BlockState state) {
@@ -178,7 +159,7 @@ public final class MovementClientHelper {
 
   public static void moveTowardsWithoutRotation(IPlayerContext ctx, ControlFrame.Builder state, float idealYaw) {
     MovementOption.getOptions(Mth.sin(ctx.playerRotations().getYaw() * DEG_TO_RAD_F), Mth.cos(ctx.playerRotations().getYaw() * DEG_TO_RAD_F), BaritoneAPI.getSettings().allowSprint.value)
-      .min(Comparator.comparing(option -> option.distanceToSq(Mth.sin(idealYaw * DEG_TO_RAD_F), Mth.cos(idealYaw * DEG_TO_RAD_F)))).ifPresent(selection -> selection.setInputs(state));
+      .min(Comparator.comparing(option -> option.taxicabDistanceTo(Mth.sin(idealYaw * DEG_TO_RAD_F), Mth.cos(idealYaw * DEG_TO_RAD_F)))).ifPresent(selection -> selection.setInputs(state));
   }
 
   public static void moveTowardsWithoutRotation(IPlayerContext ctx, ControlFrame.Builder state, BlockPos dest) {

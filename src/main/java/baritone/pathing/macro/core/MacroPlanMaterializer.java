@@ -236,7 +236,7 @@ public final class MacroPlanMaterializer {
       return false;
     }
     BetterBlockPos surfaceStart = new BetterBlockPos(start.x, water.y, start.z);
-    WaterLineProfile profile = WaterLineProfile.macroSwim(context.costs.waterMoveCost());
+    WaterLineProfile profile = WaterLineProfile.overlaySwim(context.costs.waterMoveCost());
     return WaterLineKernel.traceCells(surfaceStart, water, profile.halfWidth(), (x, z, centerline) -> !centerline || profile.mode().legal(context, x, water.y, z));
   }
 
@@ -280,9 +280,9 @@ public final class MacroPlanMaterializer {
 
   private static WaterLineProfile profile(CalculationContext context, TransportMode mode, boolean first, boolean terminal) {
     if (mode == TransportMode.BOAT) {
-      return first ? WaterLineProfile.macroBoatLaunch(context.waterTransport, terminal) : WaterLineProfile.macroMountedBoat(context.waterTransport, terminal);
+      return first ? WaterLineProfile.overlayBoatLaunch(context.waterTransport, terminal) : WaterLineProfile.overlayMountedBoat(context.waterTransport, terminal);
     }
-    return WaterLineProfile.macroSwim(context.costs.waterMoveCost());
+    return WaterLineProfile.overlaySwim(context.costs.waterMoveCost());
   }
 
   private static double flatDistance(BetterBlockPos a, BetterBlockPos b) {

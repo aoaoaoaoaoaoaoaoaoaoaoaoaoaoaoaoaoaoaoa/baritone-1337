@@ -110,13 +110,6 @@ public class MovementPillar extends Movement {
             return COST_INF;
           }
         }
-        // this is commented because it may have had a purpose, but it's very unclear what it was. it's from the minebot era.
-        // if (!MovementHelper.canWalkOn(context, chkPos, check) || MovementHelper.canWalkThrough(context, chkPos, check)) {//if the block above where we want to break is not a full block, don't do it
-        // TODO why does canWalkThrough mean this action is COST_INF?
-        // FallingBlock makes sense, and !canWalkOn deals with weird cases like if it were lava
-        // but I don't understand why canWalkThrough makes it impossible
-        //    return COST_INF;
-        //}
       }
     }
     if (ladder) {

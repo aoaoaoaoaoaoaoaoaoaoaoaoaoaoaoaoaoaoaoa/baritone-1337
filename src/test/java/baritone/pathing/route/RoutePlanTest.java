@@ -30,7 +30,7 @@ public class RoutePlanTest {
     BetterBlockPos src = new BetterBlockPos(0, 63, 0);
     BetterBlockPos dest = new BetterBlockPos(8, 63, 0);
     WaterLineSegment segment = new WaterLineSegment(new TransportLeg(TransportMode.BOAT, src, src, dest, TransportTerminality.TRANSIT), dest,
-      WaterLineProfile.macroMountedBoat(new baritone.pathing.movement.water.WaterTransportPolicy(true, true, 40, 35, 35, 2.55, 0, 0), false), 8, 8 * 2.55, List.of(src, dest));
+      WaterLineProfile.overlayMountedBoat(new baritone.pathing.movement.water.WaterTransportPolicy(true, true, 40, 35, 35, 2.55, 0, 0), false), 8, 8 * 2.55, List.of(src, dest));
     SurfaceRouteLeg leg = new SurfaceRouteLeg(segment, PlannedTransportState.boat(true), PlannedTransportState.boat(true), BoatRecoveryPolicy.OPTIONAL, 0);
     assertFalse(leg.terminal());
     assertEquals(TransportMode.BOAT, leg.exitMode());
@@ -41,7 +41,7 @@ public class RoutePlanTest {
     BetterBlockPos dry = new BetterBlockPos(10, 63, 10);
     BetterBlockPos waterStart = new BetterBlockPos(10, 62, 18);
     BetterBlockPos waterEnd = new BetterBlockPos(40, 62, 18);
-    WaterLineSegment segment = new WaterLineSegment(new TransportLeg(TransportMode.SWIM, dry, waterStart, waterEnd, TransportTerminality.TRANSIT), waterEnd, WaterLineProfile.macroSwim(3.5), 30, 105,
+    WaterLineSegment segment = new WaterLineSegment(new TransportLeg(TransportMode.SWIM, dry, waterStart, waterEnd, TransportTerminality.TRANSIT), waterEnd, WaterLineProfile.overlaySwim(3.5), 30, 105,
       List.of(dry, waterStart, waterEnd));
     SurfaceRouteLeg leg = new SurfaceRouteLeg(segment, PlannedTransportState.swim(false), PlannedTransportState.swim(false), BoatRecoveryPolicy.OPTIONAL, 0);
     assertTrue(leg.acceptsCorridor(new BetterBlockPos(10, 63, 11), false));

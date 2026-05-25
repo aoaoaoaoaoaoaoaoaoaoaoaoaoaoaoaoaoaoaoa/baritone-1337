@@ -35,6 +35,7 @@ final class ObliqueMovementPrimitive implements MovementPrimitive {
   public void evaluate(CalculationContext ctx, int x, int y, int z, EdgeEvalScratch out) {
     out.blocked();
     double cost = MovementOblique.cost(ctx, x, y, z, dx, dz);
+    cost = ctx.reversibility.recost(TrailReversibility.INTRINSIC, cost);
     if (cost >= ActionCosts.COST_INF) {
       return;
     }

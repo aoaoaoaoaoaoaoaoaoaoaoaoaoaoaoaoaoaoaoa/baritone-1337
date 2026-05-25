@@ -6,9 +6,8 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class FallPolicyTest {
-  private static final FallPolicy NO_DAMAGE = new FallPolicy(false, false, 3, 3, 20, 0);
-  private static final FallPolicy FEATHER_IV = new FallPolicy(false, false, 3, 3, 20, 4);
-  private static final FallPolicy EXPLICIT_RISK = new FallPolicy(false, false, 3, 4, 20, 0);
+  private static final FallPolicy NO_DAMAGE = new FallPolicy(false, false, 3, 3, 20);
+  private static final FallPolicy EXPLICIT_RISK = new FallPolicy(false, false, 3, 4, 20);
 
   @Test
   public void fullCubeThreeBlockFallIsSafe() {
@@ -19,11 +18,6 @@ public class FallPolicyTest {
   public void loweredLandingTopConsumesTheLastNoDamageMargin() {
     assertFalse(NO_DAMAGE.safeNoWaterLanding(4, 14));
     assertFalse(NO_DAMAGE.safeNoWaterLanding(4, 15));
-  }
-
-  @Test
-  public void featherFallingDoesNotMakePositiveFallDamageDisappear() {
-    assertFalse(FEATHER_IV.safeNoWaterLanding(4, 14));
   }
 
   @Test

@@ -22,7 +22,7 @@ public record MovementOption(Input input1, Input input2, float motionX, float mo
     }
   }
 
-  public float distanceToSq(float otherX, float otherZ) {
+  public float taxicabDistanceTo(float otherX, float otherZ) {
     return Mth.abs(motionX() - otherX) + Mth.abs(motionZ() - otherZ);
   }
 

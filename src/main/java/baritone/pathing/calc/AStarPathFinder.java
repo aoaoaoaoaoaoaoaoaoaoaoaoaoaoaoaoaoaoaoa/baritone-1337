@@ -210,7 +210,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
               double lowerBoundActionCost = minimumCost * (isFavoring ? favoring.calculate(favoringHash) : 1);
               if (staticIncumbent.cost - (currentNode.cost + lowerBoundActionCost) <= minimumImprovement) {
                 if (activeProfile != null && primitive instanceof LegacyMovesPrimitive legacy) {
-                  activeProfile.recordLowerBoundPrune(legacy.move());
+                  activeProfile.recordLowerBoundPrune(legacy.debugName());
                 } else if (activeProfile != null) {
                   activeProfile.recordLowerBoundPrune(primitive.debugName());
                 }
@@ -225,7 +225,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
           long moveStart = System.nanoTime();
           primitive.evaluate(calcContext, currentNode.x, currentNode.y, currentNode.z, eval);
           if (primitive instanceof LegacyMovesPrimitive legacy) {
-            activeProfile.recordMove(legacy.move(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
+            activeProfile.recordMove(legacy.debugName(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
           } else {
             activeProfile.recordMove(primitive.debugName(), System.nanoTime() - moveStart, eval.status == EdgeEvalStatus.REACHABLE);
           }

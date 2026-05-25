@@ -27,7 +27,13 @@ public final class MovementCatalog {
         } else if (descend(move)) {
           // Dynamic falls are expensive and materially later than one-block ledge descents; separate proof heads keep the cheap case honest.
           primitives.add(LegacyMovesPrimitive.descendOneBlock(move));
-          primitives.add(LegacyMovesPrimitive.descendFall(move));
+          if (needsDynamicFallScanner(context)) {
+            primitives.add(LegacyMovesPrimitive.descendFall(move));
+          } else {
+            // Nether-default no-water falls are just static shallow ledges. Keep them analyzable by A*; do not erase them into a dynamic-Y scanner.
+            primitives.add(LegacyMovesPrimitive.descendExactFall(move, 2));
+            primitives.add(LegacyMovesPrimitive.descendExactFall(move, 3));
+          }
         } else {
           primitives.add(new LegacyMovesPrimitive(move));
         }
@@ -76,6 +82,10 @@ public final class MovementCatalog {
       case DESCEND_EAST, DESCEND_WEST, DESCEND_NORTH, DESCEND_SOUTH -> true;
       default -> false;
     };
+  }
+
+  private static boolean needsDynamicFallScanner(CalculationContext context) {
+    return context.world.dimension() != Level.NETHER || context.fall.hasWaterBucket() || context.fall.allowIntoLava() || context.fall.maxNoWater() > 3;
   }
 
   private static void addCruiseRays(List<MovementPrimitive> primitives, int maxChebyshevBlocks, boolean allowOblique) {
