@@ -48,7 +48,7 @@ public final class MovementCatalog {
     return primitives;
   }
 
-  public MovementPrimitive primitive(short index) {
+  public MovementPrimitive primitive(int index) {
     return primitives[index];
   }
 

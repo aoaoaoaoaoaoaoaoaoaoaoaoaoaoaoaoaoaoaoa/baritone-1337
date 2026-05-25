@@ -7,6 +7,7 @@ public interface MovementPrimitive {
 
   DestinationSpec destinationSpec();
 
+  // Hot-loop contract: evaluators overwrite status themselves; A* does not pre-clear scratch.
   void evaluate(CalculationContext ctx, int x, int y, int z, EdgeEvalScratch out);
 
   Movement instantiate(CalculationContext ctx, BetterBlockPos src, BetterBlockPos dest, int payload);

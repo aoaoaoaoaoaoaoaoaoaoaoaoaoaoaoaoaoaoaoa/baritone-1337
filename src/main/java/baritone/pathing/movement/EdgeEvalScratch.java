@@ -15,11 +15,6 @@ public final class EdgeEvalScratch {
 
   public void blocked() {
     status = EdgeEvalStatus.BLOCKED;
-    x = 0;
-    y = 0;
-    z = 0;
-    cost = 0;
-    payload = 0;
   }
 
   public void reachable(int x, int y, int z, double finitePositiveCost, int payload) {
